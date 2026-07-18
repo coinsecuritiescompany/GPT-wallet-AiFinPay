@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentPolicy, PaymentIntent, TransactionRecord } from "@aifinpay/shared";
 import { bridge } from "./bridge/mcp-bridge.js";
 import { browserDemoData } from "./demo-data.js";
@@ -36,12 +36,14 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
   const summary = data.summary!;
   const usdc = summary.balances.find((b) => b.token === "USDC");
   const native = summary.balances.find((b) => b.token === "POL");
+  const connectedAddress = data.connection?.addresses.evm;
   return <main className="card"><Header />
+    {data.connection && <div className="connected-strip"><span>✓ Wallet connected</span><strong>{short(connectedAddress)}</strong></div>}
     <section className="wallet-top">
       <div><span className="eyebrow">Available balance</span><h1><small>$</small>{Number(usdc?.formatted ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</h1><span className="subtle">{usdc?.formatted} USDC</span></div>
       <div className="network"><span className="network-dot" />Polygon Amoy<span className="chevron">⌄</span></div>
     </section>
-    <div className="address"><span>{summary.maskedAddress}</span><span>{native?.formatted} POL gas</span></div>
+    <div className="address"><span>{connectedAddress ? short(connectedAddress) : summary.maskedAddress}</span><span>{native?.formatted} POL gas</span></div>
     <nav className="actions">
       <button onClick={() => onNavigate("transfer-form")}><b>↗</b>Send</button>
       <button onClick={() => onNavigate("not-connected")}><b>↙</b>Receive</button>
@@ -152,9 +154,48 @@ function ErrorView({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   return <main className="card"><Header label="Something went wrong" /><section className="blocked-icon">!</section><div className="center"><h2>{data.error?.code?.replaceAll("_", " ") ?? "Error"}</h2><p>{data.error?.message ?? "AiFinPay could not complete this request."}</p></div><button className="primary" onClick={onBack}>Return to wallet</button></main>;
 }
 
-function WalletConnect({ data }: { data: WidgetData }) {
+function WalletConnect({ data, onConnected }: { data: WidgetData; onConnected: (next: WidgetData) => void }) {
+  const [checking, setChecking] = useState(false);
+  const checkingRef = useRef(false);
+  const checkConnection = useCallback(async () => {
+    if (checkingRef.current) return;
+    checkingRef.current = true;
+    setChecking(true);
+    try {
+      const status = await bridge.callTool("get_wallet_connection", {}, { emit: false });
+      if (status.view === "wallet-connected" && status.connection) onConnected(status);
+    } catch {
+      // A transient host/tool error must not replace the still-valid pairing screen.
+    } finally {
+      checkingRef.current = false;
+      setChecking(false);
+    }
+  }, [onConnected]);
+  useEffect(() => {
+    if (!data.pairingUrl) return;
+    const onFocus = () => { void checkConnection(); };
+    const onVisibility = () => { if (document.visibilityState === "visible") void checkConnection(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void checkConnection(); }, 3_000);
+    void checkConnection();
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [checkConnection, data.pairingUrl]);
   const open = () => { if (!data.pairingUrl) return; if (window.openai?.openExternal) void window.openai.openExternal({ href: data.pairingUrl }); else window.open(data.pairingUrl, "_blank", "noopener,noreferrer"); };
-  return <main className="card"><Header label="Secure setup" /><section className="hero-icon">◇</section><div className="center"><span className="eyebrow">NON-CUSTODIAL VAULT</span><h2>Create or connect your wallet</h2><p>Recovery words and private keys stay on your device. ChatGPT receives public addresses only.</p></div><button className="primary" disabled={!data.pairingUrl} onClick={open}>Open AiFinPay Vault</button><p className="disclaimer">The secure connection link expires in 10 minutes.</p></main>;
+  return <main className="card"><Header label="Secure setup" /><section className="hero-icon">◇</section><div className="center"><span className="eyebrow">NON-CUSTODIAL VAULT</span><h2>Create or connect your wallet</h2><p>Recovery words and private keys stay on your device. ChatGPT receives public addresses only.</p></div><button className="primary" disabled={!data.pairingUrl} onClick={open}>Open AiFinPay Vault</button><button className="secondary connection-check" disabled={checking} onClick={() => void checkConnection()}>{checking ? "Checking connection…" : "I connected my wallet — check now"}</button><p className="disclaimer">The secure connection link expires in 10 minutes. This widget updates automatically when you return.</p></main>;
+}
+
+function WalletConnected({ data }: { data: WidgetData }) {
+  const addresses = data.connection?.addresses;
+  return <main className="card"><Header label="Connected" /><section className="success-icon">✓</section><div className="center"><span className="eyebrow success-text">WALLET CREATED</span><h2>AiFinPay Vault connected</h2><p>Your public addresses are now available to ChatGPT. Recovery words and private keys remain only on your device.</p></div>
+    {addresses && <div className="connected-addresses"><div><span>EVM · 9 networks</span><strong>{short(addresses.evm)}</strong></div><div><span>Solana</span><strong>{short(addresses.solana)}</strong></div><div><span>NEAR</span><strong>{short(addresses.near)}</strong></div><div><span>Aptos</span><strong>{short(addresses.aptos)}</strong></div></div>}
+    <button className="primary" onClick={() => void bridge.callTool("render_wallet", {})}>Open wallet dashboard</button>
+    {data.connection?.connectedAt && <p className="disclaimer">Connected {date(data.connection.connectedAt)}</p>}
+  </main>;
 }
 
 function Networks({ data, onBack }: { data: WidgetData; onBack: () => void }) {
@@ -168,8 +209,8 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
   useEffect(() => { document.documentElement.dataset.theme = window.openai?.theme ?? "light"; void bridge.initialize().catch(() => undefined); }, []);
   const back = () => setData(wallet);
   if (data.view === "loading") return <main className="card loading"><div className="spinner" /><span>Loading secure wallet…</span></main>;
-  if (data.view === "wallet-connect" || data.view === "not-connected") return <WalletConnect data={data} />;
-  if (data.view === "wallet-connected") return <main className="card"><Header label="Connected" /><section className="success-icon">✓</section><div className="center"><h2>AiFinPay Vault connected</h2><p>Your public addresses are ready for mainnet balance and transaction tools.</p></div></main>;
+  if (data.view === "wallet-connect" || data.view === "not-connected") return <WalletConnect data={data} onConnected={setData} />;
+  if (data.view === "wallet-connected") return <WalletConnected data={data} />;
   if (data.view === "networks") return <Networks data={data} onBack={back} />;
   if (data.view === "wallet") return <Wallet data={data} onNavigate={(view) => setData({ view })} />;
   if (data.view === "transfer-form") return <TransferForm onBack={back} />;
