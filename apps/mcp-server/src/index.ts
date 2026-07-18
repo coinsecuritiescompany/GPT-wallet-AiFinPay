@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { loadConfig } from "./config.js";
 import { AppContext } from "./context.js";
 import { landingPage, privacyPage, supportPage } from "./public-pages.js";
-import { appIconPng, createMcpServer, widgetHtml } from "./server.js";
+import { appIconPng, createMcpServer, vaultHtml, widgetHtml } from "./server.js";
 
 const config = loadConfig();
 const context = new AppContext(config);
@@ -61,6 +61,7 @@ const httpServer = createServer(async (req, res) => {
       version: "0.1.0",
       uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
       demoMode: config.demoMode,
+      walletMode: config.walletMode,
       database: "ok",
       blockchainAdapter: context.adapter.kind
     }));
@@ -88,7 +89,7 @@ const httpServer = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && (url.pathname === "/preview" || url.pathname === "/vault")) {
-    sendHtml(res, widgetHtml(), url.pathname === "/vault");
+    sendHtml(res, url.pathname === "/vault" ? vaultHtml() : widgetHtml(), url.pathname === "/vault");
     return;
   }
 
