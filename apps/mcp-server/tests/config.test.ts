@@ -17,4 +17,10 @@ describe("deployment config", () => {
     expect(config.publicUrl).toBe("https://wallet.aifinpay.com/mcp");
     expect(config.widgetDomain).toBe("https://wallet.aifinpay.com");
   });
+
+  it("enables Polygon mainnet mode explicitly", () => {
+    const config = loadConfig({ AIFINPAY_WALLET_MODE: "mainnet", POLYGON_RPC_URLS: "https://one.example, https://two.example" });
+    expect(config.walletMode).toBe("mainnet");
+    expect(config.polygonRpcUrls).toEqual(["https://one.example", "https://two.example"]);
+  });
 });
