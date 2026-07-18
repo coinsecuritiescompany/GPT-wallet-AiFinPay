@@ -6,10 +6,7 @@ button { cursor:pointer; }
 .card { width:100%; max-width:620px; margin:0 auto; padding:22px; background:#fff; border:1px solid #e5ebf3; border-radius:24px; box-shadow:0 20px 60px rgba(15,45,90,.10); overflow:hidden; }
 header { display:flex; align-items:center; justify-content:space-between; padding-bottom:18px; border-bottom:1px solid var(--line); }
 .brand { display:flex; align-items:center; gap:10px; font-size:18px; font-weight:800; letter-spacing:-.03em; }
-.logo { position:relative; width:32px; height:32px; display:grid; place-items:center; border-radius:10px; background:linear-gradient(145deg,#0f76ff,#1749da); box-shadow:0 6px 14px rgba(23,104,255,.25); }
-.logo i { position:absolute; display:block; width:16px; height:4px; border-radius:4px; background:#fff; transform:rotate(-35deg); }
-.logo i:first-child { transform:translateY(-6px) rotate(-35deg); width:11px; }
-.logo i:last-child { transform:translateY(6px) rotate(-35deg); width:11px; }
+.logo { width:32px; height:32px; display:block; border-radius:10px; object-fit:cover; box-shadow:0 6px 14px rgba(45,124,205,.22); }
 .header-right { display:flex; align-items:center; gap:8px; }
 .demo-badge { color:#075fd5; background:#eaf2ff; border:1px solid #cfe1ff; padding:5px 8px; border-radius:999px; font-size:10px; font-weight:800; letter-spacing:.08em; }
 .header-label { color:var(--muted); font-size:12px; }
