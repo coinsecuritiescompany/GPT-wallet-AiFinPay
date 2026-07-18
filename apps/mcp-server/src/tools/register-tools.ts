@@ -1,9 +1,10 @@
 import { evaluatePolicy } from "@aifinpay/aifinpay-adapter";
+import { createHash, randomBytes } from "node:crypto";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  AppError, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkSchema, safeError, tokenSchema,
+  AppError, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkSchema, safeError, tokenSchema,
   type PaymentIntent
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
@@ -62,6 +63,40 @@ const policyDraftSchema = {
 };
 
 export function registerTools(server: McpServer, ctx: AppContext): void {
+  registerAppTool(server, "list_supported_mainnets", {
+    title: "List supported AiFinPay mainnets",
+    description: "Use this when the user asks which mainnet blockchains their AiFinPay Wallet supports and which networks are currently enabled for signing.",
+    inputSchema: {}, annotations: readOnly, _meta: {}
+  }, async () => data("AiFinPay supports addresses on 12 mainnet networks. Signing is enabled gradually after contract and treasury verification.", { view: "networks", networks: MAINNET_NETWORKS }));
+
+  registerAppTool(server, "create_wallet_pairing", {
+    title: "Create secure wallet connection",
+    description: "Use this when the user wants to create or connect their non-custodial AiFinPay Wallet. Returns a short-lived secure Vault URL; it never returns private keys or recovery words.",
+    inputSchema: {}, annotations: write, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI }
+  }, async () => {
+    try {
+      const user = ctx.auth.resolve();
+      const token = randomBytes(24).toString("base64url");
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+      ctx.store.createWalletPairing(tokenHash, user.userId, expiresAt);
+      const origin = ctx.config.widgetDomain.replace(/\/$/, "");
+      return rendered("Secure AiFinPay Vault connection created. Open the Vault to create or restore the wallet.", { view: "wallet-connect", pairingUrl: `${origin}/vault?pair=${token}`, expiresAt });
+    } catch (error) { return failure(error); }
+  });
+
+  registerAppTool(server, "get_wallet_connection", {
+    title: "Get wallet connection status",
+    description: "Use this to check whether the user's non-custodial AiFinPay Vault is connected. Only public blockchain addresses are returned.",
+    inputSchema: {}, annotations: readOnly, _meta: {}
+  }, async () => {
+    try {
+      const user = ctx.auth.resolve();
+      const connection = ctx.store.getWalletConnection(user.userId);
+      return data(connection ? "AiFinPay Vault is connected." : "No AiFinPay Vault is connected yet.", { view: connection ? "wallet-connected" : "not-connected", connection });
+    } catch (error) { return failure(error); }
+  });
+
   registerAppTool(server, "get_wallet_summary", {
     title: "Get AiFinPay wallet summary",
     description: "Use this when the user wants to view their AiFinPay wallet balance, network, recent transaction activity, and active agent limits.",
