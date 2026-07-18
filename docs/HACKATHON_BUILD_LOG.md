@@ -33,10 +33,10 @@ See `docs/LIMITATIONS.md`. Main gaps are production OAuth/signing/RPC, hosted UR
 
 ### Evidence placeholders
 
-- `c4608d0` — repository and OpenAI docs audit
-- `bf47777` — secure MCP server, policy engine and demo ledger
-- `b42edc3` — interactive React wallet widget
-- `e4435d5` — tests, deployment and submission documentation
+- [`b38755a`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/b38755a5700b6c16026646ab1f0e4f3c653d82f0) — repository audit
+- [`9eaa660`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/9eaa6606d0a370be7a80fb96625c8130de6ad293) — secure MCP server, policy engine and demo ledger
+- [`1bb7d89`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/1bb7d897cbb47a7d3abfabc596409eb952960a7d) — interactive React wallet widget
+- [`6c3bcf5`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/6c3bcf520757a5e952b243a2551752a3f9c885d1) — tests, deployment and submission documentation
 - Codex session reference: `TBD_BY_SUBMITTER`
 - Deployment URL: `TBD`
 - Video URL: `TBD`
