@@ -76,6 +76,8 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   }, async () => {
     try {
       const user = ctx.auth.resolve();
+      const connection = ctx.store.getWalletConnection(user.userId);
+      if (connection) return rendered("AiFinPay Vault is already connected.", { view: "wallet-connected", connection });
       const token = randomBytes(24).toString("base64url");
       const tokenHash = createHash("sha256").update(token).digest("hex");
       const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
@@ -106,7 +108,8 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
       const user = ctx.auth.resolve();
       const summary = await ctx.adapter.getWalletSummary(user.userId, network);
       summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((policy) => policy.enabled);
-      return data("AiFinPay wallet summary loaded.", { view: "wallet", summary: { ...summary, address: undefined } });
+      const connection = ctx.store.getWalletConnection(user.userId);
+      return data("AiFinPay wallet summary loaded.", { view: "wallet", summary: { ...summary, address: undefined }, connection });
     } catch (error) { return failure(error); }
   });
 
@@ -243,7 +246,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     description: "Use this after wallet data is requested to render the interactive AiFinPay wallet widget inside ChatGPT.",
     inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI }
   }, async ({ network }) => {
-    try { const user = ctx.auth.resolve(); const summary = await ctx.adapter.getWalletSummary(user.userId, network); summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((p) => p.enabled); return rendered("AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined } }); }
+    try { const user = ctx.auth.resolve(); const summary = await ctx.adapter.getWalletSummary(user.userId, network); summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((p) => p.enabled); const connection = ctx.store.getWalletConnection(user.userId); return rendered("AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection }); }
     catch (error) { return failure(error); }
   });
 
