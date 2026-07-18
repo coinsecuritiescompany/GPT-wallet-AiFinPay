@@ -9,7 +9,7 @@ import {
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
 
-export const WIDGET_URI = "ui://aifinpay/wallet-v3.html";
+export const WIDGET_URI = "ui://aifinpay/wallet-v4.html";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
