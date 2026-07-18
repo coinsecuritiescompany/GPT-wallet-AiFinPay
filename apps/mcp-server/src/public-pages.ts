@@ -29,17 +29,17 @@ function page(title: string, description: string, content: string): string {
     footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid #173128; color: #7d9b90; font-size: 13px; }
   </style>
 </head>
-<body><main>${content}<footer>AiFinPay Wallet for ChatGPT · demo/testnet only · <a href="/privacy">Privacy</a> · <a href="/support">Support</a></footer></main></body>
+<body><main>${content}<footer>AiFinPay Wallet for ChatGPT · Polygon mainnet read-only beta · <a href="/privacy">Privacy</a> · <a href="/support">Support</a></footer></main></body>
 </html>`;
 }
 
 export function landingPage(mcpUrl: string): string {
-  return page("AiFinPay Wallet for ChatGPT", "Programmable demo wallet and approval layer for users and AI agents.", `
+  return page("AiFinPay Wallet for ChatGPT", "Non-custodial Polygon mainnet wallet interface for users and AI agents.", `
     <img class="app-logo" src="/icon.png" alt="AiFinPay logo" width="72" height="72">
-    <span class="badge">MCP App · demo/testnet</span>
+    <span class="badge">MCP App · Polygon mainnet beta</span>
     <h1>Wallet controls, inside the conversation.</h1>
     <p>AiFinPay gives ChatGPT focused tools for balances, transfer previews, explicit approvals, agent spending limits, receipts and a tamper-evident audit trail.</p>
-    <div class="notice"><strong>No real funds.</strong> This public deployment uses a deterministic demo ledger and does not request, store or expose seed phrases or private keys.</div>
+    <div class="notice"><strong>Live mainnet data.</strong> Balances are read from Polygon RPC using the connected public address. Mainnet broadcasting remains locked until personal authentication and local Vault signing are enabled.</div>
     <div class="actions">
       <a class="button" href="/preview">Open widget preview</a>
       <a class="button secondary" href="${REPOSITORY_URL}">View source</a>
@@ -48,32 +48,32 @@ export function landingPage(mcpUrl: string): string {
     <p>Enable Developer mode, create a developer-mode app and use this MCP endpoint:</p>
     <p><code>${mcpUrl}</code></p>
     <h2>Safety boundary</h2>
-    <p>Transfers follow a prepare → confirm → execute state machine. Agent requests are evaluated by deterministic policies; the model cannot override blocked or approval-required outcomes.</p>
+    <p>Recovery phrases and private keys stay inside the user's encrypted local Vault. The server receives public addresses only.</p>
   `);
 }
 
 export function privacyPage(): string {
-  return page("Privacy · AiFinPay Wallet", "Privacy notice for the AiFinPay Wallet public demo.", `
+  return page("Privacy · AiFinPay Wallet", "Privacy notice for the AiFinPay Wallet mainnet read-only beta.", `
     <span class="badge">Effective July 18, 2026</span>
     <h1>Privacy notice</h1>
-    <p>This notice applies to the public AiFinPay Wallet for ChatGPT demo. It is a technical demonstration, not a production custody service.</p>
+    <p>This notice applies to the public AiFinPay Wallet for ChatGPT beta. It is non-custodial and is not a custody or exchange service.</p>
     <h2>Data processed</h2>
-    <p>The demo may process generated wallet identifiers, token balances, recipient addresses, transfer amounts, payment-intent status, agent policies, idempotency identifiers and audit events needed to perform the requested demo flows.</p>
+    <p>The beta processes public wallet addresses and publicly available Polygon balance data, plus pairing and audit metadata needed to operate the requested flow.</p>
     <h2>Data we do not request</h2>
     <p>Do not provide real private keys, seed phrases, passwords or personal financial information. The app has no UI or tool input for seed phrases or private keys.</p>
     <h2>Purpose and storage</h2>
-    <p>Data is used only to operate, secure and debug the demo. State is stored in the deployment's SQLite database and may be reset at any time. Server logs are designed to exclude confirmation tokens and secrets.</p>
+    <p>Data is used only to operate, secure and debug the beta. Pairing state is currently temporary and may reset when the preview deployment restarts. Server logs are designed to exclude pairing tokens and secrets.</p>
     <h2>Sharing and sale</h2>
-    <p>The demo does not sell personal data. Infrastructure providers may process limited technical data to host and protect the service. No real blockchain transaction is submitted.</p>
+    <p>AiFinPay does not sell personal data. Infrastructure and RPC providers may process limited technical data to host the service and read public blockchain state. This deployment does not submit mainnet transactions.</p>
     <h2>Your choices</h2>
-    <p>Do not use the demo if you do not want its inputs stored temporarily. To request deletion of demo data or report a privacy issue, open a private-data-free support ticket and ask for a secure follow-up channel.</p>
+    <p>To request deletion of temporary pairing data or report a privacy issue, open a private-data-free support ticket and ask for a secure follow-up channel.</p>
     <p><a class="button secondary" href="${SUPPORT_URL}">Contact support</a></p>
   `);
 }
 
 export function supportPage(): string {
-  return page("Support · AiFinPay Wallet", "Support information for the AiFinPay Wallet public demo.", `
-    <span class="badge">Open-source demo support</span>
+  return page("Support · AiFinPay Wallet", "Support information for the AiFinPay Wallet public beta.", `
+    <span class="badge">Open-source beta support</span>
     <h1>Support</h1>
     <p>For bugs, connection failures or security concerns, use the repository issue tracker. Include the route, approximate time and a redacted error message.</p>
     <div class="notice"><strong>Never post</strong> seed phrases, private keys, API keys, confirmation tokens, access tokens or real personal financial data.</div>
@@ -81,7 +81,7 @@ export function supportPage(): string {
       <a class="button" href="${SUPPORT_URL}">Open GitHub Issues</a>
       <a class="button secondary" href="/health">Check service health</a>
     </div>
-    <h2>Known demo limitations</h2>
-    <p>The ledger is deterministic, explorer links are illustrative, OAuth is not enabled and state may be reset by a redeploy. Production signing and real-chain submission are intentionally disabled.</p>
+    <h2>Known beta limitations</h2>
+    <p>Polygon balances are live and read-only. OAuth, durable pairing storage, indexed transaction history, local mainnet signing and real-chain submission are not yet enabled.</p>
   `);
 }
