@@ -25,6 +25,12 @@ export class Store {
         decision TEXT NOT NULL, reason_code TEXT NOT NULL, metadata_hash TEXT NOT NULL,
         previous_hash TEXT NOT NULL, current_hash TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS wallet_pairings (
+        token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS wallet_connections (
+        user_id TEXT PRIMARY KEY, addresses_json TEXT NOT NULL, connected_at TEXT NOT NULL
+      );
     `);
   }
 
@@ -86,5 +92,32 @@ export class Store {
       reasonCode: row.reason_code, metadataHash: row.metadata_hash, previousHash: row.previous_hash, currentHash: row.current_hash
     })) as AuditEvent[];
   }
-}
 
+  createWalletPairing(tokenHash: string, userId: string, expiresAt: string): void {
+    this.db.prepare("DELETE FROM wallet_pairings WHERE user_id=? OR expires_at<=?").run(userId, new Date().toISOString());
+    this.db.prepare("INSERT INTO wallet_pairings (token_hash,user_id,expires_at,consumed) VALUES (?,?,?,0)").run(tokenHash, userId, expiresAt);
+  }
+
+  completeWalletPairing(tokenHash: string, addresses: Record<string, string>): boolean {
+    const now = new Date().toISOString();
+    const row = this.db.prepare("SELECT user_id,expires_at,consumed FROM wallet_pairings WHERE token_hash=?").get(tokenHash) as { user_id: string; expires_at: string; consumed: number } | undefined;
+    if (!row || row.consumed || row.expires_at <= now) return false;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("UPDATE wallet_pairings SET consumed=1 WHERE token_hash=? AND consumed=0").run(tokenHash);
+      this.db.prepare(`INSERT INTO wallet_connections (user_id,addresses_json,connected_at) VALUES (?,?,?)
+        ON CONFLICT(user_id) DO UPDATE SET addresses_json=excluded.addresses_json,connected_at=excluded.connected_at`)
+        .run(row.user_id, JSON.stringify(addresses), now);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  getWalletConnection(userId: string): { addresses: Record<string, string>; connectedAt: string } | null {
+    const row = this.db.prepare("SELECT addresses_json,connected_at FROM wallet_connections WHERE user_id=?").get(userId) as { addresses_json: string; connected_at: string } | undefined;
+    return row ? { addresses: JSON.parse(row.addresses_json) as Record<string, string>, connectedAt: row.connected_at } : null;
+  }
+}
