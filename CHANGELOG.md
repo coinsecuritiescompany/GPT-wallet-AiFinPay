@@ -15,6 +15,10 @@ All notable public changes are documented here. The project follows the principl
 - Documentation now reflects the local non-custodial Vault and live read-only Polygon mainnet balances.
 - Mainnet is the default wallet-read mode; demo mode is explicit.
 
+### Fixed
+
+- Clean CI runners now build internal workspace packages before TypeScript validation.
+
 ## [0.1.0] - 2026-07-18
 
 ### Added
