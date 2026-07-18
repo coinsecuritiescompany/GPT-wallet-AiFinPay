@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+data/*.sqlite
+data/*.sqlite-*
+.DS_Store
+coverage/
+*.tsbuildinfo
+upload/

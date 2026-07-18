@@ -1,0 +1,34 @@
+import { DemoLedgerAdapter, DEMO_POLICY } from "@aifinpay/demo-ledger";
+import type { WalletAdapter } from "@aifinpay/aifinpay-adapter";
+import { DEMO_USER_ID } from "@aifinpay/shared";
+import { AuditService } from "./audit/audit-service.js";
+import { SessionAuth } from "./auth/session.js";
+import type { AppConfig } from "./config.js";
+import { ConfirmationService } from "./services/confirmation-service.js";
+import { PaymentService } from "./services/payment-service.js";
+import { PolicyService } from "./services/policy-service.js";
+import { Store } from "./storage/store.js";
+
+export class AppContext {
+  readonly store: Store;
+  readonly auth: SessionAuth;
+  readonly audit: AuditService;
+  readonly confirmations: ConfirmationService;
+  readonly adapter: WalletAdapter;
+  readonly payments: PaymentService;
+  readonly policies: PolicyService;
+
+  constructor(readonly config: AppConfig) {
+    this.store = new Store(config.databaseUrl);
+    this.auth = new SessionAuth(config.demoMode);
+    this.audit = new AuditService(this.store);
+    this.confirmations = new ConfirmationService(config.sessionSecret);
+    this.adapter = new DemoLedgerAdapter();
+    this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter);
+    this.policies = new PolicyService(this.store, this.audit, this.confirmations);
+    if (config.demoMode && this.store.listPolicies(DEMO_USER_ID).length === 0) this.store.savePolicy(DEMO_POLICY);
+  }
+
+  close(): void { this.store.close(); }
+}
+
