@@ -43,4 +43,16 @@ describe("AiFinPay wallet widget", () => {
     expect(call).toHaveBeenCalledWith("get_wallet_connection", {}, { emit: false });
     call.mockRestore();
   });
+
+  it("renders honest Polygon mainnet data and the receive address", () => {
+    const connection = { addresses: { evm: "0x1111111111111111111111111111111111111111", solana: "5L7xB9arfakeaddress111111111111111", near: "a".repeat(64), aptos: `0x${"b".repeat(64)}` }, connectedAt: "2026-07-18T10:00:00.000Z" };
+    const summary = { ...browserDemoData.summary!, mode: "MAINNET" as const, selectedNetwork: "POLYGON" as const, balances: [{ token: "USDC" as const, raw: "0", formatted: "0", decimals: 6 }, { token: "POL" as const, raw: "0", formatted: "0", decimals: 18 }], latestTransactions: [] };
+    render(<App initialData={{ view: "wallet", summary, connection }} />);
+    expect(screen.getByText("MAINNET")).toBeInTheDocument();
+    expect(screen.getByText("Polygon Mainnet")).toBeInTheDocument();
+    expect(screen.getByText("Live RPC balance")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Receive"));
+    expect(screen.getByText("Receive assets")).toBeInTheDocument();
+    expect(screen.getByText("Polygon & EVM networks")).toBeInTheDocument();
+  });
 });
