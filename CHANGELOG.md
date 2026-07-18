@@ -9,6 +9,7 @@ All notable public changes are documented here. The project follows the principl
 - Professional public-repository governance, legal, privacy, security and contribution documentation.
 - Public/private implementation boundary and automated public-safety scan.
 - OpenAI Build Week compliance checklist and ChatGPT app submission metadata.
+- Public registry for 12 owner-declared mainnet contract/program deployments and RPC endpoints.
 
 ### Changed
 

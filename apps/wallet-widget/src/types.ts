@@ -1,4 +1,4 @@
-import type { AgentPolicy, AuditEvent, PaymentIntent, TransactionRecord, WalletSummary } from "@aifinpay/shared";
+import type { AgentPolicy, AuditEvent, MainnetNetwork, PaymentIntent, TransactionRecord, WalletSummary } from "@aifinpay/shared";
 
 export type WalletView = "loading" | "wallet" | "balance" | "transfer-form" | "transfer-preview" | "blocked" |
   "agent-approval" | "policy-editor" | "policy-preview" | "policy" | "policies" | "history" | "audit" | "receipt" |
@@ -24,7 +24,7 @@ export interface WidgetData {
   error?: { code: string; message: string };
   pairingUrl?: string;
   connection?: { addresses: Record<string, string>; connectedAt: string } | null;
-  networks?: Record<string, { label: string; family: string; chainId: number | null; nativeToken: string; explorerBaseUrl: string; mode: string; enabledForSigning: boolean }>;
+  networks?: Record<string, MainnetNetwork>;
 }
 
 declare global {
