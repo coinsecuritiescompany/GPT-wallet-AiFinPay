@@ -18,7 +18,7 @@
     "dev": "npm run build -w @aifinpay/wallet-widget && npm run dev -w @aifinpay/mcp-server",
     "build:packages": "npm run build -w @aifinpay/shared && npm run build -w @aifinpay/aifinpay-adapter && npm run build -w @aifinpay/demo-ledger",
     "build": "npm run build:packages && npm run build -w @aifinpay/wallet-widget && npm run build -w @aifinpay/mcp-server",
-    "typecheck": "npm run typecheck -ws --if-present",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "lint": "eslint . --max-warnings=0",
     "test": "npm run build:packages && vitest run",
     "test:coverage": "npm run build:packages && vitest run --coverage",
