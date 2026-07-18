@@ -15,6 +15,15 @@ export function widgetHtml(): string {
   return path ? readFileSync(path, "utf8") : "<!doctype html><html><body><main>Build the wallet widget before starting the MCP server.</main></body></html>";
 }
 
+export function vaultHtml(): string {
+  const candidates = [
+    resolve(process.cwd(), "apps/wallet-widget/dist-vault/vault.html"),
+    resolve(fileURLToPath(new URL("../../../wallet-widget/dist-vault/vault.html", import.meta.url)))
+  ];
+  const path = candidates.find(existsSync);
+  return path ? readFileSync(path, "utf8") : "<!doctype html><html><body><main>Build the secure Vault before starting the MCP server.</main></body></html>";
+}
+
 export function appIconPng(): Buffer | undefined {
   const candidates = [
     resolve(process.cwd(), "apps/mcp-server/assets/aifinpay-logo.png"),
@@ -30,11 +39,11 @@ export function createMcpServer(ctx: AppContext): McpServer {
     name: "aifinpay-wallet",
     title: "AiFinPay Wallet",
     version: "0.1.0",
-    description: "Programmable demo wallet and approval layer for users and autonomous AI agents. Demo/testnet only.",
+    description: "Non-custodial AiFinPay wallet interface for live Polygon mainnet balances, receiving, policies, and locally approved agent payments.",
     websiteUrl: appOrigin,
     icons: [{ src: `${appOrigin}/icon.png`, mimeType: "image/png", sizes: ["256x256"] }]
   }, {
-    instructions: "AiFinPay Wallet is demo/testnet-only. Always prepare transfers before confirmation. Never request or expose private keys or seed phrases. The policy engine is authoritative for agent payments."
+    instructions: "Never request or expose private keys or recovery phrases. Polygon mainnet balances are read from live RPC. Mainnet broadcasting remains locked until per-user authentication and local Vault signing are enabled."
   });
   registerAppResource(server, "aifinpay-wallet-widget", WIDGET_URI, {}, async () => ({
     contents: [{
@@ -47,7 +56,7 @@ export function createMcpServer(ctx: AppContext): McpServer {
           csp: { connectDomains: [], resourceDomains: [] },
           ...(ctx.config.widgetDomain.startsWith("https://") ? { domain: ctx.config.widgetDomain } : {})
         },
-        "openai/widgetDescription": "Interactive AiFinPay demo wallet for balances, transfer approval, agent limits, history, and audit receipts.",
+        "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing the connected user's live Polygon mainnet balances and receive addresses.",
         "openai/widgetPrefersBorder": true,
         "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: ["https://amoy.polygonscan.com"] }
       }
