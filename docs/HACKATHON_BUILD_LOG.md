@@ -25,14 +25,18 @@ No pre-existing production files were modified.
 
 Amount parsing/formatting, address/schema behavior through tools, policy decisions, state transitions, idempotency, confirmation token enforcement, ownership boundary, audit chain tampering, MCP registration and widget rendering/actions.
 
+Final local verification: ESLint passed, TypeScript checks passed in all five workspaces, 29 automated tests passed, the single-file React production bundle built, the MCP server built, `/health` returned `ok`, and an MCP `initialize` request completed successfully.
+
 ### Current limitations
 
 See `docs/LIMITATIONS.md`. Main gaps are production OAuth/signing/RPC, hosted URL, final ChatGPT screenshots and demo video.
 
 ### Evidence placeholders
 
-- Commit links: populate after push
+- `c4608d0` — repository and OpenAI docs audit
+- `bf47777` — secure MCP server, policy engine and demo ledger
+- `b42edc3` — interactive React wallet widget
+- `e4435d5` — tests, deployment and submission documentation
 - Codex session reference: `TBD_BY_SUBMITTER`
 - Deployment URL: `TBD`
 - Video URL: `TBD`
-
