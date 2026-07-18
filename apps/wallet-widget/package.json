@@ -8,6 +8,20 @@
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": { "@aifinpay/shared": "*", "react": "^19.1.1", "react-dom": "^19.1.1" },
-  "devDependencies": { "@vitejs/plugin-react": "^6.0.3", "vite": "^8.1.5", "vite-plugin-singlefile": "^2.3.3" }
+  "dependencies": {
+    "@aifinpay/shared": "*",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "@scure/bip32": "^1.7.0",
+    "@scure/bip39": "^1.6.0",
+    "bs58": "^6.0.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "viem": "^2.55.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.5",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
 }
