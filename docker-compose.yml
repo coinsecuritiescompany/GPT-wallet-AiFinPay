@@ -1,0 +1,14 @@
+services:
+  aifinpay-wallet:
+    build: .
+    ports: ["8787:8787"]
+    environment:
+      AIFINPAY_DEMO_MODE: "true"
+      DATABASE_URL: /app/data/aifinpay-demo.sqlite
+      SESSION_SECRET: ${SESSION_SECRET:-demo-only-session-secret-change-before-production}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8787/mcp}
+      WIDGET_PUBLIC_URL: ${WIDGET_PUBLIC_URL:-http://localhost:8787}
+    volumes: ["aifinpay-data:/app/data"]
+volumes:
+  aifinpay-data:
+
