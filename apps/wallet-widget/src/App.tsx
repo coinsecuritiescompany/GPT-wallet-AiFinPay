@@ -3,13 +3,14 @@ import type { AgentPolicy, PaymentIntent, TransactionRecord } from "@aifinpay/sh
 import { bridge } from "./bridge/mcp-bridge.js";
 import { browserDemoData } from "./demo-data.js";
 import type { WidgetData } from "./types.js";
+import logoUrl from "../../mcp-server/assets/aifinpay-logo.png";
 import "./styles.css";
 
 const short = (value = "") => value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 
 function Logo() {
-  return <div className="brand"><span className="logo" aria-hidden="true"><i /><i /><i /></span><span>AiFinPay</span></div>;
+  return <div className="brand"><img className="logo" src={logoUrl} alt="" aria-hidden="true" /><span>AiFinPay</span></div>;
 }
 
 function Header({ label = "Wallet" }: { label?: string }) {
