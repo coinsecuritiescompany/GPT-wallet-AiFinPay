@@ -7,6 +7,7 @@ import type { AppConfig } from "./config.js";
 import { ConfirmationService } from "./services/confirmation-service.js";
 import { PaymentService } from "./services/payment-service.js";
 import { PolicyService } from "./services/policy-service.js";
+import { PolygonMainnetAdapter } from "./services/polygon-mainnet-adapter.js";
 import { Store } from "./storage/store.js";
 
 export class AppContext {
@@ -23,12 +24,13 @@ export class AppContext {
     this.auth = new SessionAuth(config.demoMode);
     this.audit = new AuditService(this.store);
     this.confirmations = new ConfirmationService(config.sessionSecret);
-    this.adapter = new DemoLedgerAdapter();
+    this.adapter = config.walletMode === "mainnet"
+      ? new PolygonMainnetAdapter(this.store, config.polygonRpcUrls)
+      : new DemoLedgerAdapter();
     this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter);
     this.policies = new PolicyService(this.store, this.audit, this.confirmations);
-    if (config.demoMode && this.store.listPolicies(DEMO_USER_ID).length === 0) this.store.savePolicy(DEMO_POLICY);
+    if (config.walletMode === "demo" && config.demoMode && this.store.listPolicies(DEMO_USER_ID).length === 0) this.store.savePolicy(DEMO_POLICY);
   }
 
   close(): void { this.store.close(); }
 }
-
