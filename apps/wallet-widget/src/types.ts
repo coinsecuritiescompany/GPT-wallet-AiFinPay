@@ -2,7 +2,8 @@ import type { AgentPolicy, AuditEvent, PaymentIntent, TransactionRecord, WalletS
 
 export type WalletView = "loading" | "wallet" | "balance" | "transfer-form" | "transfer-preview" | "blocked" |
   "agent-approval" | "policy-editor" | "policy-preview" | "policy" | "policies" | "history" | "audit" | "receipt" |
-  "transaction-status" | "cancelled" | "error" | "not-connected" | "wallet-connect" | "wallet-connected" | "networks";
+  "transaction-status" | "cancelled" | "error" | "not-connected" | "wallet-connect" | "wallet-connected" | "networks" |
+  "receive" | "mainnet-signing-locked";
 
 export interface WidgetData {
   view: WalletView;
