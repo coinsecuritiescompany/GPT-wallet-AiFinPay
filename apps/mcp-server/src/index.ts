@@ -1,4 +1,5 @@
-import { createServer, type ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { loadConfig } from "./config.js";
 import { AppContext } from "./context.js";
@@ -11,15 +12,25 @@ const startedAt = Date.now();
 
 const mcpMethods = new Set(["POST", "GET", "DELETE"]);
 
-function sendHtml(res: ServerResponse, html: string): void {
+function sendHtml(res: ServerResponse, html: string, allowSelfConnect = false): void {
   res.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src ${allowSelfConnect ? "'self'" : "'none'"}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
   }).end(html);
+}
+
+function sendJson(res: ServerResponse, status: number, body: Record<string, unknown>): void {
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" }).end(JSON.stringify(body));
+}
+
+async function readJson(req: IncomingMessage, maxBytes = 16_384): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of req) { const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += data.length; if (size > maxBytes) throw new Error("REQUEST_TOO_LARGE"); chunks.push(data); }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
 }
 
 const httpServer = createServer(async (req, res) => {
@@ -76,8 +87,28 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET" && url.pathname === "/preview") {
-    sendHtml(res, widgetHtml());
+  if (req.method === "GET" && (url.pathname === "/preview" || url.pathname === "/vault")) {
+    sendHtml(res, widgetHtml(), url.pathname === "/vault");
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/vault/pair") {
+    try {
+      const body = await readJson(req);
+      const token = typeof body.token === "string" ? body.token : "";
+      const addresses = body.addresses && typeof body.addresses === "object" && !Array.isArray(body.addresses) ? body.addresses as Record<string, unknown> : null;
+      const evm = addresses && typeof addresses.evm === "string" ? addresses.evm : "";
+      const solana = addresses && typeof addresses.solana === "string" ? addresses.solana : "";
+      const near = addresses && typeof addresses.near === "string" ? addresses.near : "";
+      const aptos = addresses && typeof addresses.aptos === "string" ? addresses.aptos : "";
+      if (!/^[A-Za-z0-9_-]{32}$/.test(token) || !/^0x[a-fA-F0-9]{40}$/.test(evm) || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solana) || !/^[a-f0-9]{64}$/.test(near) || !/^0x[a-f0-9]{64}$/.test(aptos)) {
+        sendJson(res, 400, { error: "INVALID_PAIRING_REQUEST" }); return;
+      }
+      const ok = context.store.completeWalletPairing(createHash("sha256").update(token).digest("hex"), { evm, solana, near, aptos });
+      sendJson(res, ok ? 200 : 410, ok ? { connected: true } : { error: "PAIRING_EXPIRED_OR_USED" });
+    } catch (error) {
+      sendJson(res, error instanceof Error && error.message === "REQUEST_TOO_LARGE" ? 413 : 400, { error: "INVALID_JSON" });
+    }
     return;
   }
 
