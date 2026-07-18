@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 import { bridge } from "./bridge/mcp-bridge.js";
@@ -32,5 +32,15 @@ describe("AiFinPay wallet widget", () => {
     const call = vi.spyOn(bridge, "callTool").mockResolvedValue({ view: "policies", policies: [] });
     render(<App initialData={browserDemoData} />); fireEvent.click(screen.getByText("Agent limits"));
     expect(call).toHaveBeenCalledWith("list_agent_policies", {}); call.mockRestore();
+  });
+
+  it("updates the pairing widget when the external vault connects", async () => {
+    const connection = { addresses: { evm: "0x1111111111111111111111111111111111111111", solana: "5L7xB9arfakeaddress111111111111111", near: "a".repeat(64), aptos: `0x${"b".repeat(64)}` }, connectedAt: "2026-07-18T10:00:00.000Z" };
+    const call = vi.spyOn(bridge, "callTool").mockResolvedValue({ view: "wallet-connected", connection });
+    render(<App initialData={{ view: "wallet-connect", pairingUrl: "https://wallet.example/vault?pair=test", expiresAt: "2026-07-18T10:10:00.000Z" }} />);
+    await waitFor(() => expect(screen.getByText("AiFinPay Vault connected")).toBeInTheDocument());
+    expect(screen.getByText("WALLET CREATED")).toBeInTheDocument();
+    expect(call).toHaveBeenCalledWith("get_wallet_connection", {}, { emit: false });
+    call.mockRestore();
   });
 });
