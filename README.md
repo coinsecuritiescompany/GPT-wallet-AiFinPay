@@ -32,8 +32,8 @@ The hosted instance uses a free preview environment and can cold-start after ina
 |---|---|---|
 | Local 12/15-word wallet creation and restore | Beta | Recovery phrase stays in the browser Vault |
 | Local AES-256-GCM encrypted Vault | Beta | Password and ciphertext remain on the device |
-| EVM, Solana, NEAR and Aptos address derivation | Beta | Only public addresses are paired with ChatGPT |
-| Idempotent Vault pairing and automatic dashboard opening | Beta | Repeated completion accepts only the same public addresses |
+| EVM, Solana, NEAR and Aptos address derivation | Beta | OAuth tokens contain public addresses only |
+| One-time ChatGPT connection and automatic dashboard opening | Beta | OAuth 2.1 authorization code flow with PKCE |
 | 12-mainnet selector | Live UI | Polygon balance is live; the other network balance adapters are staged |
 | Public mainnet deployment registry | Declared, verification pending | 12 contract/program identifiers; signing remains disabled |
 | Polygon PoS POL and native USDC balances | Live, read-only | Read from public Polygon RPC endpoints |
@@ -61,10 +61,11 @@ flowchart TD
     C --> M["AiFinPay MCP server"]
     M --> P["Policy and intent services"]
     M --> R["Polygon RPC (read-only)"]
-    M --> D[("Temporary pairing and audit store")]
+    M --> A["OAuth 2.1 + PKCE"]
+    M --> D[("Runtime intent and audit store")]
     C --> W["React wallet widget"]
     U --> V["Encrypted local Vault"]
-    V -->|"public addresses only"| M
+    V -->|"one-time consent; public addresses only"| A
     V -. "future local signing" .-> W
 ```
 
@@ -117,8 +118,8 @@ npx @modelcontextprotocol/inspector@latest --server-url http://localhost:8787/mc
 1. Enable Developer Mode in ChatGPT.
 2. Add `https://aifinpay-wallet-chatgpt.onrender.com/mcp` as the MCP server.
 3. Ask: `Open my AiFinPay wallet`.
-4. Open the short-lived Vault link and create or restore a wallet locally.
-5. Pair public addresses, return to ChatGPT and reopen the wallet.
+4. On first use only, choose **Connect**, create or restore the local Vault, and approve sharing its public addresses.
+5. Future `Open my AiFinPay wallet` requests go directly to the dashboard until the app is disconnected in ChatGPT.
 
 Never paste a recovery phrase, private key, Vault password or API credential into ChatGPT, an issue, a screenshot or a tool input. Full instructions: [ChatGPT setup](docs/CHATGPT_SETUP.md).
 
@@ -129,17 +130,17 @@ The checked-in `.env.example` contains placeholders only. Polygon mainnet read-o
 ```dotenv
 AIFINPAY_WALLET_MODE=mainnet
 POLYGON_RPC_URLS=https://polygon.drpc.org,https://polygon.publicnode.com
-AIFINPAY_DEMO_MODE=true
+AIFINPAY_DEMO_MODE=false
 DATABASE_URL=./data/aifinpay-local.sqlite
 SESSION_SECRET=replace-with-at-least-32-random-characters
 ```
 
-`AIFINPAY_DEMO_MODE` currently describes the temporary server-side session mechanism, not the blockchain adapter. Public multi-user production requires OAuth and durable user-scoped storage.
+`AIFINPAY_DEMO_MODE=false` is mandatory for any shared deployment. The blockchain adapter is selected separately with `AIFINPAY_WALLET_MODE`.
 
 ## Security and privacy
 
 - Recovery words are generated or entered only in the Vault page and are encrypted locally.
-- The server accepts only validated public addresses during short-lived pairing.
+- User-specific tools require OAuth 2.1 with PKCE and separate read/write scopes; access and refresh tokens carry validated public addresses only.
 - The MCP tool surface does not accept seed phrases, private keys, passwords or API keys.
 - Mainnet reads use official Polygon chain parameters and the native Polygon USDC contract.
 - Financial values use integer base units rather than floating point.

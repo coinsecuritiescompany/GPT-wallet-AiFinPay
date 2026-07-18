@@ -4,8 +4,8 @@ Roadmap items describe direction, not delivery commitments.
 
 ## Public reference app
 
-- Complete durable, privacy-preserving wallet pairing.
-- Add personal OAuth account linking and strict per-user authorization.
+- Move OAuth refresh-token revocation and account metadata to a durable production identity provider.
+- Add durable user-scoped policy, intent and audit storage.
 - Add output schemas for every MCP tool and submission regression tests.
 - Add indexed Polygon transaction history without leaking private metadata.
 - Improve mobile cold-start behavior and accessibility QA.

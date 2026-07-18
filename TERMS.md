@@ -6,7 +6,7 @@ By using the public AiFinPay Wallet for ChatGPT beta, you acknowledge the follow
 
 ## Beta software
 
-The service is experimental, may be unavailable, may change without notice and can lose temporary pairing or audit state. It is provided for evaluation, development and hackathon judging.
+The service is experimental, may be unavailable, may change without notice and can lose temporary runtime intent, policy or audit state. It is provided for evaluation and controlled testing.
 
 ## No custody or financial service
 

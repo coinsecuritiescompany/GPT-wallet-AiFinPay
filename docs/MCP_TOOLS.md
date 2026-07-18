@@ -5,8 +5,10 @@ The server exposes 19 focused tools. User IDs and wallet IDs are resolved server
 ## Wallet connection and networks
 
 - `list_supported_mainnets()` — lists 12 derived address networks and current signing status.
-- `create_wallet_pairing()` — creates private temporary pairing state and returns a short-lived Vault URL.
-- `get_wallet_connection()` — returns connection status and public addresses only.
+- `create_wallet_pairing()` — compatibility name for the open-wallet action; OAuth links a first-time user and returning users receive the dashboard directly.
+- `get_wallet_connection()` — returns the authenticated wallet status and public addresses only.
+
+User-specific read tools declare `wallet:read`; intent, confirmation and policy mutations declare `wallet:write`. They return an MCP `WWW-Authenticate` challenge when the required token or scope is absent. `list_supported_mainnets` remains public.
 
 ## Read tools
 
@@ -37,7 +39,7 @@ None of these tools changes public internet state in the current implementation.
 - `render_transfer_preview(transferIntentId)`
 - `render_transaction_receipt(transferIntentId)`
 
-Render tools attach `ui://aifinpay/wallet-v3.html`. The widget communicates through the MCP Apps bridge and keeps data-fetching responsibilities on the server.
+Render tools attach `ui://aifinpay/wallet-v8.html`. The widget communicates through the MCP Apps bridge and keeps data-fetching responsibilities on the server.
 
 ## Submission note
 

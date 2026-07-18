@@ -7,6 +7,8 @@ All notable public changes are documented here. The project follows the principl
 ### Added
 
 - Locally bundled, full-color logos for all 12 mainnet networks in the wallet selector.
+- OAuth 2.1 authorization-code flow with PKCE, dynamic client registration and public-address-only access tokens.
+- OAuth security and audience tests, including authorization-code replay rejection.
 - Professional public-repository governance, legal, privacy, security and contribution documentation.
 - Public/private implementation boundary and automated public-safety scan.
 - OpenAI Build Week compliance checklist and ChatGPT app submission metadata.
@@ -14,7 +16,8 @@ All notable public changes are documented here. The project follows the principl
 
 ### Changed
 
-- ChatGPT widget resource bumped to `wallet-v7` so hosts refresh the embedded interface after deployment.
+- ChatGPT widget resource bumped to `wallet-v8` so hosts refresh the OAuth-enabled interface and network logos after deployment.
+- Production deployments now disable the shared demo identity and require a personal OAuth authorization.
 - Documentation now reflects the local non-custodial Vault and live read-only Polygon mainnet balances.
 - Mainnet is the default wallet-read mode; demo mode is explicit.
 
@@ -23,6 +26,7 @@ All notable public changes are documented here. The project follows the principl
 - Clean CI runners now build internal workspace packages before TypeScript validation.
 - The mobile wallet network control now opens a real 12-mainnet selector, switches the displayed public address and preserves the user's selection.
 - Wallet pairing retries are idempotent, successful connections open the dashboard automatically, and the mobile selector is anchored inside the visible widget area.
+- Returning users now open the wallet dashboard directly; the old `Create or connect your wallet` widget is no longer part of the authenticated path.
 
 ## [0.1.0] - 2026-07-18
 

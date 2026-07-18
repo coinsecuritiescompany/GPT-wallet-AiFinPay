@@ -35,12 +35,13 @@ describe("MCP tool registration", () => {
     for (const name of ["confirm_transfer", "cancel_transfer", "revoke_agent_policy"]) {
       expect(tools.tools.find((tool) => tool.name === name)?.annotations).toMatchObject({ destructiveHint: true, openWorldHint: false });
     }
+    expect(tools.tools.find((tool) => tool.name === "render_wallet")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
     const result = await client.callTool({ name: "get_wallet_summary", arguments: {} });
     expect((result.structuredContent as any).summary.balances[0].formatted).toBe("2543.68");
     await client.close(); await server.close();
   });
 
-  it("returns the connected wallet instead of creating another pairing", async () => {
+  it("opens the connected wallet directly instead of creating another pairing", async () => {
     const ctx = new AppContext(config); contexts.push(ctx);
     ctx.store.createWalletPairing("pairing-hash", "demo-user-001", new Date(Date.now() + 60_000).toISOString());
     expect(ctx.store.completeWalletPairing("pairing-hash", { evm: "0x1111111111111111111111111111111111111111", solana: "solana-address", near: "near-address", aptos: "aptos-address" })).toBe("connected");
@@ -49,8 +50,23 @@ describe("MCP tool registration", () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const result = await client.callTool({ name: "create_wallet_pairing", arguments: {} });
-    expect(result.structuredContent).toMatchObject({ view: "wallet-connected", connection: { addresses: { evm: "0x1111111111111111111111111111111111111111" } } });
+    expect(result.structuredContent).toMatchObject({ view: "wallet", connection: { addresses: { evm: "0x1111111111111111111111111111111111111111" } } });
     expect((result.structuredContent as any).pairingUrl).toBeUndefined();
+    await client.close(); await server.close();
+  });
+
+  it("challenges unauthenticated production users with OAuth instead of a shared demo wallet", async () => {
+    const ctx = new AppContext({ ...config, demoMode: false }); contexts.push(ctx);
+    const server = createMcpServer(ctx);
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const result = await client.callTool({ name: "render_wallet", arguments: {} });
+    expect(result.isError).toBe(true);
+    expect(result._meta?.["mcp/www_authenticate"]).toEqual([
+      expect.stringContaining("/.well-known/oauth-protected-resource/mcp")
+    ]);
+    expect(result.structuredContent).toMatchObject({ view: "error", error: { code: "AUTH_REQUIRED" } });
     await client.close(); await server.close();
   });
 });

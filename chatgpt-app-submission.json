@@ -19,9 +19,9 @@
     "create_wallet_pairing": {
       "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
       "justifications": {
-        "read_only_justification": "Creates private short-lived pairing state and can return an existing private connection.",
-        "open_world_justification": "The pairing is private to the app session and does not publish internet-visible content.",
-        "destructive_justification": "Creates expiring state but does not delete data or move funds."
+        "read_only_justification": "Opens the OAuth-linked wallet dashboard and triggers one-time account authorization when required.",
+        "open_world_justification": "Authorization shares validated public wallet addresses with this app only and does not publish content or submit transactions.",
+        "destructive_justification": "Does not delete data, expose recovery material, sign transactions or move funds."
       }
     },
     "get_wallet_connection": {
@@ -167,7 +167,7 @@
       "user_prompt": "Connect a new AiFinPay wallet.",
       "file_attachment_urls": null,
       "tools_triggered": "create_wallet_pairing",
-      "expected_output": "Returns a short-lived Vault connection flow without exposing recovery words or private keys.",
+      "expected_output": "Prompts for one-time OAuth authorization when needed, then opens the wallet dashboard directly without exposing recovery words or private keys.",
       "expected_output_url": null
     },
     {

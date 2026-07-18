@@ -1,7 +1,7 @@
 import { evaluatePolicy } from "@aifinpay/aifinpay-adapter";
-import { createHash, randomBytes } from "node:crypto";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { z } from "zod";
 import {
   AppError, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkSchema, safeError, tokenSchema,
@@ -9,11 +9,17 @@ import {
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
 
-export const WIDGET_URI = "ui://aifinpay/wallet-v7.html";
+export const WIDGET_URI = "ui://aifinpay/wallet-v8.html";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true };
+function oauthMeta(render = false, scope: "wallet:read" | "wallet:write" = "wallet:read"): Record<string, unknown> {
+  return {
+    securitySchemes: [{ type: "oauth2", scopes: [scope] }],
+    ...(render ? { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI } : {})
+  };
+}
 
 function data(message: string, structuredContent: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text: message }], structuredContent };
@@ -23,9 +29,19 @@ function rendered(message: string, structuredContent: Record<string, unknown>) {
   return { ...data(message, structuredContent), _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI } };
 }
 
-function failure(error: unknown) {
+function failure(error: unknown, ctx: AppContext) {
   const safe = safeError(error);
-  return { isError: true, ...data(safe.message, { view: "error", error: safe }) };
+  const challenge = safe.code === "AUTH_REQUIRED"
+    ? { "mcp/www_authenticate": [`Bearer resource_metadata="${new URL("/.well-known/oauth-protected-resource/mcp", ctx.config.widgetDomain).href}", error="invalid_token", error_description="Connect AiFinPay Wallet once to continue"`] }
+    : {};
+  return { isError: true, ...data(safe.message, { view: "error", error: safe }), _meta: challenge };
+}
+
+function resolveUser(ctx: AppContext, extra: { authInfo?: AuthInfo }, requiredScope: "wallet:read" | "wallet:write" = "wallet:read") {
+  if (extra.authInfo && !extra.authInfo.scopes.includes(requiredScope)) throw new AppError("AUTH_REQUIRED", `Reconnect AiFinPay Wallet with ${requiredScope} permission to continue.`, 401);
+  const user = ctx.auth.resolve(extra.authInfo);
+  if (user.addresses) ctx.store.upsertWalletConnection(user.userId, user.addresses);
+  return user;
 }
 
 function publicIntent(intent: PaymentIntent) {
@@ -66,135 +82,132 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "list_supported_mainnets", {
     title: "List supported AiFinPay mainnets",
     description: "Use this when the user asks which mainnet address networks the AiFinPay Vault derives. The result explicitly identifies whether signing is enabled.",
-    inputSchema: {}, annotations: readOnly, _meta: {}
+    inputSchema: {}, annotations: readOnly, _meta: { securitySchemes: [{ type: "noauth" }] }
   }, async () => data("AiFinPay supports addresses on 12 mainnet networks. Signing is enabled gradually after contract and treasury verification.", { view: "networks", networks: MAINNET_NETWORKS }));
 
   registerAppTool(server, "create_wallet_pairing", {
-    title: "Create secure wallet connection",
-    description: "Use this when the user wants to create or connect their non-custodial AiFinPay Wallet. Returns a short-lived secure Vault URL; it never returns private keys or recovery words.",
-    inputSchema: {}, annotations: write, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI }
-  }, async () => {
+    title: "Open or connect AiFinPay Wallet",
+    description: "Use this only when the user asks to open or initially connect their non-custodial AiFinPay Wallet. OAuth performs the one-time connection; returning users go directly to the wallet dashboard.",
+    inputSchema: {}, annotations: write, _meta: oauthMeta(true)
+  }, async (_args, extra) => {
     try {
-      const user = ctx.auth.resolve();
+      const user = resolveUser(ctx, extra);
       const connection = ctx.store.getWalletConnection(user.userId);
-      if (connection) return rendered("AiFinPay Vault is already connected.", { view: "wallet-connected", connection });
-      const token = randomBytes(24).toString("base64url");
-      const tokenHash = createHash("sha256").update(token).digest("hex");
-      const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
-      ctx.store.createWalletPairing(tokenHash, user.userId, expiresAt);
-      const origin = ctx.config.widgetDomain.replace(/\/$/, "");
-      return rendered("Secure AiFinPay Vault connection created. Open the Vault to create or restore the wallet.", { view: "wallet-connect", pairingUrl: `${origin}/vault?pair=${token}`, expiresAt });
-    } catch (error) { return failure(error); }
+      if (!connection) throw new AppError("AUTH_REQUIRED", "Connect AiFinPay Wallet once to continue.", 401);
+      const summary = await ctx.adapter.getWalletSummary(user.userId, "POLYGON");
+      summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((policy) => policy.enabled);
+      return rendered("AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS });
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "get_wallet_connection", {
     title: "Get wallet connection status",
     description: "Use this to check whether the user's non-custodial AiFinPay Vault is connected. Only public blockchain addresses are returned.",
-    inputSchema: {}, annotations: readOnly, _meta: {}
-  }, async () => {
+    inputSchema: {}, annotations: readOnly, _meta: oauthMeta()
+  }, async (_args, extra) => {
     try {
-      const user = ctx.auth.resolve();
+      const user = resolveUser(ctx, extra);
       const connection = ctx.store.getWalletConnection(user.userId);
       return data(connection ? "AiFinPay Vault is connected." : "No AiFinPay Vault is connected yet.", { view: connection ? "wallet-connected" : "not-connected", connection });
-    } catch (error) { return failure(error); }
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "get_wallet_summary", {
     title: "Get AiFinPay wallet summary",
     description: "Use this when the user wants to view their AiFinPay wallet balance, network, recent transaction activity, and active agent limits.",
-    inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: {}
-  }, async ({ network }) => {
+    inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: oauthMeta()
+  }, async ({ network }, extra) => {
     try {
-      const user = ctx.auth.resolve();
+      const user = resolveUser(ctx, extra);
       const selectedNetwork = ctx.config.walletMode === "mainnet" ? "POLYGON" : network;
       const summary = await ctx.adapter.getWalletSummary(user.userId, selectedNetwork);
       summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((policy) => policy.enabled);
       const connection = ctx.store.getWalletConnection(user.userId);
       return data("AiFinPay wallet summary loaded.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS });
-    } catch (error) { return failure(error); }
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "get_token_balance", {
     title: "Get token balance",
     description: "Use this when the user asks for the balance of a supported token in their AiFinPay wallet.",
-    inputSchema: { token: tokenSchema, network: networkSchema }, annotations: readOnly, _meta: {}
-  }, async ({ token, network }) => {
-    try { const user = ctx.auth.resolve(); const selectedNetwork = ctx.config.walletMode === "mainnet" ? "POLYGON" : network; return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
-    catch (error) { return failure(error); }
+    inputSchema: { token: tokenSchema, network: networkSchema }, annotations: readOnly, _meta: oauthMeta()
+  }, async ({ token, network }, extra) => {
+    try { const user = resolveUser(ctx, extra); const selectedNetwork = ctx.config.walletMode === "mainnet" ? "POLYGON" : network; return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
+    catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "prepare_transfer", {
     title: "Prepare wallet transfer",
     description: "Use this when the user requests a transfer preview. It writes a private demo intent in demo mode, never broadcasts, and returns a safety error in mainnet mode.",
-    inputSchema: prepareSchema, annotations: write, _meta: {}
-  }, async (args) => {
+    inputSchema: prepareSchema, annotations: write, _meta: oauthMeta(false, "wallet:write")
+  }, async (args, extra) => {
     try {
       if (ctx.config.walletMode === "mainnet") throw new AppError("SIGNING_FAILED", "Mainnet sending is locked until per-user authentication and local Vault signing are enabled.", 501);
-      const user = ctx.auth.resolve();
+      const user = resolveUser(ctx, extra, "wallet:write");
       const result = await ctx.payments.prepare(user.userId, args);
       return data(result.intent.status === "BLOCKED" ? "Blocked by AiFinPay Policy Engine." : "Transfer prepared. Explicit confirmation is required before execution.", {
         view: result.intent.status === "BLOCKED" ? "blocked" : "transfer-preview",
         intent: publicIntent(result.intent), confirmationToken: result.confirmationToken, policyExplanation: result.policyExplanation
       });
-    } catch (error) { return failure(error); }
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "confirm_transfer", {
     title: "Confirm prepared transfer",
     description: "Use this only after explicit confirmation of a prepared demo transfer. It irreversibly completes the private demo intent; mainnet broadcasting is disabled.",
-    inputSchema: { transferIntentId: z.string().min(8), confirmationToken: z.string().min(20), idempotencyKey: idempotencyKeySchema }, annotations: destructive, _meta: {}
-  }, async ({ transferIntentId, confirmationToken }) => {
+    inputSchema: { transferIntentId: z.string().min(8), confirmationToken: z.string().min(20), idempotencyKey: idempotencyKeySchema }, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
+  }, async ({ transferIntentId, confirmationToken }, extra) => {
     try {
       if (ctx.config.walletMode === "mainnet") throw new AppError("SIGNING_FAILED", "Mainnet broadcasting is not enabled in this deployment.", 501);
-      const user = ctx.auth.resolve(); const result = await ctx.payments.confirm(user.userId, transferIntentId, confirmationToken);
+      const user = resolveUser(ctx, extra, "wallet:write"); const result = await ctx.payments.confirm(user.userId, transferIntentId, confirmationToken);
       return data("Demo transaction confirmed and an audit receipt was created.", { view: "receipt", intent: publicIntent(result.intent), explorerUrl: result.explorerUrl });
-    } catch (error) { return failure(error); }
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "cancel_transfer", {
     title: "Cancel prepared transfer",
     description: "Use this when the user wants to cancel a transfer that has not completed.",
-    inputSchema: { transferIntentId: z.string().min(8) }, annotations: destructive, _meta: {}
-  }, async ({ transferIntentId }) => {
-    try { const user = ctx.auth.resolve(); return data("Transfer cancelled.", { view: "cancelled", intent: publicIntent(ctx.payments.cancel(user.userId, transferIntentId)) }); }
-    catch (error) { return failure(error); }
+    inputSchema: { transferIntentId: z.string().min(8) }, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
+  }, async ({ transferIntentId }, extra) => {
+    try { const user = resolveUser(ctx, extra, "wallet:write"); return data("Transfer cancelled.", { view: "cancelled", intent: publicIntent(ctx.payments.cancel(user.userId, transferIntentId)) }); }
+    catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "get_transaction_status", {
     title: "Get transaction status",
     description: "Use this when the user wants the current state of a prepared intent or submitted AiFinPay transaction.",
-    inputSchema: { transactionHash: z.string().optional(), transferIntentId: z.string().optional() }, annotations: readOnly, _meta: {}
-  }, async ({ transactionHash, transferIntentId }) => {
+    inputSchema: { transactionHash: z.string().optional(), transferIntentId: z.string().optional() }, annotations: readOnly, _meta: oauthMeta()
+  }, async ({ transactionHash, transferIntentId }, extra) => {
     try {
-      const user = ctx.auth.resolve();
+      const user = resolveUser(ctx, extra);
       const intent = transferIntentId ? ctx.payments.requireIntent(transferIntentId, user.userId) : transactionHash ? ctx.store.findIntentByHash(transactionHash, user.userId) : null;
       if (!intent) throw new AppError("WALLET_NOT_FOUND", "Transaction was not found.", 404);
       return data(`Transaction status: ${intent.status}.`, { view: "transaction-status", intent: publicIntent(intent) });
-    } catch (error) { return failure(error); }
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "list_transactions", {
     title: "List AiFinPay transactions",
     description: "Use this when the user wants recent AiFinPay transaction history or audit receipt identifiers.",
-    inputSchema: { network: networkSchema.optional(), token: tokenSchema.optional(), initiatedBy: z.enum(["USER", "AGENT"]).optional(), limit: z.number().int().min(1).max(50).default(20), cursor: z.string().optional() }, annotations: readOnly, _meta: {}
-  }, async ({ network, token, initiatedBy, limit }) => {
+    inputSchema: { network: networkSchema.optional(), token: tokenSchema.optional(), initiatedBy: z.enum(["USER", "AGENT"]).optional(), limit: z.number().int().min(1).max(50).default(20), cursor: z.string().optional() }, annotations: readOnly, _meta: oauthMeta()
+  }, async ({ network, token, initiatedBy, limit }, extra) => {
     try {
-      const user = ctx.auth.resolve(); let transactions = await ctx.adapter.listTransactions(user.userId);
+      const user = resolveUser(ctx, extra); let transactions = await ctx.adapter.listTransactions(user.userId);
       if (network) transactions = transactions.filter((item) => item.network === network);
       if (token) transactions = transactions.filter((item) => item.token === token);
       if (initiatedBy) transactions = transactions.filter((item) => item.initiatedByType === initiatedBy);
       return data("Transaction history loaded.", { view: "history", transactions: transactions.slice(0, limit), nextCursor: null });
-    } catch (error) { return failure(error); }
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "create_agent_policy", {
     title: "Create agent spending policy",
     description: "Use this when the user wants to preview or explicitly confirm a new spending policy for a named AI agent. Omit confirmation fields to receive a preview.",
     inputSchema: { ...policyDraftSchema, confirmationToken: z.string().optional(), confirmationExpiresAt: z.string().datetime().optional(), idempotencyKey: idempotencyKeySchema }, annotations: write,
-    _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI }
-  }, async (args) => {
+    _meta: oauthMeta(true, "wallet:write")
+  }, async (args, extra) => {
     try {
-      const user = ctx.auth.resolve();
+      const user = resolveUser(ctx, extra, "wallet:write");
       const { confirmationToken, confirmationExpiresAt, idempotencyKey: _idempotency, ...draft } = args;
       void _idempotency;
       if (!confirmationToken || !confirmationExpiresAt) {
@@ -203,71 +216,71 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
       }
       const policy = ctx.policies.create(user.userId, draft, confirmationToken, confirmationExpiresAt);
       return data("Agent spending policy saved.", { view: "policy", policy });
-    } catch (error) { return failure(error); }
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "list_agent_policies", {
     title: "List agent spending policies",
     description: "Use this when the user wants to review active or revoked AiFinPay agent spending limits.",
-    inputSchema: {}, annotations: readOnly, _meta: {}
-  }, async () => { try { const user = ctx.auth.resolve(); return data("Agent policies loaded.", { view: "policies", policies: ctx.store.listPolicies(user.userId) }); } catch (error) { return failure(error); } });
+    inputSchema: {}, annotations: readOnly, _meta: oauthMeta()
+  }, async (_args, extra) => { try { const user = resolveUser(ctx, extra); return data("Agent policies loaded.", { view: "policies", policies: ctx.store.listPolicies(user.userId) }); } catch (error) { return failure(error, ctx); } });
 
   registerAppTool(server, "update_agent_policy", {
     title: "Update agent policy status",
     description: "Use this only after the user explicitly confirms enabling or disabling an existing agent spending policy.",
-    inputSchema: { policyId: z.string().min(8), enabled: z.boolean(), confirmation: z.literal(true) }, annotations: write, _meta: {}
-  }, async ({ policyId, enabled }) => { try { const user = ctx.auth.resolve(); return data("Agent policy updated.", { view: "policy", policy: ctx.policies.update(user.userId, policyId, enabled) }); } catch (error) { return failure(error); } });
+    inputSchema: { policyId: z.string().min(8), enabled: z.boolean(), confirmation: z.literal(true) }, annotations: write, _meta: oauthMeta(false, "wallet:write")
+  }, async ({ policyId, enabled }, extra) => { try { const user = resolveUser(ctx, extra, "wallet:write"); return data("Agent policy updated.", { view: "policy", policy: ctx.policies.update(user.userId, policyId, enabled) }); } catch (error) { return failure(error, ctx); } });
 
   registerAppTool(server, "revoke_agent_policy", {
     title: "Revoke agent policy",
     description: "Use this only after the user explicitly confirms revoking an existing agent spending policy.",
-    inputSchema: { policyId: z.string().min(8), confirmation: z.literal(true) }, annotations: destructive, _meta: {}
-  }, async ({ policyId }) => { try { const user = ctx.auth.resolve(); return data("Agent policy revoked.", { view: "policy", policy: ctx.policies.revoke(user.userId, policyId) }); } catch (error) { return failure(error); } });
+    inputSchema: { policyId: z.string().min(8), confirmation: z.literal(true) }, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
+  }, async ({ policyId }, extra) => { try { const user = resolveUser(ctx, extra, "wallet:write"); return data("Agent policy revoked.", { view: "policy", policy: ctx.policies.revoke(user.userId, policyId) }); } catch (error) { return failure(error, ctx); } });
 
   registerAppTool(server, "evaluate_payment_request", {
     title: "Evaluate agent payment request",
     description: "Use this when an agent requests a payment and AiFinPay must authoritatively decide whether it is auto-approved, needs human approval, or is blocked.",
-    inputSchema: { ...prepareSchema, initiatedByAgentId: z.string().min(2).max(80), riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW") }, annotations: readOnly, _meta: {}
-  }, async (args) => {
+    inputSchema: { ...prepareSchema, initiatedByAgentId: z.string().min(2).max(80), riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW") }, annotations: readOnly, _meta: oauthMeta()
+  }, async (args, extra) => {
     try {
-      const user = ctx.auth.resolve(); const balance = await ctx.adapter.getBalance(user.userId, args.token, args.network);
+      const user = resolveUser(ctx, extra); const balance = await ctx.adapter.getBalance(user.userId, args.token, args.network);
       const decision = evaluatePolicy({ agentId: args.initiatedByAgentId, amount: args.amount, token: args.token, network: args.network,
         recipient: args.recipient, ...(args.merchantId ? { merchantId: args.merchantId } : {}), ...(args.merchantCategory ? { merchantCategory: args.merchantCategory } : {}),
         availableBalanceRaw: balance.raw, spentTodayRaw: "0", riskLevel: args.riskLevel, duplicate: false, now: new Date() }, ctx.store.listPolicies(user.userId));
       return data(`Policy decision: ${decision.decision}.`, { view: decision.decision === "BLOCKED" ? "blocked" : "agent-approval", decision });
-    } catch (error) { return failure(error); }
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "get_audit_log", {
     title: "Get AiFinPay audit log",
     description: "Use this when the user wants the tamper-evident audit trail for wallet, transfer, or policy actions.",
-    inputSchema: { limit: z.number().int().min(1).max(100).default(30) }, annotations: readOnly, _meta: {}
-  }, async ({ limit }) => { try { const user = ctx.auth.resolve(); const events = ctx.store.listAudit(user.userId, limit); return data("Audit log loaded.", { view: "audit", events, chainValid: ctx.audit.verify(events) }); } catch (error) { return failure(error); } });
+    inputSchema: { limit: z.number().int().min(1).max(100).default(30) }, annotations: readOnly, _meta: oauthMeta()
+  }, async ({ limit }, extra) => { try { const user = resolveUser(ctx, extra); const events = ctx.store.listAudit(user.userId, limit); return data("Audit log loaded.", { view: "audit", events, chainValid: ctx.audit.verify(events) }); } catch (error) { return failure(error, ctx); } });
 
   registerAppTool(server, "render_wallet", {
     title: "Render AiFinPay wallet",
     description: "Use this after wallet data is requested to render the interactive AiFinPay wallet widget inside ChatGPT.",
-    inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI }
-  }, async ({ network }) => {
-    try { const user = ctx.auth.resolve(); const selectedNetwork = ctx.config.walletMode === "mainnet" ? "POLYGON" : network; const summary = await ctx.adapter.getWalletSummary(user.userId, selectedNetwork); summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((p) => p.enabled); const connection = ctx.store.getWalletConnection(user.userId); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Polygon balances are live; all 12 Vault addresses are selectable." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS }); }
-    catch (error) { return failure(error); }
+    inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: oauthMeta(true)
+  }, async ({ network }, extra) => {
+    try { const user = resolveUser(ctx, extra); const selectedNetwork = ctx.config.walletMode === "mainnet" ? "POLYGON" : network; const summary = await ctx.adapter.getWalletSummary(user.userId, selectedNetwork); summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((p) => p.enabled); const connection = ctx.store.getWalletConnection(user.userId); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Polygon balances are live; all 12 Vault addresses are selectable." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS }); }
+    catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "render_transfer_preview", {
     title: "Render transfer preview",
     description: "Use this after prepare_transfer succeeds to render the explicit confirmation UI for that prepared intent.",
-    inputSchema: { transferIntentId: z.string().min(8) }, annotations: readOnly, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI }
-  }, async ({ transferIntentId }) => {
-    try { const user = ctx.auth.resolve(); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transfer preview opened.", { view: intent.status === "BLOCKED" ? "blocked" : "transfer-preview", intent: publicIntent(intent), confirmationToken: ctx.payments.confirmationForIntent(intent, user.userId) }); }
-    catch (error) { return failure(error); }
+    inputSchema: { transferIntentId: z.string().min(8) }, annotations: readOnly, _meta: oauthMeta(true)
+  }, async ({ transferIntentId }, extra) => {
+    try { const user = resolveUser(ctx, extra); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transfer preview opened.", { view: intent.status === "BLOCKED" ? "blocked" : "transfer-preview", intent: publicIntent(intent), confirmationToken: ctx.payments.confirmationForIntent(intent, user.userId) }); }
+    catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "render_transaction_receipt", {
     title: "Render transaction receipt",
     description: "Use this after a transfer completes to render its transaction and audit receipt.",
-    inputSchema: { transferIntentId: z.string().min(8) }, annotations: readOnly, _meta: { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI }
-  }, async ({ transferIntentId }) => {
-    try { const user = ctx.auth.resolve(); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transaction receipt opened.", { view: "receipt", intent: publicIntent(intent), explorerUrl: intent.transactionHash ? `https://amoy.polygonscan.com/tx/${intent.transactionHash}` : null }); }
-    catch (error) { return failure(error); }
+    inputSchema: { transferIntentId: z.string().min(8) }, annotations: readOnly, _meta: oauthMeta(true)
+  }, async ({ transferIntentId }, extra) => {
+    try { const user = resolveUser(ctx, extra); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transaction receipt opened.", { view: "receipt", intent: publicIntent(intent), explorerUrl: intent.transactionHash ? `https://amoy.polygonscan.com/tx/${intent.transactionHash}` : null }); }
+    catch (error) { return failure(error, ctx); }
   });
 }

@@ -4,9 +4,10 @@ import { DatabaseSync } from "node:sqlite";
 import type { AgentPolicy, AuditEvent, PaymentIntent } from "@aifinpay/shared";
 
 export type WalletPairingResult = "connected" | "already_connected" | "invalid";
+export interface StoredWalletAddresses { evm: string; solana: string; near: string; aptos: string }
 
-function sameAddresses(left: Record<string, string>, right: Record<string, string>): boolean {
-  return ["evm", "solana", "near", "aptos"].every((key) => {
+function sameAddresses(left: Record<string, string>, right: StoredWalletAddresses): boolean {
+  return (["evm", "solana", "near", "aptos"] as const).every((key) => {
     const a = left[key] ?? "";
     const b = right[key] ?? "";
     return key === "evm" ? a.toLowerCase() === b.toLowerCase() : a === b;
@@ -108,7 +109,7 @@ export class Store {
     this.db.prepare("INSERT INTO wallet_pairings (token_hash,user_id,expires_at,consumed) VALUES (?,?,?,0)").run(tokenHash, userId, expiresAt);
   }
 
-  completeWalletPairing(tokenHash: string, addresses: Record<string, string>): WalletPairingResult {
+  completeWalletPairing(tokenHash: string, addresses: StoredWalletAddresses): WalletPairingResult {
     const now = new Date().toISOString();
     const row = this.db.prepare("SELECT user_id,expires_at,consumed FROM wallet_pairings WHERE token_hash=?").get(tokenHash) as { user_id: string; expires_at: string; consumed: number } | undefined;
     if (!row) return "invalid";
@@ -134,5 +135,11 @@ export class Store {
   getWalletConnection(userId: string): { addresses: Record<string, string>; connectedAt: string } | null {
     const row = this.db.prepare("SELECT addresses_json,connected_at FROM wallet_connections WHERE user_id=?").get(userId) as { addresses_json: string; connected_at: string } | undefined;
     return row ? { addresses: JSON.parse(row.addresses_json) as Record<string, string>, connectedAt: row.connected_at } : null;
+  }
+
+  upsertWalletConnection(userId: string, addresses: StoredWalletAddresses, connectedAt = new Date().toISOString()): void {
+    this.db.prepare(`INSERT INTO wallet_connections (user_id,addresses_json,connected_at) VALUES (?,?,?)
+      ON CONFLICT(user_id) DO UPDATE SET addresses_json=excluded.addresses_json,connected_at=excluded.connected_at`)
+      .run(userId, JSON.stringify(addresses), connectedAt);
   }
 }

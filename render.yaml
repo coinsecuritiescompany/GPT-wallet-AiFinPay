@@ -7,7 +7,7 @@ services:
     autoDeployTrigger: "commit"
     envVars:
       - key: AIFINPAY_DEMO_MODE
-        value: "true"
+        value: "false"
       - key: AIFINPAY_WALLET_MODE
         value: mainnet
       - key: POLYGON_RPC_URLS
@@ -15,7 +15,7 @@ services:
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
-        value: /tmp/aifinpay-demo.sqlite
+        value: /tmp/aifinpay-runtime.sqlite
       - key: LOG_LEVEL
         value: info
       - key: SESSION_SECRET

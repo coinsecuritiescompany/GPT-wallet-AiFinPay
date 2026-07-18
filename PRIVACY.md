@@ -12,7 +12,7 @@ The encrypted Vault is stored in the browser's local storage on that device. Rem
 
 ## Data sent to the server
 
-When a user explicitly pairs a Vault, the server receives public EVM, Solana, NEAR and Aptos addresses plus short-lived pairing metadata. It may also process tool requests, policy metadata, audit events, service timestamps and redacted operational logs.
+When a user explicitly authorizes a Vault, the server receives public EVM, Solana, NEAR and Aptos addresses plus OAuth metadata. Integrity-protected access and refresh tokens contain those public addresses and a pseudonymous wallet identifier; they do not contain recovery material or passwords. The service may also process tool requests, policy metadata, audit events, timestamps and redacted operational logs.
 
 Polygon balances are public blockchain information retrieved through third-party RPC infrastructure. The current hosted deployment does not submit mainnet transactions.
 
@@ -22,7 +22,7 @@ MCP tools do not request recovery words, private keys, Vault passwords, API keys
 
 ## Purpose, retention and sharing
 
-Data is processed to provide the requested wallet interface, pair public addresses, read public balances, enforce reference policies, protect the service and diagnose failures. The free preview deployment uses temporary local storage that can disappear after inactivity, restart or redeploy.
+Data is processed to provide the requested wallet interface, authorize public addresses, read public balances, enforce reference policies, protect the service and diagnose failures. Disconnecting the app in ChatGPT removes its stored authorization. The free preview deployment uses temporary runtime storage for intents, policies and audits; that state can disappear after inactivity, restart or redeploy.
 
 AiFinPay does not sell personal data. Hosting, ChatGPT and Polygon RPC providers can process limited technical data under their own terms when providing their respective services.
 

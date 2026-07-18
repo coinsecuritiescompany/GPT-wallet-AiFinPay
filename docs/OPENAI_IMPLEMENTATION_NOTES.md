@@ -10,7 +10,8 @@ Checked on July 18, 2026 against current Apps SDK submission guidance.
 
 - Remote universal MCP endpoint over HTTPS.
 - `RESOURCE_MIME_TYPE` for the MCP App resource.
-- Versioned widget URI: `ui://aifinpay/wallet-v3.html`.
+- Versioned widget URI: `ui://aifinpay/wallet-v8.html`.
+- OAuth 2.1 authorization-code flow with PKCE, protected-resource metadata, dynamic client registration and per-tool `wallet:read` security metadata.
 - Standard `_meta.ui.resourceUri`, exact CSP metadata and ChatGPT compatibility aliases.
 - One job per tool with model-selection descriptions.
 - Explicit read-only, destructive, open-world and idempotent annotations.

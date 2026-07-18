@@ -24,7 +24,7 @@ Also test `/`, `/preview`, `/privacy`, `/terms`, `/support` and `/mcp`.
 
 ## Free-tier warning
 
-The included `plan: free` is for evaluation. It can cold-start after inactivity and uses ephemeral `/tmp` storage. Pairing and audit data can disappear on restart, spin-down or redeploy. A persistent multi-user service requires an always-on instance and managed database.
+The included `plan: free` is for evaluation. It can cold-start after inactivity and uses ephemeral `/tmp` storage. OAuth linking survives restarts because the integrity-protected token contains public addresses only, but runtime intents, policies and audit data can disappear. Production requires an always-on instance and durable managed storage.
 
 ## Container
 
@@ -32,7 +32,7 @@ The included `plan: free` is for evaluation. It can cold-start after inactivity 
 docker build -t aifinpay-wallet .
 docker run --rm -p 8787:8787 \
   -e AIFINPAY_WALLET_MODE=mainnet \
-  -e AIFINPAY_DEMO_MODE=true \
+  -e AIFINPAY_DEMO_MODE=false \
   -e POLYGON_RPC_URLS="https://polygon.drpc.org,https://polygon.publicnode.com" \
   -e SESSION_SECRET="replace-with-a-random-32-plus-character-secret" \
   -e MCP_PUBLIC_URL="https://wallet.example.com/mcp" \
@@ -40,7 +40,7 @@ docker run --rm -p 8787:8787 \
   aifinpay-wallet
 ```
 
-`AIFINPAY_DEMO_MODE=true` currently selects temporary shared session auth. It does not select the blockchain adapter. Never expose this mode as a production multi-user service.
+Never expose `AIFINPAY_DEMO_MODE=true` as a shared service: it intentionally uses one test identity. Production-like deployments must use `false`, which requires OAuth 2.1 with PKCE.
 
 ## Production gate
 

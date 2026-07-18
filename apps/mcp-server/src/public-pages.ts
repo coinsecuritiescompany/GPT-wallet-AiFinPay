@@ -58,15 +58,15 @@ export function privacyPage(): string {
     <h1>Privacy notice</h1>
     <p>This notice applies to the public AiFinPay Wallet for ChatGPT beta. It is non-custodial and is not a custody or exchange service.</p>
     <h2>Data processed</h2>
-    <p>The beta processes public wallet addresses and publicly available Polygon balance data, plus pairing and audit metadata needed to operate the requested flow.</p>
+    <p>The beta processes public wallet addresses and publicly available Polygon balance data, plus OAuth authorization and audit metadata needed to operate the requested flow.</p>
     <h2>Data we do not request</h2>
     <p>MCP tools never request private keys, recovery words or Vault passwords. The separate Vault page can generate or accept recovery words locally in the browser; those words and the password are not intentionally transmitted to AiFinPay or ChatGPT.</p>
     <h2>Purpose and storage</h2>
-    <p>Data is used only to operate, secure and debug the beta. Pairing state is currently temporary and may reset when the preview deployment restarts. Server logs are designed to exclude pairing tokens and secrets.</p>
+    <p>Data is used only to operate, secure and debug the beta. OAuth access and refresh tokens contain public addresses only and are integrity-protected; recovery material and passwords are excluded. Runtime audit records on the preview service may reset when the deployment restarts. Server logs are designed to exclude authorization codes and tokens.</p>
     <h2>Sharing and sale</h2>
     <p>AiFinPay does not sell personal data. Infrastructure and RPC providers may process limited technical data to host the service and read public blockchain state. This deployment does not submit mainnet transactions.</p>
     <h2>Your choices</h2>
-    <p>To request deletion of temporary pairing data or report a privacy issue, open a private-data-free support ticket and ask for a secure follow-up channel.</p>
+    <p>Disconnect the app in ChatGPT to remove its authorization. To request deletion of runtime metadata or report a privacy issue, open a private-data-free support ticket and ask for a secure follow-up channel.</p>
     <p><a class="button secondary" href="${SUPPORT_URL}">Contact support</a></p>
   `);
 }
@@ -75,7 +75,7 @@ export function termsPage(): string {
   return page("Terms · AiFinPay Wallet", "Public beta terms for the AiFinPay Wallet read-only mainnet interface.", `
     <span class="badge">Effective July 18, 2026</span>
     <h1>Public beta terms</h1>
-    <p>This experimental service is provided for evaluation, development and hackathon judging. It can change, become unavailable or lose temporary pairing state without notice.</p>
+    <p>This experimental service is provided for evaluation and controlled testing. It can change or become unavailable without notice.</p>
     <h2>No custody or financial service</h2>
     <p>The intended flow keeps recovery material on the user's device. This beta does not provide custody, exchange, brokerage, money transmission, investment advice, banking or securities services. Mainnet signing and broadcasting are disabled.</p>
     <h2>User responsibility</h2>
@@ -100,6 +100,6 @@ export function supportPage(): string {
       <a class="button secondary" href="/health">Check service health</a>
     </div>
     <h2>Known beta limitations</h2>
-    <p>Polygon balances are live and read-only. OAuth, durable pairing storage, indexed transaction history, local mainnet signing and real-chain submission are not yet enabled.</p>
+    <p>Polygon balances are live and read-only. OAuth 2.1 with PKCE is enabled for persistent ChatGPT linking and carries public addresses only. Indexed transaction history, local mainnet signing and real-chain submission are not yet enabled.</p>
   `);
 }

@@ -12,7 +12,7 @@ RUN npm run build
 
 FROM node:24-alpine AS runtime
 WORKDIR /app
-ENV NODE_ENV=production PORT=8787 AIFINPAY_DEMO_MODE=true DATABASE_URL=/app/data/aifinpay-demo.sqlite
+ENV NODE_ENV=production PORT=8787 AIFINPAY_DEMO_MODE=false DATABASE_URL=/app/data/aifinpay-runtime.sqlite
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps ./apps
@@ -22,4 +22,3 @@ USER node
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD wget -qO- http://127.0.0.1:8787/health || exit 1
 CMD ["node", "apps/mcp-server/dist/index.js"]
-

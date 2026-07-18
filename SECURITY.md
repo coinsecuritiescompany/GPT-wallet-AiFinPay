@@ -28,8 +28,9 @@ Maintainers will acknowledge reports on a best-effort basis, reproduce them in a
 - Mainnet balances are read-only.
 - Mainnet signing and broadcasting are disabled.
 - Recovery phrases and passwords are processed only by the browser Vault.
-- Pairing sends validated public addresses only.
-- The public deployment uses temporary session and pairing storage.
+- OAuth 2.1 with PKCE authenticates user-specific tools; signed tokens contain validated public addresses only.
+- Production mode never falls back to the shared demo identity.
+- Runtime intent, policy and audit storage on the free preview remains ephemeral.
 - The project has not completed an independent production security audit.
 
 See [Security model](docs/SECURITY_MODEL.md), [Threat model](docs/THREAT_MODEL.md) and [Public/private boundary](docs/PUBLIC_PRIVATE_BOUNDARY.md).

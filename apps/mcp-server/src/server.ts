@@ -38,12 +38,12 @@ export function createMcpServer(ctx: AppContext): McpServer {
   const server = new McpServer({
     name: "aifinpay-wallet",
     title: "AiFinPay Wallet",
-    version: "0.1.0",
+    version: "0.2.0",
     description: "Non-custodial AiFinPay wallet interface for live Polygon mainnet balances, receiving, policies, and locally approved agent payments.",
     websiteUrl: appOrigin,
     icons: [{ src: `${appOrigin}/icon.png`, mimeType: "image/png", sizes: ["256x256"] }]
   }, {
-    instructions: "Never request or expose private keys or recovery phrases. Polygon mainnet balances are read from live RPC. Mainnet broadcasting remains locked until per-user authentication and local Vault signing are enabled."
+    instructions: "Never request or expose private keys, recovery phrases, or Vault passwords. User-specific tools require OAuth 2.1 with PKCE and receive public wallet addresses only. Open authenticated users directly in the wallet dashboard. Polygon mainnet balances are read from live RPC. Mainnet broadcasting remains locked until local Vault signing is enabled."
   });
   registerAppResource(server, "aifinpay-wallet-widget", WIDGET_URI, {}, async () => ({
     contents: [{

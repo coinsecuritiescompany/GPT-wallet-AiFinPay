@@ -6,14 +6,14 @@
 flowchart TD
     U["User"] --> C["ChatGPT host"]
     C --> M["Stateless MCP transport"]
-    M --> A["Temporary session resolver"]
+    M --> A["OAuth 2.1 token verifier"]
     M --> T["Tool handlers"]
     T --> P["Policy and intent services"]
     T --> R["Polygon mainnet read adapter"]
-    T --> S[("SQLite pairing/audit state")]
+    T --> S[("SQLite runtime intent/audit state")]
     C --> W["Compact React widget"]
     U --> V["Separate browser Vault"]
-    V -->|"public addresses"| M
+    V -->|"OAuth consent; public addresses"| A
 ```
 
 ## Build split
@@ -35,7 +35,7 @@ sequenceDiagram
     participant R as Polygon RPC
     U->>C: Open my wallet
     C->>M: render_wallet
-    M->>M: resolve paired public address
+    M->>M: verify OAuth audience, expiry and scope
     M->>R: eth_getBalance
     M->>R: USDC balanceOf(address)
     R-->>M: public onchain state
@@ -44,15 +44,16 @@ sequenceDiagram
 
 RPC reads use fallbacks and a short in-memory cache. The native Polygon USDC contract and chain metadata are defined in the shared package. No private key is present in this flow.
 
-## Vault pairing flow
+## One-time Vault authorization flow
 
-1. `create_wallet_pairing` stores only a hash of a random, short-lived token.
-2. The user opens `/vault?pair=...` outside the ChatGPT widget.
+1. An unauthenticated wallet tool declares `wallet:read` and returns an MCP OAuth challenge.
+2. ChatGPT starts an OAuth 2.1 authorization-code flow with PKCE and opens `/vault?oauth=...`.
 3. The browser creates/restores the Vault locally and derives public addresses.
-4. `/api/vault/pair` validates the token and address formats.
-5. The server marks the token consumed and stores public addresses for the current temporary session.
+4. The user explicitly approves sharing those public addresses with ChatGPT.
+5. The server returns a short-lived, PKCE-bound authorization code. ChatGPT exchanges it for a one-hour access token and a renewable token.
+6. Later chats attach the access token, so `render_wallet` returns the dashboard directly. The token can rehydrate public addresses after a free Render restart.
 
-Recovery words, Vault password and decrypted signing material are not part of the pairing request.
+Recovery words, Vault password, encrypted ciphertext and decrypted signing material are not part of the OAuth request or token.
 
 ## Trust boundaries
 
