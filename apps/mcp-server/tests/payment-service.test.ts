@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppContext } from "../src/context.js";
 import type { AppConfig } from "../src/config.js";
 
-const config: AppConfig = { port: 0, demoMode: true, databaseUrl: ":memory:", sessionSecret: "test-session-secret-at-least-thirty-two-chars", publicUrl: "http://localhost/mcp", widgetDomain: "http://localhost", logLevel: "silent" };
+const config: AppConfig = { port: 0, demoMode: true, databaseUrl: ":memory:", sessionSecret: "test-session-secret-at-least-thirty-two-chars", publicUrl: "http://localhost/mcp", widgetDomain: "http://localhost", logLevel: "silent", walletMode: "demo", polygonRpcUrls: ["https://polygon.example"] };
 const base = { recipient: "0x2222222222222222222222222222222222222222", amount: "10", token: "USDC" as const, network: "POLYGON_AMOY" as const, idempotencyKey: "payment-test-001" };
 
 describe("payment service integration and security", () => {
