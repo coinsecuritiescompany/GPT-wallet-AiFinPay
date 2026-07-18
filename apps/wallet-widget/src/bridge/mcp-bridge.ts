@@ -37,17 +37,20 @@ class McpAppsBridge {
 
   subscribe(listener: Listener): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<WidgetData> {
+  async callTool(name: string, args: Record<string, unknown>, options: { emit?: boolean } = {}): Promise<WidgetData> {
+    const shouldEmit = options.emit ?? true;
     if (window.parent !== window) {
       await this.initialize();
       const response = await this.request("tools/call", { name, arguments: args }) as { structuredContent?: WidgetData };
       const data = response.structuredContent ?? response as unknown as WidgetData;
-      this.emit(data); return data;
+      if (shouldEmit) this.emit(data);
+      return data;
     }
     if (window.openai?.callTool) {
       const response = await window.openai.callTool(name, args);
       const data = response.structuredContent ?? { view: "error", error: { code: "INTERNAL_ERROR", message: "Tool returned no data." } };
-      this.emit(data); return data;
+      if (shouldEmit) this.emit(data);
+      return data;
     }
     throw new Error("MCP Apps bridge is available only inside ChatGPT or another compatible host.");
   }
