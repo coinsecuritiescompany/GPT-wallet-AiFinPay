@@ -8,6 +8,8 @@ export interface AppConfig {
   publicUrl: string;
   widgetDomain: string;
   logLevel: string;
+  walletMode: "demo" | "mainnet";
+  polygonRpcUrls: string[];
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -24,6 +26,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     sessionSecret,
     publicUrl: env.MCP_PUBLIC_URL ?? (renderOrigin ? `${renderOrigin}/mcp` : `${localOrigin}/mcp`),
     widgetDomain: env.WIDGET_PUBLIC_URL ?? renderOrigin ?? localOrigin,
-    logLevel: env.LOG_LEVEL ?? "info"
+    logLevel: env.LOG_LEVEL ?? "info",
+    walletMode: env.AIFINPAY_WALLET_MODE === "mainnet" ? "mainnet" : "demo",
+    polygonRpcUrls: (env.POLYGON_RPC_URLS ?? "https://polygon.drpc.org,https://polygon.publicnode.com")
+      .split(",").map((value) => value.trim()).filter(Boolean)
   };
 }
