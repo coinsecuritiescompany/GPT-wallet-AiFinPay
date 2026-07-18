@@ -4,7 +4,7 @@ services:
     runtime: docker
     plan: free
     healthCheckPath: /health
-    autoDeployTrigger: "off"
+    autoDeployTrigger: "commit"
     envVars:
       - key: AIFINPAY_DEMO_MODE
         value: "true"
