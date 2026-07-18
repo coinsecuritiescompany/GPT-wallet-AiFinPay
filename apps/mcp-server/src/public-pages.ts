@@ -14,6 +14,7 @@ function page(title: string, description: string, content: string): string {
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15% 0%, #153b31 0, #07110f 42rem); }
     main { width: min(760px, calc(100% - 32px)); margin: 0 auto; padding: 64px 0; }
+    .app-logo { display: block; width: 72px; height: 72px; margin-bottom: 20px; border-radius: 18px; }
     .badge { display: inline-flex; padding: 6px 10px; border: 1px solid #2b6655; border-radius: 999px; color: #8ef0c6; font-size: 13px; }
     h1 { margin: 18px 0 12px; font-size: clamp(34px, 7vw, 64px); line-height: 1.02; letter-spacing: -0.045em; }
     h2 { margin-top: 38px; font-size: 21px; }
@@ -34,6 +35,7 @@ function page(title: string, description: string, content: string): string {
 
 export function landingPage(mcpUrl: string): string {
   return page("AiFinPay Wallet for ChatGPT", "Programmable demo wallet and approval layer for users and AI agents.", `
+    <img class="app-logo" src="/icon.png" alt="AiFinPay logo" width="72" height="72">
     <span class="badge">MCP App · demo/testnet</span>
     <h1>Wallet controls, inside the conversation.</h1>
     <p>AiFinPay gives ChatGPT focused tools for balances, transfer previews, explicit approvals, agent spending limits, receipts and a tamper-evident audit trail.</p>

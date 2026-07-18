@@ -3,7 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { loadConfig } from "./config.js";
 import { AppContext } from "./context.js";
 import { landingPage, privacyPage, supportPage } from "./public-pages.js";
-import { createMcpServer, widgetHtml } from "./server.js";
+import { appIconPng, createMcpServer, widgetHtml } from "./server.js";
 
 const config = loadConfig();
 const context = new AppContext(config);
@@ -15,7 +15,7 @@ function sendHtml(res: ServerResponse, html: string): void {
   res.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
@@ -53,6 +53,21 @@ const httpServer = createServer(async (req, res) => {
       database: "ok",
       blockchainAdapter: context.adapter.kind
     }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/icon.png") {
+    const icon = appIconPng();
+    if (!icon) {
+      res.writeHead(404).end("Icon not found");
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "image/png",
+      "content-length": icon.byteLength,
+      "cache-control": "public, max-age=86400",
+      "x-content-type-options": "nosniff"
+    }).end(icon);
     return;
   }
 

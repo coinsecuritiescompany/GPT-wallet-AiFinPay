@@ -16,6 +16,11 @@ describe("MCP tool registration", () => {
     const client = new Client({ name: "test-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    expect(client.getServerVersion()).toMatchObject({
+      name: "aifinpay-wallet",
+      title: "AiFinPay Wallet",
+      icons: [{ src: "http://localhost/icon.png", mimeType: "image/png", sizes: ["256x256"] }]
+    });
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(["get_wallet_summary", "prepare_transfer", "confirm_transfer", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
@@ -25,4 +30,3 @@ describe("MCP tool registration", () => {
     await client.close(); await server.close();
   });
 });
-

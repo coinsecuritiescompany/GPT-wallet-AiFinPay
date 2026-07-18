@@ -15,8 +15,25 @@ export function widgetHtml(): string {
   return path ? readFileSync(path, "utf8") : "<!doctype html><html><body><main>Build the wallet widget before starting the MCP server.</main></body></html>";
 }
 
+export function appIconPng(): Buffer | undefined {
+  const candidates = [
+    resolve(process.cwd(), "apps/mcp-server/assets/aifinpay-logo.png"),
+    resolve(fileURLToPath(new URL("../assets/aifinpay-logo.png", import.meta.url)))
+  ];
+  const path = candidates.find(existsSync);
+  return path ? readFileSync(path) : undefined;
+}
+
 export function createMcpServer(ctx: AppContext): McpServer {
-  const server = new McpServer({ name: "aifinpay-wallet", version: "0.1.0" }, {
+  const appOrigin = ctx.config.widgetDomain.replace(/\/$/, "");
+  const server = new McpServer({
+    name: "aifinpay-wallet",
+    title: "AiFinPay Wallet",
+    version: "0.1.0",
+    description: "Programmable demo wallet and approval layer for users and autonomous AI agents. Demo/testnet only.",
+    websiteUrl: appOrigin,
+    icons: [{ src: `${appOrigin}/icon.png`, mimeType: "image/png", sizes: ["256x256"] }]
+  }, {
     instructions: "AiFinPay Wallet is demo/testnet-only. Always prepare transfers before confirmation. Never request or expose private keys or seed phrases. The policy engine is authoritative for agent payments."
   });
   registerAppResource(server, "aifinpay-wallet-widget", WIDGET_URI, {}, async () => ({

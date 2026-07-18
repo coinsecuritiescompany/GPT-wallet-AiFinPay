@@ -7,6 +7,7 @@ describe("public deployment pages", () => {
     expect(html).toContain("https://wallet.example.com/mcp");
     expect(html).toContain("No real funds");
     expect(html).toContain("/preview");
+    expect(html).toContain('src="/icon.png"');
   });
 
   it("documents data handling without claiming real custody", () => {
