@@ -1,6 +1,9 @@
 {
   "name": "@aifinpay/aifinpay-adapter",
   "version": "0.1.0",
+  "description": "Public adapter contract and policy primitives for AiFinPay Wallet.",
+  "license": "MIT",
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,4 +11,3 @@
   "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit" },
   "dependencies": { "@aifinpay/shared": "*" }
 }
-

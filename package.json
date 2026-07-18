@@ -2,6 +2,16 @@
   "name": "gpt-wallet-aifinpay",
   "version": "0.1.0",
   "private": true,
+  "description": "Non-custodial AiFinPay wallet interface and programmable approval layer for ChatGPT.",
+  "license": "MIT",
+  "homepage": "https://aifinpay-wallet-chatgpt.onrender.com/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay.git"
+  },
+  "bugs": {
+    "url": "https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/issues"
+  },
   "type": "module",
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
@@ -12,7 +22,8 @@
     "lint": "eslint . --max-warnings=0",
     "test": "npm run build:packages && vitest run",
     "test:coverage": "npm run build:packages && vitest run --coverage",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "security:public": "node scripts/check-public-safety.mjs",
+    "check": "npm run security:public && npm run lint && npm run typecheck && npm test && npm run build",
     "start": "npm run start -w @aifinpay/mcp-server"
   },
   "devDependencies": {
@@ -33,4 +44,3 @@
   },
   "engines": { "node": ">=22" }
 }
-

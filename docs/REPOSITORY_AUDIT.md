@@ -31,7 +31,8 @@ None was present. Searches for private keys, seed phrases, signing, WalletConnec
 
 The repository was scaffolded as an npm workspace monorepo with a TypeScript MCP server, single-file React widget, shared schemas, deterministic demo ledger, backend adapter contract, policy engine, SQLite persistence, audit chain, tests and submission documentation.
 
+Subsequent Build Week work added a separate locally encrypted non-custodial Vault, address derivation across 12 mainnet networks, short-lived public-address pairing, read-only Polygon mainnet POL/native USDC balances, mobile bundle optimization and public repository governance/security controls.
+
 ## Reuse boundary
 
-The `WalletAdapter` interface is the integration seam for a future existing AiFinPay backend or user-controlled signer. Demo mode is isolated in `packages/demo-ledger`; UI components contain no signing or demo-ledger conditionals.
-
+The `WalletAdapter` interface is the integration seam for the future private AiFinPay backend and user-controlled signer. The public repository contains only reference/demo execution and read-only public-chain access. Production authentication, customer data, proprietary risk logic, signing infrastructure and operational secrets remain private.

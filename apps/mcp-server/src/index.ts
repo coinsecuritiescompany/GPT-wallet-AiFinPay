@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { loadConfig } from "./config.js";
 import { AppContext } from "./context.js";
-import { landingPage, privacyPage, supportPage } from "./public-pages.js";
+import { landingPage, privacyPage, supportPage, termsPage } from "./public-pages.js";
 import { appIconPng, createMcpServer, vaultHtml, widgetHtml } from "./server.js";
 
 const config = loadConfig();
@@ -115,6 +115,11 @@ const httpServer = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/privacy") {
     sendHtml(res, privacyPage());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/terms") {
+    sendHtml(res, termsPage());
     return;
   }
 

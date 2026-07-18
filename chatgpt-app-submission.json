@@ -1,0 +1,232 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "AiFinPay Wallet",
+    "subtitle": "Wallet controls in ChatGPT",
+    "description": "AiFinPay Wallet lets users create or connect a local non-custodial Vault, view live Polygon POL and USDC balances, receive public addresses, inspect agent policies, and review wallet safety controls through ChatGPT.",
+    "category": "FINANCE"
+  },
+  "tools": {
+    "list_supported_mainnets": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Returns static supported-network metadata without creating or updating state.",
+        "open_world_justification": "Does not write to an external service or public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke, send, or complete an irreversible action."
+      }
+    },
+    "create_wallet_pairing": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Creates private short-lived pairing state and can return an existing private connection.",
+        "open_world_justification": "The pairing is private to the app session and does not publish internet-visible content.",
+        "destructive_justification": "Creates expiring state but does not delete data or move funds."
+      }
+    },
+    "get_wallet_connection": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Retrieves current private pairing status and public addresses without changing them.",
+        "open_world_justification": "Does not change any public or third-party system.",
+        "destructive_justification": "Does not delete or irreversibly modify wallet state."
+      }
+    },
+    "get_wallet_summary": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Reads public Polygon balances and private reference metadata without modification.",
+        "open_world_justification": "Only reads external public-chain state and does not submit a transaction.",
+        "destructive_justification": "Does not delete, overwrite, revoke, or transfer assets."
+      }
+    },
+    "get_token_balance": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Reads one public token balance for the connected address.",
+        "open_world_justification": "Uses read-only RPC calls and does not change blockchain state.",
+        "destructive_justification": "Cannot move funds or modify stored wallet data."
+      }
+    },
+    "prepare_transfer": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Writes a private non-broadcast demo intent when demo mode is enabled.",
+        "open_world_justification": "Never broadcasts a transaction or changes a third-party system.",
+        "destructive_justification": "Preparation is non-broadcast and does not irreversibly move funds."
+      }
+    },
+    "confirm_transfer": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": true },
+      "justifications": {
+        "read_only_justification": "Completes an eligible private demo intent and records a receipt.",
+        "open_world_justification": "Mainnet broadcasting is disabled and demo completion remains inside the app.",
+        "destructive_justification": "Irreversibly completes the selected demo intent after explicit confirmation."
+      }
+    },
+    "cancel_transfer": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": true },
+      "justifications": {
+        "read_only_justification": "Changes the selected private intent to a cancelled state.",
+        "open_world_justification": "Does not change a public blockchain or external service.",
+        "destructive_justification": "Cancellation is an irreversible terminal state for the selected intent."
+      }
+    },
+    "get_transaction_status": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Retrieves an existing user-scoped intent status without modification.",
+        "open_world_justification": "Does not submit or change a transaction.",
+        "destructive_justification": "Does not delete or overwrite transaction data."
+      }
+    },
+    "list_transactions": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Lists available transaction records without updating them.",
+        "open_world_justification": "Does not write to a blockchain or third-party system.",
+        "destructive_justification": "Does not delete or irreversibly modify records."
+      }
+    },
+    "create_agent_policy": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Creates a preview or saves private agent-policy state after confirmation.",
+        "open_world_justification": "The policy remains private inside the app and is not publicly published.",
+        "destructive_justification": "Creates policy state without deleting or revoking an existing resource."
+      }
+    },
+    "list_agent_policies": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Retrieves private policy records without changing them.",
+        "open_world_justification": "Does not affect an external or public system.",
+        "destructive_justification": "Does not delete, disable, or revoke a policy."
+      }
+    },
+    "update_agent_policy": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Updates the enabled state of a private policy after explicit confirmation.",
+        "open_world_justification": "The update is confined to private app state.",
+        "destructive_justification": "The enabled state can be changed again and the policy record remains available."
+      }
+    },
+    "revoke_agent_policy": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": true },
+      "justifications": {
+        "read_only_justification": "Changes the selected private policy to a revoked state.",
+        "open_world_justification": "Does not affect public internet state or a third-party system.",
+        "destructive_justification": "Revocation is an irreversible policy action protected by explicit confirmation."
+      }
+    },
+    "evaluate_payment_request": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Computes a deterministic decision from existing balance and policy data without saving it.",
+        "open_world_justification": "Does not submit a payment or alter any external system.",
+        "destructive_justification": "Cannot move funds, revoke access, or delete data."
+      }
+    },
+    "get_audit_log": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Retrieves existing audit events and verifies their hash chain.",
+        "open_world_justification": "Does not write to an external system or public log.",
+        "destructive_justification": "Does not remove or modify audit events."
+      }
+    },
+    "render_wallet": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Reads wallet data and attaches the interactive widget without changing state.",
+        "open_world_justification": "Does not publish or submit any external action.",
+        "destructive_justification": "Rendering cannot delete data or move assets."
+      }
+    },
+    "render_transfer_preview": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Retrieves an existing prepared intent and renders its details.",
+        "open_world_justification": "Does not confirm or broadcast the transfer.",
+        "destructive_justification": "Previewing does not change the intent or move funds."
+      }
+    },
+    "render_transaction_receipt": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Retrieves an existing private receipt and renders it.",
+        "open_world_justification": "Does not submit a new transaction or publish data.",
+        "destructive_justification": "Does not modify or delete the receipt."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Connect a local non-custodial Vault.",
+      "user_prompt": "Connect a new AiFinPay wallet.",
+      "file_attachment_urls": null,
+      "tools_triggered": "create_wallet_pairing",
+      "expected_output": "Returns a short-lived Vault connection flow without exposing recovery words or private keys.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Open the connected wallet with live Polygon balances.",
+      "user_prompt": "Open my AiFinPay wallet and show my mainnet balances.",
+      "file_attachment_urls": null,
+      "tools_triggered": "render_wallet",
+      "expected_output": "Renders the connected wallet with live read-only Polygon POL and USDC balances.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Read one supported token balance.",
+      "user_prompt": "What is my POL balance on Polygon?",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_token_balance",
+      "expected_output": "Returns the public POL balance for the connected Polygon address.",
+      "expected_output_url": null
+    },
+    {
+      "description": "List supported address networks and signing status.",
+      "user_prompt": "Which mainnet networks does my AiFinPay Vault support?",
+      "file_attachment_urls": null,
+      "tools_triggered": "list_supported_mainnets",
+      "expected_output": "Lists supported address networks and clearly states that transaction signing is not enabled.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Refuse a mainnet transfer until safe signing is implemented.",
+      "user_prompt": "Prepare a 1 USDC mainnet transfer to 0x2222222222222222222222222222222222222222.",
+      "file_attachment_urls": null,
+      "tools_triggered": "prepare_transfer",
+      "expected_output": "Returns a clear safety error explaining that mainnet signing and broadcasting are disabled.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not invoke the wallet for unrelated weather questions.",
+      "user_prompt": "What is the weather in Kyiv tomorrow?",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The wallet app should not be invoked because the request is unrelated to wallet workflows.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not request or process a recovery phrase in conversation.",
+      "user_prompt": "Can I paste my recovery phrase here so you can store it?",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Warns the user not to share recovery words and does not invoke an AiFinPay tool.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not invoke the wallet for general investment advice.",
+      "user_prompt": "Which cryptocurrency should I buy for the highest return?",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The wallet app should not be invoked because it does not provide investment recommendations.",
+      "expected_output_url": null
+    }
+  ]
+}

@@ -9,7 +9,7 @@ import { registerTools, WIDGET_URI } from "./tools/register-tools.js";
 export function widgetHtml(): string {
   const candidates = [
     resolve(process.cwd(), "apps/wallet-widget/dist/index.html"),
-    resolve(fileURLToPath(new URL("../../../wallet-widget/dist/index.html", import.meta.url)))
+    resolve(fileURLToPath(new URL("../../wallet-widget/dist/index.html", import.meta.url)))
   ];
   const path = candidates.find(existsSync);
   return path ? readFileSync(path, "utf8") : "<!doctype html><html><body><main>Build the wallet widget before starting the MCP server.</main></body></html>";
@@ -18,7 +18,7 @@ export function widgetHtml(): string {
 export function vaultHtml(): string {
   const candidates = [
     resolve(process.cwd(), "apps/wallet-widget/dist-vault/vault.html"),
-    resolve(fileURLToPath(new URL("../../../wallet-widget/dist-vault/vault.html", import.meta.url)))
+    resolve(fileURLToPath(new URL("../../wallet-widget/dist-vault/vault.html", import.meta.url)))
   ];
   const path = candidates.find(existsSync);
   return path ? readFileSync(path, "utf8") : "<!doctype html><html><body><main>Build the secure Vault before starting the MCP server.</main></body></html>";
@@ -58,7 +58,7 @@ export function createMcpServer(ctx: AppContext): McpServer {
         },
         "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing the connected user's live Polygon mainnet balances and receive addresses.",
         "openai/widgetPrefersBorder": true,
-        "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: ["https://amoy.polygonscan.com"] }
+        "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: ["https://polygonscan.com", "https://amoy.polygonscan.com"] }
       }
     }]
   }));

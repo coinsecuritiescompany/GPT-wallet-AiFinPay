@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a public reference-app improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or developer problem should be solved?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed public solution
+      description: Keep production credentials, customer integrations and proprietary controls out of the proposal.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - ChatGPT widget
+        - MCP tools
+        - Local Vault
+        - Read-only blockchain data
+        - Policy reference implementation
+        - Documentation
+        - Testing and security
+    validations:
+      required: true

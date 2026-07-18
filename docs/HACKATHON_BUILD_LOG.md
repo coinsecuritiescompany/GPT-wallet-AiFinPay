@@ -1,43 +1,60 @@
 # Hackathon build log
 
-## 2026-07-18
+## Baseline — July 18, 2026
 
-Baseline repository state: empty target repository; only the supplied task prompt existed locally.
+The target repository had no implementation before the Build Week work began. No production AiFinPay wallet, backend, SDK, authentication or blockchain component was copied into the submission.
 
-### Added
+## Build Week implementation
 
-- npm workspace monorepo and TypeScript configuration
-- shared financial/domain schemas
-- wallet adapter contract and deterministic demo ledger
-- deterministic agent policy engine and payment-intent state machine
-- SQLite store, confirmation service and SHA-256 audit hash chain
-- 16 MCP tools and versioned widget resource
-- React single-file widget with wallet, transfer, blocked, policy, history, audit and receipt views
-- unit, integration, MCP, widget and security tests
-- Docker, local environment and deployment configuration
-- repository audit, architecture, security, threat model, tool reference, setup, limitations, Devpost draft and demo script
-- one-click Render Blueprint, GitHub Actions CI, public landing/widget preview, privacy notice and support routes
+### Core app
 
-### Changed
+- npm workspace TypeScript monorepo;
+- shared financial schemas and base-unit arithmetic;
+- 19 MCP tools and a versioned MCP App resource;
+- compact React ChatGPT wallet widget;
+- deterministic policy engine, intent state machine and audit chain;
+- Docker, Render and CI configuration.
 
-No pre-existing production files were modified.
+### Non-custodial Vault
 
-### Tests added
+- local 12/15-word BIP-39 create/restore flow;
+- EVM, Solana, NEAR and Aptos address derivation;
+- local PBKDF2-SHA256 and AES-256-GCM encryption;
+- short-lived public-address-only pairing;
+- recovery verification and encrypted backup flow.
 
-Amount parsing/formatting, address/schema behavior through tools, policy decisions, state transitions, idempotency, confirmation token enforcement, ownership boundary, audit chain tampering, MCP registration and widget rendering/actions.
+### Mainnet and mobile iteration
 
-Final local verification: ESLint passed, TypeScript checks passed in all five workspaces, 33 automated tests passed, the single-file React production bundle built, the MCP server built, all public HTTP routes responded, `/health` returned `ok`, and an MCP `initialize` request completed successfully.
+- Polygon PoS chain metadata and native USDC contract;
+- RPC fallback adapter for live POL and USDC balance reads;
+- mainnet Receive view and honest empty-history state;
+- explicit mainnet signing/broadcast safety gate;
+- Vault split into a separate build, reducing the inline widget payload;
+- Render health metadata and automatic deployment configuration.
 
-### Current limitations
+### Repository and submission readiness
 
-See `docs/LIMITATIONS.md`. Main gaps are production OAuth/signing/RPC, approving the one-click hosted deployment, final ChatGPT screenshots and demo video.
+- architecture, security, threat, privacy, terms and compliance documents;
+- public/private repository boundary;
+- contribution, governance, support and release processes;
+- public secret/artifact scanner, dependency audit and CodeQL;
+- Devpost checklist, submission copy and three-minute demo script.
 
-### Evidence placeholders
+## Codex collaboration
 
-- [`b38755a`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/b38755a5700b6c16026646ab1f0e4f3c653d82f0) — repository audit
-- [`9eaa660`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/9eaa6606d0a370be7a80fb96625c8130de6ad293) — secure MCP server, policy engine and demo ledger
-- [`1bb7d89`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/1bb7d897cbb47a7d3abfabc596409eb952960a7d) — interactive React wallet widget
-- [`6c3bcf5`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/6c3bcf520757a5e952b243a2551752a3f9c885d1) — tests, deployment and submission documentation
-- Codex session reference: `TBD_BY_SUBMITTER`
-- Deployment URL: `https://aifinpay-wallet-chatgpt.onrender.com/`
-- Video URL: `TBD`
+Codex researched official documentation, implemented code and tests, diagnosed deployment/mobile failures, inspected live health responses, compared repository and deployment state, and prepared review materials. Human decisions controlled custody boundaries, mainnet risk, public/private scope and product positioning.
+
+## Verification history
+
+- Initial reference implementation: lint, typecheck, build and 33 tests.
+- Wallet/Vault and mainnet iteration: lint, typecheck, build and 41 tests.
+- Public repository hardening: full checks, dependency audit and hosted-route verification recorded in GitHub history.
+
+## Evidence
+
+Use the dated GitHub commit history as the source of truth for implementation chronology. The Devpost submission must also include the primary `/feedback` Codex Session ID supplied by the repository owner.
+
+- Deployment: `https://aifinpay-wallet-chatgpt.onrender.com/`
+- Source: `https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay`
+- Codex Session ID: `TBD_BY_SUBMITTER`
+- Public video: `TBD`

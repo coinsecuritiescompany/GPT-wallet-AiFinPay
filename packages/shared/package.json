@@ -1,6 +1,9 @@
 {
   "name": "@aifinpay/shared",
   "version": "0.1.0",
+  "description": "Shared public schemas, types and network metadata for AiFinPay Wallet.",
+  "license": "MIT",
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,4 +14,3 @@
   },
   "dependencies": { "zod": "^4.4.3" }
 }
-

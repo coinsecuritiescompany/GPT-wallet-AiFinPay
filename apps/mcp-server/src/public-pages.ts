@@ -29,7 +29,7 @@ function page(title: string, description: string, content: string): string {
     footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid #173128; color: #7d9b90; font-size: 13px; }
   </style>
 </head>
-<body><main>${content}<footer>AiFinPay Wallet for ChatGPT · Polygon mainnet read-only beta · <a href="/privacy">Privacy</a> · <a href="/support">Support</a></footer></main></body>
+<body><main>${content}<footer>AiFinPay Wallet for ChatGPT · Polygon mainnet read-only beta · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a></footer></main></body>
 </html>`;
 }
 
@@ -60,7 +60,7 @@ export function privacyPage(): string {
     <h2>Data processed</h2>
     <p>The beta processes public wallet addresses and publicly available Polygon balance data, plus pairing and audit metadata needed to operate the requested flow.</p>
     <h2>Data we do not request</h2>
-    <p>Do not provide real private keys, seed phrases, passwords or personal financial information. The app has no UI or tool input for seed phrases or private keys.</p>
+    <p>MCP tools never request private keys, recovery words or Vault passwords. The separate Vault page can generate or accept recovery words locally in the browser; those words and the password are not intentionally transmitted to AiFinPay or ChatGPT.</p>
     <h2>Purpose and storage</h2>
     <p>Data is used only to operate, secure and debug the beta. Pairing state is currently temporary and may reset when the preview deployment restarts. Server logs are designed to exclude pairing tokens and secrets.</p>
     <h2>Sharing and sale</h2>
@@ -71,14 +71,32 @@ export function privacyPage(): string {
   `);
 }
 
+export function termsPage(): string {
+  return page("Terms · AiFinPay Wallet", "Public beta terms for the AiFinPay Wallet read-only mainnet interface.", `
+    <span class="badge">Effective July 18, 2026</span>
+    <h1>Public beta terms</h1>
+    <p>This experimental service is provided for evaluation, development and hackathon judging. It can change, become unavailable or lose temporary pairing state without notice.</p>
+    <h2>No custody or financial service</h2>
+    <p>The intended flow keeps recovery material on the user's device. This beta does not provide custody, exchange, brokerage, money transmission, investment advice, banking or securities services. Mainnet signing and broadcasting are disabled.</p>
+    <h2>User responsibility</h2>
+    <p>Protect recovery material, verify public addresses and never fund a wallet whose recovery phrase has been disclosed. Do not use the beta for unlawful activity or attempt to bypass security controls.</p>
+    <h2>No warranty</h2>
+    <p>The service and source are provided as is, without warranties. Public-chain and RPC information may be delayed, incomplete or unavailable.</p>
+    <h2>Open-source license</h2>
+    <p>Repository source is governed by the MIT License. The software license is not a regulatory authorization or financial-services license.</p>
+    <p><a class="button secondary" href="${REPOSITORY_URL}/blob/main/TERMS.md">Read repository terms</a></p>
+  `);
+}
+
 export function supportPage(): string {
   return page("Support · AiFinPay Wallet", "Support information for the AiFinPay Wallet public beta.", `
     <span class="badge">Open-source beta support</span>
     <h1>Support</h1>
-    <p>For bugs, connection failures or security concerns, use the repository issue tracker. Include the route, approximate time and a redacted error message.</p>
+    <p>For non-sensitive bugs or connection failures, use the repository issue tracker. Include the route, approximate time and a redacted error message. Report vulnerabilities privately through the repository Security tab.</p>
     <div class="notice"><strong>Never post</strong> seed phrases, private keys, API keys, confirmation tokens, access tokens or real personal financial data.</div>
     <div class="actions">
       <a class="button" href="${SUPPORT_URL}">Open GitHub Issues</a>
+      <a class="button secondary" href="${REPOSITORY_URL}/security/advisories/new">Private security report</a>
       <a class="button secondary" href="/health">Check service health</a>
     </div>
     <h2>Known beta limitations</h2>

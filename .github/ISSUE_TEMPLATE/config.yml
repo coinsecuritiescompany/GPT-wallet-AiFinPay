@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/security/advisories/new
+    about: Report vulnerabilities privately. Never publish exploit details or secrets.
+  - name: Hosted service health
+    url: https://aifinpay-wallet-chatgpt.onrender.com/health
+    about: Check the active deployment and blockchain adapter.

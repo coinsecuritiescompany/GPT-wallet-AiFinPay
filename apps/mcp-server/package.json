@@ -1,6 +1,9 @@
 {
   "name": "@aifinpay/mcp-server",
   "version": "0.1.0",
+  "description": "MCP server for the AiFinPay Wallet ChatGPT app.",
+  "license": "MIT",
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -18,4 +21,3 @@
     "zod": "^4.4.3"
   }
 }
-

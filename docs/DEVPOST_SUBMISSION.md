@@ -4,67 +4,70 @@
 
 AiFinPay Wallet for ChatGPT
 
+## Track
+
+Apps for Your Life — personal finance
+
 ## Tagline
 
-Send, receive and approve agent payments without leaving the conversation.
-
-## One-sentence description
-
-AiFinPay Wallet for ChatGPT is a programmable wallet and approval layer that lets users and autonomous AI agents prepare, authorize and execute demo/testnet-shaped payments directly inside a ChatGPT conversation.
+A non-custodial wallet interface built for conversations and AI agents.
 
 ## Inspiration
 
-Agents can buy data and call services, but giving them unrestricted payment credentials is unsafe. We wanted a conversational wallet where natural language creates an intent while deterministic code controls whether money may move.
+AI agents can call APIs and complete workflows, but payment authorization still relies on interfaces designed only for people or on dangerously broad signing credentials. We wanted a wallet that feels native to ChatGPT while keeping recovery and future signing authority with the user.
 
 ## What it does
 
-The app opens an interactive wallet inside ChatGPT, shows balances/history, prepares USDC transfers, requires explicit human confirmation, gives agents narrow spending policies, blocks violations and produces receipts with a tamper-evident audit trail.
+AiFinPay opens a wallet interface inside ChatGPT, creates or restores a local encrypted Vault, pairs public addresses, reads live POL and native USDC balances from Polygon mainnet and presents Receive, network and policy views. Mainnet sending is intentionally blocked until per-user authentication and reviewed local signing are complete.
 
 ## How it works
 
-ChatGPT selects one-job MCP tools. A TypeScript server validates inputs, resolves the server-side session, evaluates policy, creates a payment intent and returns structured data. A React widget renders that result and calls confirmation tools through the MCP Apps bridge. The hackathon adapter uses a deterministic demo ledger for stable presentation.
+GPT-5.6 interprets natural-language requests and selects a focused MCP tool. A TypeScript MCP server validates inputs and reads public chain state. A compact React widget renders the result inside ChatGPT. The separate browser Vault derives EVM, Solana, NEAR and Aptos addresses and encrypts recovery locally; the server receives public addresses only.
 
 ## How GPT-5.6 is used
 
-GPT-5.6 interprets natural-language wallet requests, selects MCP tools and explains deterministic results in plain language. GPT-5.6 never produces the authoritative payment decision and cannot bypass the policy engine.
+GPT-5.6 is the conversational orchestration layer: it recognizes wallet intents, selects tools and explains structured results. It does not generate balances, determine authoritative policies or receive recovery words/private keys.
 
 ## How Codex was used
 
-Codex audited the empty repository, checked current official Apps SDK documentation, scaffolded the monorepo, implemented the server/widget/security layers, wrote tests, fixed failures, prepared Docker deployment and created submission documentation.
+Codex audited the initial empty repository, researched Apps SDK requirements, created the TypeScript monorepo, implemented MCP tools and the React interface, added the local Vault and Polygon adapter, diagnosed mobile bundle size, split heavy cryptography from the widget, wrote and ran tests, deployed to Render and reconciled security/legal/submission documentation with actual behavior.
 
-## OpenAI Apps SDK and MCP
-
-The app exposes a remote `/mcp`, a versioned `text/html;profile=mcp-app` resource, 16 tools with accurate annotations and a React UI using the standard `ui/*` bridge. Current `_meta.ui` CSP/resource metadata and ChatGPT compatibility fields are included.
-
-## Safety
-
-No seed phrases or private keys exist in the product. Transfers use integer base units, explicit prepared intents, expiring confirmation tokens, ownership checks, idempotency, a state machine and deterministic policy rules. The demo is clearly labelled and never claims a real blockchain transaction.
+Human decisions included selecting non-custodial recovery, choosing Polygon as the first live chain, keeping mainnet sending disabled until safe authentication/signing exists and separating the public reference repository from the future private production implementation.
 
 ## Challenges
 
-Keeping the demo stable without weakening the production boundary; designing one-job tools; making confirmations retry-safe; and separating model explanation from policy authority.
+- Making wallet recovery available without exposing it to ChatGPT or the server.
+- Keeping the inline mobile widget fast while supporting multi-chain derivation.
+- Replacing demo balances with honest live mainnet reads.
+- Designing tool annotations and state boundaries that accurately describe side effects.
+- Presenting a compelling working product without pretending unfinished signing is production-ready.
 
 ## Accomplishments
 
-A complete inline wallet flow, human and agent payment scenarios, blocked payments with exact reasons, 16 MCP tools, a single-file React widget, SQLite persistence, audit hash chain and automated tests.
-
-## Built during Build Week
-
-The repository was empty at baseline. All code, tests, documentation and container configuration in the first release were created during Build Week.
+- Non-custodial local 12/15-word Vault with encrypted browser storage.
+- 12 derived address networks across EVM, Solana, NEAR and Aptos families.
+- Live read-only Polygon POL and native USDC balances.
+- 19 focused MCP tools and a versioned ChatGPT widget.
+- Deterministic policy/state-machine reference layer and tamper-evident audit chain.
+- Mobile widget reduced by separating the Vault bundle.
+- Automated CI, security scan, tests, Docker/Render deployment and review documentation.
 
 ## What comes next
 
-AiFinPay OAuth account linking, a user-controlled or MPC/HSM signer, real Polygon Amoy execution, managed Postgres, distributed idempotency, merchant identity and external security audit.
+Personal OAuth, durable user-scoped storage, indexed history, canonical transaction simulation, explicit user-presence approval, local signing, multi-RPC verification, independent security audits and jurisdiction-specific regulatory review.
 
-## Three-minute video
-
-Use the timed script in `docs/DEMO_SCRIPT.md`.
-
-## Submission placeholders
+## Testing links
 
 - Live app: `https://aifinpay-wallet-chatgpt.onrender.com/`
-- MCP URL: `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
+- MCP: `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
+- Health: `https://aifinpay-wallet-chatgpt.onrender.com/health`
 - Source: `https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay`
-- Demo video: `TBD`
-- Privacy policy: `https://aifinpay-wallet-chatgpt.onrender.com/privacy`
-- Support URL: `https://aifinpay-wallet-chatgpt.onrender.com/support`
+- Privacy: `https://aifinpay-wallet-chatgpt.onrender.com/privacy`
+- Terms: `https://aifinpay-wallet-chatgpt.onrender.com/terms`
+- Support: `https://aifinpay-wallet-chatgpt.onrender.com/support`
+
+## Owner-supplied submission fields
+
+- Public YouTube demo URL: `TBD`
+- Primary `/feedback` Codex Session ID: `TBD_BY_SUBMITTER`
+- Final screenshots: `TBD`

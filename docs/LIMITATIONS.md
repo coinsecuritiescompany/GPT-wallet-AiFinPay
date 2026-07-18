@@ -1,15 +1,15 @@
 # Known limitations
 
-- Deterministic demo ledger only; no real Polygon Amoy broadcast occurs.
-- Explorer hashes are deterministic demo identifiers.
-- Real AiFinPay code was unavailable in this empty repository, so no production components were reused.
-- Demo authentication uses one fixed server-side user. OAuth 2.1/account linking is pending.
-- Policy update/revoke confirmation is a strict boolean gate; production should use the same signed user-presence flow as transfers.
-- Daily spending currently uses a zero demo accumulator. Production must aggregate completed transactions in a database transaction.
-- Demo adapter state is process-local, while payment/audit metadata persists in SQLite. Restart resets demo balances and sample history.
-- Node's built-in SQLite API is marked experimental.
-- No HSM, MPC, WalletConnect or production signing adapter is included.
-- No live RPC, gas estimation, transaction simulation, reorg handling or confirmation monitor exists.
-- No rate limiter or distributed replay cache exists.
-- The public demo, privacy and support routes are live; final ChatGPT-hosted screenshots and the demo video are still pending.
-- External security audit and accessibility/manual host QA are pending.
+- Polygon mainnet POL and native USDC balances are live but read-only.
+- Mainnet transfer preparation, signing and broadcasting are disabled.
+- Transaction history is empty in mainnet mode until an indexed provider is integrated.
+- The hosted beta uses one temporary server-side session instead of personal OAuth.
+- Render Free can cold-start after inactivity and its SQLite filesystem is ephemeral.
+- Pairing must be repeated after storage loss, restart or redeploy.
+- Browser local storage is not a hardware wallet or secure enclave.
+- EVM addresses are reused across nine EVM networks by derivation design; only Polygon reads are live.
+- Solana, NEAR and Aptos addresses are derived, but balances and signing are not connected.
+- Agent policies and the deterministic ledger are reference/demo functionality, not production authorization.
+- No external smart-contract, cryptographic or application-security audit has been completed.
+- No production regulatory, AML/sanctions, consumer-protection or jurisdictional approval is claimed.
+- Accessibility and multi-device recovery require additional manual QA.

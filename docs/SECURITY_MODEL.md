@@ -1,28 +1,41 @@
 # Security model
 
-## Assets protected
+## Protected assets
 
-Wallet ownership, transfer intent integrity, spending policy integrity, confirmation authority, audit continuity and future signing credentials.
+- recovery words and derived private keys;
+- Vault password and encrypted local Vault;
+- wallet-to-user association;
+- transfer intent and policy integrity;
+- confirmation authority and audit continuity;
+- future signing and broadcast authorization.
 
-## Controls implemented
+## Implemented controls
 
-- Demo/testnet default and visible `DEMO ONLY` labelling.
-- No seed phrase, recovery phrase or private-key import/export path.
-- No signing secret in database, MCP results, widget, logs or environment example.
-- Server-side user/wallet resolution.
-- Zod validation of network, token, address, amount, expiry, IDs and bounds.
-- Base-unit integer arithmetic; scientific notation and excess decimals rejected.
-- One-time intent preparation with idempotent retry behavior and changed-payload rejection.
-- Expiring HMAC confirmation tokens scoped to intent and user.
-- Explicit intent state transitions; terminal states cannot be replayed.
-- Deterministic policy engine, independent from model explanations.
-- SHA-256 audit hash chain with metadata hashing.
-- Safe typed errors; no stack trace or secret returned to the widget/model.
-- Exact widget CSP domains with no iframe permission.
+- BIP-39 recovery is generated/restored only in the separate browser Vault.
+- PBKDF2-SHA256 derives an AES-256-GCM key for local Vault encryption.
+- Plaintext recovery state is cleared from React state after the Vault is saved.
+- The pairing API accepts public addresses only and hashes one-time pairing tokens at rest.
+- Pairing tokens expire after ten minutes and can be consumed once.
+- Tool schemas do not accept recovery words, private keys or Vault passwords.
+- Mainnet mode reads POL and native USDC balances only; sending is blocked.
+- Financial amounts use base-unit integer arithmetic.
+- Policy decisions are deterministic code, independent of model narration.
+- Prepared demo intents are user-scoped, expiring and idempotent.
+- Audit records form a local SHA-256 hash chain.
+- Widget CSP domains are exact; no wildcard fetch domains are granted.
+- Public CI rejects common secret formats, credential files, databases and archives.
 
-## Production requirements
+## Important limitations
 
-Before real funds: external security audit, OAuth 2.1 account linking, scoped authorization on every tool, managed Postgres, rate limiting, replay-resistant distributed idempotency, HSM/MPC or user-controlled signing, RPC quorum/verification, transaction simulation, monitoring, incident response and key rotation.
+- The hosted beta uses a shared temporary session mode rather than personal OAuth.
+- Free Render storage is ephemeral, so pairing/audit data can reset.
+- Browser local storage is not hardware-backed secure storage.
+- PBKDF2 iteration count and wallet derivation need independent cryptographic review.
+- RPC fallbacks improve availability but do not protect against coordinated false data.
+- The application and wallet code have not completed an external security audit.
 
-The current audit chain is tamper-evident inside one database. It is not immutable and does not provide legal non-repudiation.
+## Production gates
 
+Before mainnet sending: verified per-user authentication, durable scoped storage, transaction simulation, canonical human-readable previews, explicit user presence, local signing, nonce/fee controls, RPC verification, confirmation monitoring, rate limiting, abuse prevention, incident response and independent audits.
+
+The public repository intentionally contains no production secrets, treasury configuration, signing infrastructure or customer data.

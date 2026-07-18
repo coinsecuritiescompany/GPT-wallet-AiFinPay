@@ -1,6 +1,8 @@
 {
   "name": "@aifinpay/wallet-widget",
   "version": "0.1.0",
+  "description": "Compact ChatGPT wallet widget and local non-custodial Vault.",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {

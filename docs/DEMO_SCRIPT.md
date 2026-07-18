@@ -1,32 +1,31 @@
 # Three-minute demo script
 
+The final video must be public on YouTube, three minutes or less, and include English voiceover. Never show recovery words, passwords or live pairing tokens.
+
 ## 0:00–0:20 — Problem
 
-“AI agents can call tools and APIs, but payments still depend on fragmented interfaces or unsafe unrestricted keys. AiFinPay adds an approval and policy layer inside the conversation.”
+“AI agents can call tools and buy services, but giving a model an unrestricted wallet key is unsafe. AiFinPay adds a non-custodial wallet interface, deterministic policy boundary and explicit user control inside ChatGPT.”
 
-## 0:20–0:40 — Open wallet
+## 0:20–0:45 — Open the ChatGPT app
 
-Say: “Open my AiFinPay wallet.” Show the 2,543.68 USDC demo balance, Polygon Amoy, recent transactions, Agent Limits and Audit Log.
+Say: “Open my AiFinPay wallet.” Show the branded inline widget and explain the MCP server/widget architecture. If the server is cold-starting, warm it before recording.
 
-## 0:40–1:20 — Human transfer
+## 0:45–1:20 — Local Vault
 
-Say: “Send 10 USDC to 0x2222222222222222222222222222222222222222 on Polygon.” Show parsed recipient, amount, network, estimated fee, low risk, policy result and explicit Confirm/Cancel controls.
+Open the Vault creation flow. Show the network selection and explain that recovery is generated locally. Cut or blur the phrase step completely. Show local encryption and the final public-address pairing screen.
 
-## 1:20–1:45 — Confirm
+## 1:20–1:50 — Live Polygon mainnet data
 
-Click Confirm. Explain that the token is scoped to the prepared intent, user and expiry. Show the deterministic transaction hash, explorer link, receipt ID and audit entry. State clearly that this is a demo ledger.
+Return to ChatGPT and reopen the wallet. Show the `MAINNET` badge, paired address, live POL/native USDC balances and Receive view. Explain that only public addresses reach the MCP server.
 
-## 1:45–2:20 — Agent payment
+## 1:50–2:15 — Safety gate
 
-Say: “Buy access to demo-data-api for no more than 0.10 USDC with my research agent.” Show agent identity, 5 USDC daily limit, 0.50 USDC per-transaction limit and automatic approval threshold of 0.10 USDC.
+Open Send. Show that mainnet signing is deliberately locked until personal authentication, canonical transaction preview and local signing are complete. Emphasize that the project does not fake successful mainnet transactions.
 
-## 2:20–2:40 — Blocked action
+## 2:15–2:40 — Codex and GPT-5.6
 
-Say: “Let my research agent pay 0.51 USDC to the same API.” Show: **Blocked by AiFinPay Policy Engine** and `PER_TRANSACTION_LIMIT_EXCEEDED`.
+Show a brief Codex/build-log or commit-history view. Explain that Codex created and iterated on the MCP server, UI, tests, mobile bundle split, Polygon adapter and security documentation. Explain that GPT-5.6 interprets requests and selects tools, while deterministic code controls balances and policy.
 
-## 2:40–3:00 — Architecture
+## 2:40–3:00 — Architecture and impact
 
-Show: ChatGPT → Apps SDK widget → MCP server → AiFinPay policy engine → wallet adapter → demo ledger → audit chain.
-
-End: “Agent-native payments, with humans still in control.”
-
+Show the README architecture: user → GPT-5.6 → MCP → Polygon RPC, with local Vault ownership. End: “A wallet interface built for AI agents, without giving the model the keys.”

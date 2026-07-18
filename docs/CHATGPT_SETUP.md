@@ -1,42 +1,48 @@
 # ChatGPT setup
 
-These steps follow the official Apps SDK docs checked on 2026-07-18. Product labels can change; if a label differs, use the current developer-mode app creation flow linked below rather than guessing.
+## Hosted reviewer flow
 
-1. Install and verify:
+1. Open ChatGPT settings and enable Developer Mode.
+2. Create or refresh a developer-mode app using:
 
-   ```bash
-   npm install
-   cp .env.example .env
-   npm run check
-   npm start
-   ```
+   `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
 
-2. Verify `http://localhost:8787/health` and test tools:
+3. Ask: `Open my AiFinPay wallet.`
+4. If not connected, open the generated short-lived Vault URL.
+5. Create a disposable Vault or restore a disposable test phrase locally. Do not record the phrase in a screenshot or demo video.
+6. Pair public addresses and return to ChatGPT.
+7. Reopen the wallet and verify Polygon Mainnet POL/USDC balances.
 
-   ```bash
-   npx @modelcontextprotocol/inspector@latest --server-url http://localhost:8787/mcp --transport http
-   ```
+After tool, schema, metadata or widget URI changes, redeploy and refresh the app in ChatGPT.
 
-3. For local iteration, expose port 8787 through an HTTPS tunnel, for example:
+## Local development
 
-   ```bash
-   ngrok http 8787
-   ```
+```bash
+npm ci
+cp .env.example .env
+npm run check
+npm start
+npx @modelcontextprotocol/inspector@latest --server-url http://localhost:8787/mcp --transport http
+```
 
-   The stable public demo is available at `https://aifinpay-wallet-chatgpt.onrender.com/mcp`. The README's **Deploy to Render** button creates an independent copy if needed.
+Expose port `8787` through a temporary HTTPS tunnel only for development. Production/submission review must use a stable public HTTPS endpoint.
 
-4. Open ChatGPT settings and enable Developer mode under **Settings → Security and login**.
-5. Open **Settings → Plugins** (or the current plugins page), create a developer-mode app and paste `https://YOUR-TUNNEL.example/mcp`.
-6. Use prompts:
-   - “Open my AiFinPay wallet.”
-   - “What is my USDC balance?”
-   - “Send 10 USDC to 0x2222222222222222222222222222222222222222 on Polygon.”
-   - “Buy access to demo-data-api for no more than 0.10 USDC with my research agent.”
-   - “Try to pay 0.51 USDC with my research agent.”
-   - “Show my latest AiFinPay transactions.”
-7. After changing tool names, schemas, descriptions or metadata, redeploy/restart and use **Refresh** on the developer-mode app.
-8. Inspect MCP Inspector or server JSON logs for tool errors. Check browser developer tools for CSP or widget errors.
-9. Verify the widget makes no direct network calls; CSP connect/resource arrays are empty and only Polygon Amoy is allowed as an external redirect.
-10. Before submission, replace the tunnel with a stable HTTPS origin. Render is detected automatically; on other hosts set `MCP_PUBLIC_URL` and `WIDGET_PUBLIC_URL` to the deployed origin.
+## Test prompts
 
-Official references: [Quickstart](https://developers.openai.com/apps-sdk/quickstart), [Connect from ChatGPT](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt), [Troubleshooting](https://developers.openai.com/apps-sdk/deploy/troubleshooting).
+- `Open my AiFinPay wallet.`
+- `Connect a new AiFinPay Vault.`
+- `What is my POL balance on Polygon?`
+- `Show my receive addresses.`
+- `Which mainnet networks does my Vault support?`
+- `Prepare a 1 USDC mainnet transfer.` — expected: safe signing-disabled response.
+
+## Review checks
+
+- `/health` reports `walletMode: mainnet` and `blockchainAdapter: MAINNET`.
+- The widget badge says `MAINNET`, not Amoy or Demo.
+- Balance data corresponds to the paired public Polygon address.
+- Recovery words never appear in ChatGPT tool input/output.
+- Send presents the security gate and never broadcasts.
+- Privacy, terms and support URLs are public.
+
+Official references: [Connect from ChatGPT](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt), [Prepare an app](https://developers.openai.com/apps-sdk/deploy/submission), [Security and privacy](https://developers.openai.com/apps-sdk/guides/security-privacy).

@@ -13,7 +13,7 @@ export const WIDGET_URI = "ui://aifinpay/wallet-v3.html";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
-const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: true, idempotentHint: true };
+const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true };
 
 function data(message: string, structuredContent: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text: message }], structuredContent };
@@ -65,7 +65,7 @@ const policyDraftSchema = {
 export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "list_supported_mainnets", {
     title: "List supported AiFinPay mainnets",
-    description: "Use this when the user asks which mainnet blockchains their AiFinPay Wallet supports and which networks are currently enabled for signing.",
+    description: "Use this when the user asks which mainnet address networks the AiFinPay Vault derives. The result explicitly identifies whether signing is enabled.",
     inputSchema: {}, annotations: readOnly, _meta: {}
   }, async () => data("AiFinPay supports addresses on 12 mainnet networks. Signing is enabled gradually after contract and treasury verification.", { view: "networks", networks: MAINNET_NETWORKS }));
 
@@ -125,7 +125,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
 
   registerAppTool(server, "prepare_transfer", {
     title: "Prepare wallet transfer",
-    description: "Use this when the user has expressed a specific blockchain transfer request and needs a validated preview before confirmation. This never broadcasts a transaction.",
+    description: "Use this when the user requests a transfer preview. It writes a private demo intent in demo mode, never broadcasts, and returns a safety error in mainnet mode.",
     inputSchema: prepareSchema, annotations: write, _meta: {}
   }, async (args) => {
     try {
@@ -141,7 +141,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
 
   registerAppTool(server, "confirm_transfer", {
     title: "Confirm prepared transfer",
-    description: "Use this only after the user has explicitly confirmed a previously prepared transfer. A valid prepared intent and confirmation token are mandatory.",
+    description: "Use this only after explicit confirmation of a prepared demo transfer. It irreversibly completes the private demo intent; mainnet broadcasting is disabled.",
     inputSchema: { transferIntentId: z.string().min(8), confirmationToken: z.string().min(20), idempotencyKey: idempotencyKeySchema }, annotations: destructive, _meta: {}
   }, async ({ transferIntentId, confirmationToken }) => {
     try {
@@ -154,7 +154,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "cancel_transfer", {
     title: "Cancel prepared transfer",
     description: "Use this when the user wants to cancel a transfer that has not completed.",
-    inputSchema: { transferIntentId: z.string().min(8) }, annotations: write, _meta: {}
+    inputSchema: { transferIntentId: z.string().min(8) }, annotations: destructive, _meta: {}
   }, async ({ transferIntentId }) => {
     try { const user = ctx.auth.resolve(); return data("Transfer cancelled.", { view: "cancelled", intent: publicIntent(ctx.payments.cancel(user.userId, transferIntentId)) }); }
     catch (error) { return failure(error); }
@@ -221,7 +221,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "revoke_agent_policy", {
     title: "Revoke agent policy",
     description: "Use this only after the user explicitly confirms revoking an existing agent spending policy.",
-    inputSchema: { policyId: z.string().min(8), confirmation: z.literal(true) }, annotations: write, _meta: {}
+    inputSchema: { policyId: z.string().min(8), confirmation: z.literal(true) }, annotations: destructive, _meta: {}
   }, async ({ policyId }) => { try { const user = ctx.auth.resolve(); return data("Agent policy revoked.", { view: "policy", policy: ctx.policies.revoke(user.userId, policyId) }); } catch (error) { return failure(error); } });
 
   registerAppTool(server, "evaluate_payment_request", {
