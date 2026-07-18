@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type TransactionRecord } from "@aifinpay/shared";
 import { bridge } from "./bridge/mcp-bridge.js";
 import { browserDemoData } from "./demo-data.js";
+import { NetworkLogo, type NetworkLogoId } from "./NetworkLogo.js";
 import type { WidgetData } from "./types.js";
 import logoUrl from "../../mcp-server/assets/aifinpay-logo.png";
 import "./styles.css";
@@ -67,7 +68,7 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
         ? <><h1><small>$</small>{Number(usdc?.formatted ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</h1><span className="subtle">{usdc?.formatted} USDC</span></>
         : <><h1 className="balance-pending">—</h1><span className="subtle">{network.nativeToken} balance adapter coming next</span></>}
       </div>
-      <button className="network" type="button" aria-haspopup="dialog" aria-expanded={networkOpen} aria-label={`Choose network. Current: ${networkLabel}`} onClick={() => setNetworkOpen(true)}><span className={`network-dot ${network.family.toLowerCase()}`} />{networkLabel}<span className="chevron">⌄</span></button>
+      <button className="network" type="button" aria-haspopup="dialog" aria-expanded={networkOpen} aria-label={`Choose network. Current: ${networkLabel}`} onClick={() => setNetworkOpen(true)}><NetworkLogo id={selectedNetwork as NetworkLogoId} />{networkLabel}<span className="chevron">⌄</span></button>
     </section>
     <div className="address"><span>{connectedAddress ? short(connectedAddress) : summary.maskedAddress}</span><span>{isLiveBalance ? `${native?.formatted} POL gas` : `${network.nativeToken} balance pending`}</span></div>
     <nav className="actions">
@@ -84,7 +85,7 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
         <div className="network-sheet-handle" />
         <div className="network-sheet-head"><div><span className="eyebrow">12 MAINNETS</span><h2 id="network-sheet-title">Choose network</h2></div><button type="button" aria-label="Close network selector" onClick={() => setNetworkOpen(false)}>×</button></div>
         <div className="network-options" role="listbox" aria-label="AiFinPay wallet networks">{MAINNET_OPTIONS.map(([id, item]) => <button type="button" role="option" aria-selected={selectedNetwork === id} className={selectedNetwork === id ? "selected" : ""} key={id} onClick={() => selectNetwork(id)}>
-          <span className={`network-dot ${item.family.toLowerCase()}`} /><span className="network-option-copy"><strong>{item.label}</strong><small>{item.family} · {item.nativeToken}{item.chainId ? ` · Chain ${item.chainId}` : ""}</small></span><span className={`network-availability ${id === "polygon" ? "live" : "ready"}`}>{id === "polygon" ? "LIVE BALANCE" : "ADDRESS READY"}</span>{selectedNetwork === id && <b aria-hidden="true">✓</b>}
+          <NetworkLogo id={id as NetworkLogoId} /><span className="network-option-copy"><strong>{item.label}</strong><small>{item.family} · {item.nativeToken}{item.chainId ? ` · Chain ${item.chainId}` : ""}</small></span><span className={`network-availability ${id === "polygon" ? "live" : "ready"}`}>{id === "polygon" ? "LIVE BALANCE" : "ADDRESS READY"}</span>{selectedNetwork === id && <b aria-hidden="true">✓</b>}
         </button>)}</div>
         <p>One Vault controls all 12 addresses. Polygon has live balances now; other balance adapters are being connected without exposing your keys.</p>
       </section>

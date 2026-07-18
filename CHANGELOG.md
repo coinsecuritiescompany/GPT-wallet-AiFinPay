@@ -6,6 +6,7 @@ All notable public changes are documented here. The project follows the principl
 
 ### Added
 
+- Locally bundled, full-color logos for all 12 mainnet networks in the wallet selector.
 - Professional public-repository governance, legal, privacy, security and contribution documentation.
 - Public/private implementation boundary and automated public-safety scan.
 - OpenAI Build Week compliance checklist and ChatGPT app submission metadata.
@@ -13,6 +14,7 @@ All notable public changes are documented here. The project follows the principl
 
 ### Changed
 
+- ChatGPT widget resource bumped to `wallet-v7` so hosts refresh the embedded interface after deployment.
 - Documentation now reflects the local non-custodial Vault and live read-only Polygon mainnet balances.
 - Mainnet is the default wallet-read mode; demo mode is explicit.
 

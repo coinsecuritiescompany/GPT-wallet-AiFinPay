@@ -75,8 +75,11 @@ describe("AiFinPay wallet widget", () => {
     fireEvent.click(selector);
     expect(screen.getByRole("dialog", { name: "Choose network" })).toBeInTheDocument();
     expect(screen.getAllByRole("option")).toHaveLength(12);
+    expect(screen.getByTestId("network-logo-botchain")).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^network-logo-/)).toHaveLength(13);
     fireEvent.click(screen.getByRole("option", { name: /Solana/ }));
     expect(screen.getByRole("button", { name: "Choose network. Current: Solana" })).toBeInTheDocument();
+    expect(screen.getByTestId("network-logo-solana")).toBeInTheDocument();
     expect(screen.getByText("SOL balance adapter coming next")).toBeInTheDocument();
     expect(screen.getAllByText("5L7xB9ar…111111")).toHaveLength(2);
   });
