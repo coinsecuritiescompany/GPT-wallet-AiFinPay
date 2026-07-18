@@ -62,9 +62,9 @@ Use the timed script in `docs/DEMO_SCRIPT.md`.
 
 ## Submission placeholders
 
-- Live app/MCP URL: `TBD`
+- Live app: `https://aifinpay-wallet-chatgpt.onrender.com/`
+- MCP URL: `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
 - Source: `https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay`
 - Demo video: `TBD`
-- Privacy policy: `TBD`
-- Support URL/email: `TBD`
-
+- Privacy policy: `https://aifinpay-wallet-chatgpt.onrender.com/privacy`
+- Support URL: `https://aifinpay-wallet-chatgpt.onrender.com/support`

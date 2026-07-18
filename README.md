@@ -4,6 +4,8 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay)
 
+**Live demo:** [wallet preview](https://aifinpay-wallet-chatgpt.onrender.com/preview) · [MCP endpoint](https://aifinpay-wallet-chatgpt.onrender.com/mcp) · [health](https://aifinpay-wallet-chatgpt.onrender.com/health) · [privacy](https://aifinpay-wallet-chatgpt.onrender.com/privacy) · [support](https://aifinpay-wallet-chatgpt.onrender.com/support)
+
 AiFinPay Wallet for ChatGPT is a programmable wallet and approval layer for users and autonomous AI agents. ChatGPT calls focused MCP tools, while a React widget renders balances, transfer previews, agent limits, blocked requests, receipts and the audit trail inline.
 
 **Current scope: deterministic demo ledger and Polygon Amoy-shaped data only. Do not use real funds.**
@@ -133,7 +135,7 @@ All available placeholders are in [.env.example](.env.example). No real values a
 
 ## Connect to ChatGPT
 
-ChatGPT needs a public HTTPS endpoint during development. Build/start the server, expose port `8787` using a tunnel, then create a developer-mode app with the HTTPS URL ending in `/mcp`. Current exact terminology and refresh steps are in [ChatGPT setup](docs/CHATGPT_SETUP.md).
+Create a developer-mode app in ChatGPT using `https://aifinpay-wallet-chatgpt.onrender.com/mcp`. For local development, build/start the server and expose port `8787` using a tunnel. Current exact terminology and refresh steps are in [ChatGPT setup](docs/CHATGPT_SETUP.md).
 
 ## Deployment
 

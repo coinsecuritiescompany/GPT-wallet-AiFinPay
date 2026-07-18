@@ -1,5 +1,9 @@
 # Deployment
 
+Current verified public demo: `https://aifinpay-wallet-chatgpt.onrender.com/`
+
+Public MCP endpoint: `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
+
 ## One-click Render demo
 
 Use the repository's **Deploy to Render** button or open:

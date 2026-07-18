@@ -23,7 +23,7 @@ These steps follow the official Apps SDK docs checked on 2026-07-18. Product lab
    ngrok http 8787
    ```
 
-   For a stable demo, use the README's **Deploy to Render** button and copy the resulting `https://<service>.onrender.com/mcp` URL.
+   The stable public demo is available at `https://aifinpay-wallet-chatgpt.onrender.com/mcp`. The README's **Deploy to Render** button creates an independent copy if needed.
 
 4. Open ChatGPT settings and enable Developer mode under **Settings → Security and login**.
 5. Open **Settings → Plugins** (or the current plugins page), create a developer-mode app and paste `https://YOUR-TUNNEL.example/mcp`.

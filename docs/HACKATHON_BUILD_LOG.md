@@ -39,5 +39,5 @@ See `docs/LIMITATIONS.md`. Main gaps are production OAuth/signing/RPC, approving
 - [`1bb7d89`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/1bb7d897cbb47a7d3abfabc596409eb952960a7d) — interactive React wallet widget
 - [`6c3bcf5`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/commit/6c3bcf520757a5e952b243a2551752a3f9c885d1) — tests, deployment and submission documentation
 - Codex session reference: `TBD_BY_SUBMITTER`
-- Deployment URL: `TBD`
+- Deployment URL: `https://aifinpay-wallet-chatgpt.onrender.com/`
 - Video URL: `TBD`
