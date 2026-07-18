@@ -33,6 +33,8 @@ The hosted instance uses a free preview environment and can cold-start after ina
 | Local 12/15-word wallet creation and restore | Beta | Recovery phrase stays in the browser Vault |
 | Local AES-256-GCM encrypted Vault | Beta | Password and ciphertext remain on the device |
 | EVM, Solana, NEAR and Aptos address derivation | Beta | Only public addresses are paired with ChatGPT |
+| Idempotent Vault pairing and automatic dashboard opening | Beta | Repeated completion accepts only the same public addresses |
+| 12-mainnet selector | Live UI | Polygon balance is live; the other network balance adapters are staged |
 | Polygon PoS POL and native USDC balances | Live, read-only | Read from public Polygon RPC endpoints |
 | Receive flow | Live | Displays public addresses only |
 | Agent policy engine and audit trail | Reference implementation | Server-side deterministic rules |
