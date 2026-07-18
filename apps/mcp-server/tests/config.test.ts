@@ -23,4 +23,14 @@ describe("deployment config", () => {
     expect(config.walletMode).toBe("mainnet");
     expect(config.polygonRpcUrls).toEqual(["https://one.example", "https://two.example"]);
   });
+
+  it("defaults wallet reads to Polygon mainnet", () => {
+    const config = loadConfig({});
+    expect(config.walletMode).toBe("mainnet");
+  });
+
+  it("uses demo wallet mode only when explicitly requested", () => {
+    const config = loadConfig({ AIFINPAY_WALLET_MODE: "demo" });
+    expect(config.walletMode).toBe("demo");
+  });
 });
