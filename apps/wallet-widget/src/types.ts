@@ -2,7 +2,7 @@ import type { AgentPolicy, AuditEvent, PaymentIntent, TransactionRecord, WalletS
 
 export type WalletView = "loading" | "wallet" | "balance" | "transfer-form" | "transfer-preview" | "blocked" |
   "agent-approval" | "policy-editor" | "policy-preview" | "policy" | "policies" | "history" | "audit" | "receipt" |
-  "transaction-status" | "cancelled" | "error" | "not-connected";
+  "transaction-status" | "cancelled" | "error" | "not-connected" | "wallet-connect" | "wallet-connected" | "networks";
 
 export interface WidgetData {
   view: WalletView;
@@ -21,6 +21,9 @@ export interface WidgetData {
   subject?: string;
   expiresAt?: string;
   error?: { code: string; message: string };
+  pairingUrl?: string;
+  connection?: { addresses: Record<string, string>; connectedAt: string } | null;
+  networks?: Record<string, { label: string; family: string; chainId: number | null; nativeToken: string; explorerBaseUrl: string; mode: string; enabledForSigning: boolean }>;
 }
 
 declare global {
