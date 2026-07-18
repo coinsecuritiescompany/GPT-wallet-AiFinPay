@@ -5,6 +5,7 @@ import { loadConfig } from "./config.js";
 import { AppContext } from "./context.js";
 import { landingPage, privacyPage, supportPage, termsPage } from "./public-pages.js";
 import { appIconPng, createMcpServer, vaultHtml, widgetHtml } from "./server.js";
+import { WIDGET_URI } from "./tools/register-tools.js";
 
 const config = loadConfig();
 const context = new AppContext(config);
@@ -63,7 +64,9 @@ const httpServer = createServer(async (req, res) => {
       demoMode: config.demoMode,
       walletMode: config.walletMode,
       database: "ok",
-      blockchainAdapter: context.adapter.kind
+      blockchainAdapter: context.adapter.kind,
+      widgetResource: WIDGET_URI,
+      release: process.env.RENDER_GIT_COMMIT?.slice(0, 12) ?? "local"
     }));
     return;
   }
@@ -105,8 +108,10 @@ const httpServer = createServer(async (req, res) => {
       if (!/^[A-Za-z0-9_-]{32}$/.test(token) || !/^0x[a-fA-F0-9]{40}$/.test(evm) || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solana) || !/^[a-f0-9]{64}$/.test(near) || !/^0x[a-f0-9]{64}$/.test(aptos)) {
         sendJson(res, 400, { error: "INVALID_PAIRING_REQUEST" }); return;
       }
-      const ok = context.store.completeWalletPairing(createHash("sha256").update(token).digest("hex"), { evm, solana, near, aptos });
-      sendJson(res, ok ? 200 : 410, ok ? { connected: true } : { error: "PAIRING_EXPIRED_OR_USED" });
+      const result = context.store.completeWalletPairing(createHash("sha256").update(token).digest("hex"), { evm, solana, near, aptos });
+      sendJson(res, result === "invalid" ? 410 : 200, result === "invalid"
+        ? { error: "PAIRING_EXPIRED_OR_UNKNOWN" }
+        : { connected: true, alreadyConnected: result === "already_connected" });
     } catch (error) {
       sendJson(res, error instanceof Error && error.message === "REQUEST_TOO_LARGE" ? 413 : 400, { error: "INVALID_JSON" });
     }

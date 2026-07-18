@@ -3,6 +3,16 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AgentPolicy, AuditEvent, PaymentIntent } from "@aifinpay/shared";
 
+export type WalletPairingResult = "connected" | "already_connected" | "invalid";
+
+function sameAddresses(left: Record<string, string>, right: Record<string, string>): boolean {
+  return ["evm", "solana", "near", "aptos"].every((key) => {
+    const a = left[key] ?? "";
+    const b = right[key] ?? "";
+    return key === "evm" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  });
+}
+
 export class Store {
   readonly db: DatabaseSync;
 
@@ -98,10 +108,15 @@ export class Store {
     this.db.prepare("INSERT INTO wallet_pairings (token_hash,user_id,expires_at,consumed) VALUES (?,?,?,0)").run(tokenHash, userId, expiresAt);
   }
 
-  completeWalletPairing(tokenHash: string, addresses: Record<string, string>): boolean {
+  completeWalletPairing(tokenHash: string, addresses: Record<string, string>): WalletPairingResult {
     const now = new Date().toISOString();
     const row = this.db.prepare("SELECT user_id,expires_at,consumed FROM wallet_pairings WHERE token_hash=?").get(tokenHash) as { user_id: string; expires_at: string; consumed: number } | undefined;
-    if (!row || row.consumed || row.expires_at <= now) return false;
+    if (!row) return "invalid";
+    if (row.consumed) {
+      const connection = this.getWalletConnection(row.user_id);
+      return connection && sameAddresses(connection.addresses, addresses) ? "already_connected" : "invalid";
+    }
+    if (row.expires_at <= now) return "invalid";
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.prepare("UPDATE wallet_pairings SET consumed=1 WHERE token_hash=? AND consumed=0").run(tokenHash);
@@ -109,7 +124,7 @@ export class Store {
         ON CONFLICT(user_id) DO UPDATE SET addresses_json=excluded.addresses_json,connected_at=excluded.connected_at`)
         .run(row.user_id, JSON.stringify(addresses), now);
       this.db.exec("COMMIT");
-      return true;
+      return "connected";
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;

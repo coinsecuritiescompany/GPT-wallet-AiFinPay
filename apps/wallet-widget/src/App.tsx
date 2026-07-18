@@ -54,6 +54,12 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
     setNetworkOpen(false);
     void window.openai?.setWidgetState?.({ ...(window.openai?.widgetState ?? {}), selectedNetwork: id });
   };
+  useEffect(() => {
+    if (!networkOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setNetworkOpen(false); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [networkOpen]);
   return <main className="card"><Header badge={isMainnet ? "MAINNET" : "BETA"} />
     {data.connection && <div className="connected-strip"><span>✓ Wallet connected</span><strong>{short(connectedAddress)}</strong></div>}
     <section className="wallet-top">
@@ -212,7 +218,10 @@ function WalletConnect({ data, onConnected }: { data: WidgetData; onConnected: (
     setChecking(true);
     try {
       const status = await bridge.callTool("get_wallet_connection", {}, { emit: false });
-      if (status.view === "wallet-connected" && status.connection) onConnected(status);
+      if (status.view === "wallet-connected" && status.connection) {
+        const wallet = await bridge.callTool("render_wallet", {}, { emit: false });
+        onConnected(wallet.view === "wallet" ? wallet : status);
+      }
     } catch {
       // A transient host/tool error must not replace the still-valid pairing screen.
     } finally {
@@ -226,7 +235,7 @@ function WalletConnect({ data, onConnected }: { data: WidgetData; onConnected: (
     const onVisibility = () => { if (document.visibilityState === "visible") void checkConnection(); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void checkConnection(); }, 3_000);
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void checkConnection(); }, 1_500);
     void checkConnection();
     return () => {
       window.clearInterval(timer);
@@ -238,13 +247,26 @@ function WalletConnect({ data, onConnected }: { data: WidgetData; onConnected: (
   return <main className="card"><Header label="Secure setup" /><section className="hero-icon">◇</section><div className="center"><span className="eyebrow">NON-CUSTODIAL VAULT</span><h2>Create or connect your wallet</h2><p>Recovery words and private keys stay on your device. ChatGPT receives public addresses only.</p></div><button className="primary" disabled={!data.pairingUrl} onClick={open}>Open AiFinPay Vault</button><button className="secondary connection-check" disabled={checking} onClick={() => void checkConnection()}>{checking ? "Checking connection…" : "I connected my wallet — check now"}</button><p className="disclaimer">The secure connection link expires in 10 minutes. This widget updates automatically when you return.</p></main>;
 }
 
-function WalletConnected({ data }: { data: WidgetData }) {
-  const addresses = data.connection?.addresses;
-  return <main className="card"><Header label="Connected" /><section className="success-icon">✓</section><div className="center"><span className="eyebrow success-text">WALLET CREATED</span><h2>AiFinPay Vault connected</h2><p>Your public addresses are now available to ChatGPT. Recovery words and private keys remain only on your device.</p></div>
-    {addresses && <div className="connected-addresses"><div><span>EVM · 9 networks</span><strong>{short(addresses.evm)}</strong></div><div><span>Solana</span><strong>{short(addresses.solana)}</strong></div><div><span>NEAR</span><strong>{short(addresses.near)}</strong></div><div><span>Aptos</span><strong>{short(addresses.aptos)}</strong></div></div>}
-    <button className="primary" onClick={() => void bridge.callTool("render_wallet", {})}>Open wallet dashboard</button>
-    {data.connection?.connectedAt && <p className="disclaimer">Connected {date(data.connection.connectedAt)}</p>}
-  </main>;
+function WalletConnected({ onOpened }: { onOpened: (next: WidgetData) => void }) {
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let active = true;
+    const open = async () => {
+      setError("");
+      try {
+        const wallet = await bridge.callTool("render_wallet", {}, { emit: false });
+        if (!active) return;
+        if (wallet.view !== "wallet") throw new Error("WALLET_NOT_READY");
+        onOpened(wallet);
+      } catch {
+        if (active) setError("The wallet is connected, but the live dashboard did not load. Try again.");
+      }
+    };
+    void open();
+    return () => { active = false; };
+  }, [attempt, onOpened]);
+  return <main className="card"><Header label="Connected" badge="MAINNET" /><div className="opening-wallet"><div className="spinner" /><strong>Opening your wallet…</strong>{error && <><p className="vault-error">{error}</p><button className="primary" onClick={() => setAttempt((value) => value + 1)}>Open wallet now</button></>}</div></main>;
 }
 
 function Networks({ data, onBack }: { data: WidgetData; onBack: () => void }) {
@@ -259,7 +281,7 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
   const back = () => setData(wallet);
   if (data.view === "loading") return <main className="card loading"><div className="spinner" /><span>Loading secure wallet…</span></main>;
   if (data.view === "wallet-connect" || data.view === "not-connected") return <WalletConnect data={data} onConnected={setData} />;
-  if (data.view === "wallet-connected") return <WalletConnected data={data} />;
+  if (data.view === "wallet-connected") return <WalletConnected onOpened={setData} />;
   if (data.view === "networks") return <Networks data={data} onBack={back} />;
   if (data.view === "wallet") return <Wallet data={data} onNavigate={(view) => setData({ view })} />;
   if (data.view === "receive") return <Receive data={wallet} onBack={back} />;

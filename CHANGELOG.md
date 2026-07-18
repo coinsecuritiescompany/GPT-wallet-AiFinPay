@@ -19,6 +19,7 @@ All notable public changes are documented here. The project follows the principl
 
 - Clean CI runners now build internal workspace packages before TypeScript validation.
 - The mobile wallet network control now opens a real 12-mainnet selector, switches the displayed public address and preserves the user's selection.
+- Wallet pairing retries are idempotent, successful connections open the dashboard automatically, and the mobile selector is anchored inside the visible widget area.
 
 ## [0.1.0] - 2026-07-18
 

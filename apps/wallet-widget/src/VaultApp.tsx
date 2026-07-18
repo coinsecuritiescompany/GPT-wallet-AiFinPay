@@ -1,70 +1,12 @@
 import { useMemo, useState } from "react";
-import { HDKey } from "@scure/bip32";
-import { generateMnemonic, mnemonicToSeedSync, validateMnemonic } from "@scure/bip39";
+import { generateMnemonic, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
-import { ed25519 } from "@noble/curves/ed25519.js";
-import { hmac } from "@noble/hashes/hmac.js";
-import { sha3_256 } from "@noble/hashes/sha3.js";
-import { sha512 } from "@noble/hashes/sha2.js";
-import bs58 from "bs58";
-import { privateKeyToAccount } from "viem/accounts";
+import { decryptVault, encryptVault, type EncryptedVault } from "./vault-crypto.js";
 
 const STORAGE_KEY = "aifinpay.vault.v1";
 const EVM_NETWORKS = ["Polygon", "Avalanche", "Arbitrum", "BNB Chain", "Base", "Unichain", "Optimism", "BOT Chain", "XRPL EVM"];
 
-interface VaultAddresses { evm: string; solana: string; near: string; aptos: string }
-interface EncryptedVault { version: 1; cipher: "AES-GCM"; kdf: "PBKDF2-SHA256"; iterations: number; salt: string; iv: string; ciphertext: string; addresses: VaultAddresses; createdAt: string }
 type Step = "welcome" | "phrase" | "verify" | "password" | "restore" | "ready";
-
-const bytesToHex = (bytes: Uint8Array) => Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
-const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
-
-function slip10(seed: Uint8Array, path: number[]): Uint8Array {
-  let digest = hmac(sha512, new TextEncoder().encode("ed25519 seed"), seed);
-  let key = digest.slice(0, 32);
-  let chainCode = digest.slice(32);
-  for (const part of path) {
-    const index = part + 0x80000000;
-    const data = new Uint8Array(37);
-    data.set(key, 1);
-    new DataView(data.buffer).setUint32(33, index, false);
-    digest = hmac(sha512, chainCode, data);
-    key = digest.slice(0, 32);
-    chainCode = digest.slice(32);
-  }
-  return key;
-}
-
-function deriveAddresses(mnemonic: string): VaultAddresses {
-  const seed = mnemonicToSeedSync(mnemonic);
-  const evmNode = HDKey.fromMasterSeed(seed).derive("m/44'/60'/0'/0/0");
-  if (!evmNode.privateKey) throw new Error("Could not derive the EVM account.");
-  const evm = privateKeyToAccount(`0x${bytesToHex(evmNode.privateKey)}`).address;
-  const solanaPublic = ed25519.getPublicKey(slip10(seed, [44, 501, 0, 0]));
-  const nearPublic = ed25519.getPublicKey(slip10(seed, [44, 397, 0]));
-  const aptosPublic = ed25519.getPublicKey(slip10(seed, [44, 637, 0, 0, 0]));
-  const aptosAuthKey = sha3_256(new Uint8Array([...aptosPublic, 0]));
-  return { evm, solana: bs58.encode(solanaPublic), near: bytesToHex(nearPublic), aptos: `0x${bytesToHex(aptosAuthKey)}` };
-}
-
-async function encryptVault(mnemonic: string, password: string): Promise<EncryptedVault> {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const iterations = 310_000;
-  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
-  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
-  const plaintext = new TextEncoder().encode(JSON.stringify({ mnemonic, createdAt: new Date().toISOString() }));
-  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext));
-  return { version: 1, cipher: "AES-GCM", kdf: "PBKDF2-SHA256", iterations, salt: bytesToBase64(salt), iv: bytesToBase64(iv), ciphertext: bytesToBase64(ciphertext), addresses: deriveAddresses(mnemonic), createdAt: new Date().toISOString() };
-}
-
-async function decryptVault(vault: EncryptedVault, password: string): Promise<string> {
-  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
-  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: base64ToBytes(vault.salt), iterations: vault.iterations }, material, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
-  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(vault.iv) }, key, base64ToBytes(vault.ciphertext));
-  return (JSON.parse(new TextDecoder().decode(decrypted)) as { mnemonic: string }).mnemonic;
-}
 
 const shuffled = <T,>(items: T[]) => items.map((item) => ({ item, sort: crypto.getRandomValues(new Uint32Array(1))[0] ?? 0 })).sort((a, b) => a.sort - b.sort).map(({ item }) => item);
 const short = (value: string) => `${value.slice(0, 8)}…${value.slice(-6)}`;
@@ -124,7 +66,7 @@ export function VaultApp() {
       const response = await fetch("/api/vault/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: pairToken, addresses: vault.addresses }) });
       if (!response.ok) throw new Error("PAIR_FAILED");
       setPairStatus("connected");
-    } catch { setError("This connection link expired or was already used. Return to ChatGPT and create a new one."); }
+    } catch { setError("This connection link expired or is no longer known by the server. Return to ChatGPT and request a fresh secure link."); }
     finally { setBusy(false); }
   };
 
