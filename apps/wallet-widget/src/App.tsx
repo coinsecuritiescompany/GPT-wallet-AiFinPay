@@ -4,6 +4,7 @@ import { bridge } from "./bridge/mcp-bridge.js";
 import { browserDemoData } from "./demo-data.js";
 import type { WidgetData } from "./types.js";
 import logoUrl from "../../mcp-server/assets/aifinpay-logo.png";
+import { VaultApp } from "./VaultApp.js";
 import "./styles.css";
 
 const short = (value = "") => value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
@@ -14,7 +15,7 @@ function Logo() {
 }
 
 function Header({ label = "Wallet" }: { label?: string }) {
-  return <header><Logo /><div className="header-right"><span className="demo-badge">DEMO ONLY</span><span className="header-label">{label}</span></div></header>;
+  return <header><Logo /><div className="header-right"><button className="vault-link" onClick={() => void bridge.callTool("create_wallet_pairing", {})}>Vault</button><span className="demo-badge">BETA</span><span className="header-label">{label}</span></div></header>;
 }
 
 function StatusPill({ value }: { value: string }) {
@@ -151,13 +152,25 @@ function ErrorView({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   return <main className="card"><Header label="Something went wrong" /><section className="blocked-icon">!</section><div className="center"><h2>{data.error?.code?.replaceAll("_", " ") ?? "Error"}</h2><p>{data.error?.message ?? "AiFinPay could not complete this request."}</p></div><button className="primary" onClick={onBack}>Return to wallet</button></main>;
 }
 
-export function App({ initialData }: { initialData?: WidgetData }) {
+function WalletConnect({ data }: { data: WidgetData }) {
+  const open = () => { if (!data.pairingUrl) return; if (window.openai?.openExternal) void window.openai.openExternal({ href: data.pairingUrl }); else window.open(data.pairingUrl, "_blank", "noopener,noreferrer"); };
+  return <main className="card"><Header label="Secure setup" /><section className="hero-icon">◇</section><div className="center"><span className="eyebrow">NON-CUSTODIAL VAULT</span><h2>Create or connect your wallet</h2><p>Recovery words and private keys stay on your device. ChatGPT receives public addresses only.</p></div><button className="primary" disabled={!data.pairingUrl} onClick={open}>Open AiFinPay Vault</button><p className="disclaimer">The secure connection link expires in 10 minutes.</p></main>;
+}
+
+function Networks({ data, onBack }: { data: WidgetData; onBack: () => void }) {
+  return <main className="card"><Header label="12 mainnets" /><button className="back" onClick={onBack}>← Wallet</button><div className="network-list">{Object.entries(data.networks ?? {}).map(([id, network]) => <article key={id}><div><strong>{network.label}</strong><span>{network.family} · {network.nativeToken}{network.chainId ? ` · ${network.chainId}` : ""}</span></div><span className={`network-mode ${network.enabledForSigning ? "live" : "staged"}`}>{network.enabledForSigning ? "SIGNING" : network.mode.replaceAll("_", " ")}</span></article>)}</div><p className="disclaimer">Wallet addresses are available on all networks. Transaction signing is enabled only after contract, token and treasury verification.</p></main>;
+}
+
+function WalletApp({ initialData }: { initialData?: WidgetData }) {
   const first = useMemo(() => initialData ?? window.openai?.toolOutput ?? browserDemoData, [initialData]);
   const [data, setData] = useState<WidgetData>(first); const [wallet, setWallet] = useState<WidgetData>(first.view === "wallet" ? first : browserDemoData);
   useEffect(() => bridge.subscribe((next) => { setData(next); if (next.view === "wallet") setWallet(next); }), []);
   useEffect(() => { document.documentElement.dataset.theme = window.openai?.theme ?? "light"; void bridge.initialize().catch(() => undefined); }, []);
   const back = () => setData(wallet);
   if (data.view === "loading") return <main className="card loading"><div className="spinner" /><span>Loading secure wallet…</span></main>;
+  if (data.view === "wallet-connect" || data.view === "not-connected") return <WalletConnect data={data} />;
+  if (data.view === "wallet-connected") return <main className="card"><Header label="Connected" /><section className="success-icon">✓</section><div className="center"><h2>AiFinPay Vault connected</h2><p>Your public addresses are ready for mainnet balance and transaction tools.</p></div></main>;
+  if (data.view === "networks") return <Networks data={data} onBack={back} />;
   if (data.view === "wallet") return <Wallet data={data} onNavigate={(view) => setData({ view })} />;
   if (data.view === "transfer-form") return <TransferForm onBack={back} />;
   if (data.view === "transfer-preview") return <TransferPreview data={data} onBack={back} />;
@@ -170,4 +183,8 @@ export function App({ initialData }: { initialData?: WidgetData }) {
   if (data.view === "audit") return <Audit data={data} onBack={back} />;
   if (data.view === "error") return <ErrorView data={data} onBack={back} />;
   return <main className="card"><Header label="AiFinPay" /><div className="empty"><h2>{data.view.replaceAll("-", " ")}</h2><p>This state is ready for host-provided data.</p></div><button className="primary" onClick={back}>Return to wallet</button></main>;
+}
+
+export function App({ initialData }: { initialData?: WidgetData }) {
+  return window.location.pathname === "/vault" ? <VaultApp /> : <WalletApp {...(initialData ? { initialData } : {})} />;
 }
