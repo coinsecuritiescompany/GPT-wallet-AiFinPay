@@ -23,8 +23,8 @@ describe("MCP tool registration", () => {
     });
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["get_wallet_summary", "prepare_transfer", "confirm_transfer", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
-    expect(names).toHaveLength(16);
+    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", "confirm_transfer", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
+    expect(names).toHaveLength(19);
     const result = await client.callTool({ name: "get_wallet_summary", arguments: {} });
     expect((result.structuredContent as any).summary.balances[0].formatted).toBe("2543.68");
     await client.close(); await server.close();
