@@ -29,4 +29,18 @@ describe("MCP tool registration", () => {
     expect((result.structuredContent as any).summary.balances[0].formatted).toBe("2543.68");
     await client.close(); await server.close();
   });
+
+  it("returns the connected wallet instead of creating another pairing", async () => {
+    const ctx = new AppContext(config); contexts.push(ctx);
+    ctx.store.createWalletPairing("pairing-hash", "demo-user-001", new Date(Date.now() + 60_000).toISOString());
+    expect(ctx.store.completeWalletPairing("pairing-hash", { evm: "0x1111111111111111111111111111111111111111", solana: "solana-address", near: "near-address", aptos: "aptos-address" })).toBe(true);
+    const server = createMcpServer(ctx);
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const result = await client.callTool({ name: "create_wallet_pairing", arguments: {} });
+    expect(result.structuredContent).toMatchObject({ view: "wallet-connected", connection: { addresses: { evm: "0x1111111111111111111111111111111111111111" } } });
+    expect((result.structuredContent as any).pairingUrl).toBeUndefined();
+    await client.close(); await server.close();
+  });
 });
