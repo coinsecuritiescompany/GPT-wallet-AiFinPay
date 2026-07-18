@@ -8,6 +8,10 @@ services:
     envVars:
       - key: AIFINPAY_DEMO_MODE
         value: "true"
+      - key: AIFINPAY_WALLET_MODE
+        value: mainnet
+      - key: POLYGON_RPC_URLS
+        value: https://polygon.drpc.org,https://polygon.publicnode.com
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
