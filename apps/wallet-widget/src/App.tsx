@@ -4,7 +4,6 @@ import { bridge } from "./bridge/mcp-bridge.js";
 import { browserDemoData } from "./demo-data.js";
 import type { WidgetData } from "./types.js";
 import logoUrl from "../../mcp-server/assets/aifinpay-logo.png";
-import { VaultApp } from "./VaultApp.js";
 import "./styles.css";
 
 const short = (value = "") => value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
@@ -14,8 +13,8 @@ function Logo() {
   return <div className="brand"><img className="logo" src={logoUrl} alt="" aria-hidden="true" /><span>AiFinPay</span></div>;
 }
 
-function Header({ label = "Wallet" }: { label?: string }) {
-  return <header><Logo /><div className="header-right"><button className="vault-link" onClick={() => void bridge.callTool("create_wallet_pairing", {})}>Vault</button><span className="demo-badge">BETA</span><span className="header-label">{label}</span></div></header>;
+function Header({ label = "Wallet", badge = "BETA" }: { label?: string; badge?: string }) {
+  return <header><Logo /><div className="header-right"><button className="vault-link" onClick={() => void bridge.callTool("create_wallet_pairing", {})}>Vault</button><span className={`demo-badge ${badge === "MAINNET" ? "mainnet-badge" : ""}`}>{badge}</span><span className="header-label">{label}</span></div></header>;
 }
 
 function StatusPill({ value }: { value: string }) {
@@ -24,7 +23,7 @@ function StatusPill({ value }: { value: string }) {
 }
 
 function Transactions({ items }: { items: TransactionRecord[] }) {
-  if (!items.length) return <div className="empty">No transactions yet.</div>;
+  if (!items.length) return <div className="empty compact"><strong>No indexed activity yet</strong><span>Live transaction history requires an indexed Polygon data provider.</span></div>;
   return <div className="transactions">{items.map((item) => <div className="tx" key={item.id}>
     <div className={`tx-icon ${item.direction.toLowerCase()}`}>{item.direction === "IN" ? "↓" : "↑"}</div>
     <div className="tx-main"><strong>{item.direction === "IN" ? "Received" : item.initiatedByType === "AGENT" ? "Agent payment" : "Sent"}</strong><span>{date(item.timestamp)} · {item.network === "POLYGON_AMOY" ? "Polygon Amoy" : item.network}</span></div>
@@ -37,23 +36,44 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
   const usdc = summary.balances.find((b) => b.token === "USDC");
   const native = summary.balances.find((b) => b.token === "POL");
   const connectedAddress = data.connection?.addresses.evm;
-  return <main className="card"><Header />
+  const isMainnet = summary.mode === "MAINNET";
+  const networkLabel = isMainnet ? "Polygon Mainnet" : "Polygon Amoy";
+  return <main className="card"><Header badge={isMainnet ? "MAINNET" : "BETA"} />
     {data.connection && <div className="connected-strip"><span>✓ Wallet connected</span><strong>{short(connectedAddress)}</strong></div>}
     <section className="wallet-top">
       <div><span className="eyebrow">Available balance</span><h1><small>$</small>{Number(usdc?.formatted ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</h1><span className="subtle">{usdc?.formatted} USDC</span></div>
-      <div className="network"><span className="network-dot" />Polygon Amoy<span className="chevron">⌄</span></div>
+      <div className="network"><span className="network-dot" />{networkLabel}<span className="chevron">⌄</span></div>
     </section>
     <div className="address"><span>{connectedAddress ? short(connectedAddress) : summary.maskedAddress}</span><span>{native?.formatted} POL gas</span></div>
     <nav className="actions">
-      <button onClick={() => onNavigate("transfer-form")}><b>↗</b>Send</button>
-      <button onClick={() => onNavigate("not-connected")}><b>↙</b>Receive</button>
+      <button onClick={() => onNavigate(isMainnet ? "mainnet-signing-locked" : "transfer-form")}><b>↗</b>Send</button>
+      <button onClick={() => onNavigate("receive")}><b>↙</b>Receive</button>
       <button onClick={() => void bridge.callTool("list_agent_policies", {})}><b>⌁</b>Agent limits</button>
       <button onClick={() => void bridge.callTool("get_audit_log", { limit: 30 })}><b>≡</b>Audit log</button>
     </nav>
     <section className="section-head"><h2>Recent activity</h2><button className="link" onClick={() => void bridge.callTool("list_transactions", { limit: 20 })}>View all</button></section>
     <Transactions items={summary.latestTransactions} />
-    <footer><span><i className="secure-dot" /> Policy engine active</span><span>No real funds</span></footer>
+    <footer><span><i className="secure-dot" /> {isMainnet ? "Live RPC balance" : "Policy engine active"}</span><span>{isMainnet ? "Polygon · Chain 137" : "Demo/Testnet"}</span></footer>
   </main>;
+}
+
+function Receive({ data, onBack }: { data: WidgetData; onBack: () => void }) {
+  const [copied, setCopied] = useState("");
+  const addresses = data.connection?.addresses;
+  const copy = async (label: string, value?: string) => {
+    if (!value) return;
+    await navigator.clipboard?.writeText(value);
+    setCopied(label);
+    window.setTimeout(() => setCopied(""), 1_500);
+  };
+  return <main className="card"><Header label="Receive" badge={data.summary?.mode === "MAINNET" ? "MAINNET" : "BETA"} /><button className="back" onClick={onBack}>← Wallet</button><section className="hero-icon">↙</section><div className="center"><h2>Receive assets</h2><p>Choose the address for the network you are receiving on. Always verify the network before sending funds.</p></div>
+    <div className="receive-list"><button onClick={() => void copy("EVM", addresses?.evm)}><span>Polygon & EVM networks</span><strong>{short(addresses?.evm)}</strong><small>{copied === "EVM" ? "COPIED" : "COPY"}</small></button><button onClick={() => void copy("SOL", addresses?.solana)}><span>Solana</span><strong>{short(addresses?.solana)}</strong><small>{copied === "SOL" ? "COPIED" : "COPY"}</small></button><button onClick={() => void copy("NEAR", addresses?.near)}><span>NEAR</span><strong>{short(addresses?.near)}</strong><small>{copied === "NEAR" ? "COPIED" : "COPY"}</small></button><button onClick={() => void copy("APT", addresses?.aptos)}><span>Aptos</span><strong>{short(addresses?.aptos)}</strong><small>{copied === "APT" ? "COPIED" : "COPY"}</small></button></div>
+    <p className="mainnet-warning">Mainnet addresses can hold assets with real financial value. Send a small test amount first.</p>
+  </main>;
+}
+
+function MainnetSigningLocked({ onBack }: { onBack: () => void }) {
+  return <main className="card"><Header label="Mainnet security" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="blocked-icon">!</section><div className="center"><h2>Mainnet sending is locked</h2><p>Live balances and receiving are enabled. Sending will be activated only with per-user authentication, an explicit transaction preview, and local signing inside your encrypted Vault.</p></div><div className="policy-result"><div className="shield">✓</div><div><strong>YOUR KEYS STAY LOCAL</strong><span>AiFinPay and ChatGPT must never receive your recovery phrase or private key.</span></div></div><button className="primary" onClick={onBack}>Return to wallet</button></main>;
 }
 
 function TransferForm({ onBack }: { onBack: () => void }) {
@@ -213,6 +233,8 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
   if (data.view === "wallet-connected") return <WalletConnected data={data} />;
   if (data.view === "networks") return <Networks data={data} onBack={back} />;
   if (data.view === "wallet") return <Wallet data={data} onNavigate={(view) => setData({ view })} />;
+  if (data.view === "receive") return <Receive data={wallet} onBack={back} />;
+  if (data.view === "mainnet-signing-locked") return <MainnetSigningLocked onBack={back} />;
   if (data.view === "transfer-form") return <TransferForm onBack={back} />;
   if (data.view === "transfer-preview") return <TransferPreview data={data} onBack={back} />;
   if (data.view === "blocked") return <Blocked data={data} onBack={back} />;
@@ -227,5 +249,5 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
 }
 
 export function App({ initialData }: { initialData?: WidgetData }) {
-  return window.location.pathname === "/vault" ? <VaultApp /> : <WalletApp {...(initialData ? { initialData } : {})} />;
+  return <WalletApp {...(initialData ? { initialData } : {})} />;
 }
