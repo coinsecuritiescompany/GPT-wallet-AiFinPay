@@ -2,6 +2,8 @@
 
 > Send, receive and approve agent payments without leaving the conversation.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay)
+
 AiFinPay Wallet for ChatGPT is a programmable wallet and approval layer for users and autonomous AI agents. ChatGPT calls focused MCP tools, while a React widget renders balances, transfer previews, agent limits, blocked requests, receipts and the audit trail inline.
 
 **Current scope: deterministic demo ledger and Polygon Amoy-shaped data only. Do not use real funds.**
@@ -105,6 +107,10 @@ Endpoints:
 
 - MCP: `http://localhost:8787/mcp`
 - Health: `http://localhost:8787/health`
+- Public landing: `http://localhost:8787/`
+- Widget preview: `http://localhost:8787/preview`
+- Privacy: `http://localhost:8787/privacy`
+- Support: `http://localhost:8787/support`
 - Widget browser development: `npm run dev -w @aifinpay/wallet-widget`
 
 Test with MCP Inspector:
@@ -131,7 +137,7 @@ ChatGPT needs a public HTTPS endpoint during development. Build/start the server
 
 ## Deployment
 
-The repository includes a multi-stage `Dockerfile`, `docker-compose.yml`, persistent SQLite volume support, `/health`, graceful shutdown and environment validation. Production use should replace SQLite/demo signing with managed Postgres and a reviewed user-controlled or HSM-backed signer. See [Deployment](docs/DEPLOYMENT.md).
+The repository includes a one-click Render Blueprint, GitHub Actions CI, a multi-stage `Dockerfile`, `docker-compose.yml`, `/health`, graceful shutdown and environment validation. Render automatically supplies the public hostname; the app derives its `/mcp` and widget URLs from it. Production use should replace SQLite/demo signing with managed Postgres and a reviewed user-controlled or HSM-backed signer. See [Deployment](docs/DEPLOYMENT.md).
 
 ## Hackathon scope
 
@@ -157,7 +163,7 @@ npm run check       # complete local verification
 - Production OAuth/account linking is documented but not enabled in demo mode.
 - Production signing, real RPC submission, gas estimation and confirmations are not implemented.
 - SQLite uses Node's built-in API, which Node currently marks experimental.
-- Final hosted ChatGPT screenshots, public privacy/support URLs and deployment URL are submission blockers.
+- A live deployment and final ChatGPT-hosted screenshots are still submission blockers until the repository owner approves a hosting deployment.
 
 Full list: [Limitations](docs/LIMITATIONS.md).
 
@@ -168,4 +174,3 @@ Demo/testnet only. No seed phrases or private keys are exposed. This software ha
 ## License
 
 MIT — see [LICENSE](LICENSE).
-

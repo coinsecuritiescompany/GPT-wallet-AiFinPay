@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: aifinpay-wallet-chatgpt
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: AIFINPAY_DEMO_MODE
+        value: "true"
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        value: /tmp/aifinpay-demo.sqlite
+      - key: LOG_LEVEL
+        value: info
+      - key: SESSION_SECRET
+        generateValue: true

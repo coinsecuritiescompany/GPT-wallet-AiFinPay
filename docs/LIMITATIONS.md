@@ -11,6 +11,5 @@
 - No HSM, MPC, WalletConnect or production signing adapter is included.
 - No live RPC, gas estimation, transaction simulation, reorg handling or confirmation monitor exists.
 - No rate limiter or distributed replay cache exists.
-- Final hosted ChatGPT screenshots, production URL, privacy policy URL, support URL and demo video are pending.
+- Public privacy and support routes are implemented; a live production URL, final ChatGPT-hosted screenshots and demo video still require the repository owner to approve hosting and connect the app.
 - External security audit and accessibility/manual host QA are pending.
-

@@ -1,5 +1,26 @@
 # Deployment
 
+## One-click Render demo
+
+Use the repository's **Deploy to Render** button or open:
+
+`https://render.com/deploy?repo=https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay`
+
+The root `render.yaml` creates a free Docker web service, generates `SESSION_SECRET`, enables demo mode and checks `/health`. The server reads Render's automatic `RENDER_EXTERNAL_HOSTNAME`, so no manual public URL interpolation is needed.
+
+After the first deploy, verify these routes using the hostname shown by Render:
+
+```text
+https://<service>.onrender.com/
+https://<service>.onrender.com/health
+https://<service>.onrender.com/preview
+https://<service>.onrender.com/privacy
+https://<service>.onrender.com/support
+https://<service>.onrender.com/mcp
+```
+
+The free Blueprint stores SQLite under `/tmp`; demo state can reset on restart or redeploy. That is intentional for the public non-custodial demo. Choose a paid service with a mounted disk only when stable demo state is required.
+
 ## Container
 
 ```bash
@@ -22,6 +43,8 @@ docker run --rm -p 8787:8787 \
 - Confirm HTTPS and streaming POST support on `/mcp`.
 - Re-test with MCP Inspector and ChatGPT Developer Mode.
 
+For Render specifically, `RENDER_EXTERNAL_HOSTNAME` is detected automatically. On another host, set `MCP_PUBLIC_URL` and `WIDGET_PUBLIC_URL` explicitly.
+
 ## Database
 
 SQLite is adequate for the single-instance hackathon demo. Multiple replicas require managed Postgres, migrations, unique idempotency constraints and transaction-level locking.
@@ -32,5 +55,4 @@ Do not set `AIFINPAY_DEMO_MODE=false` until OAuth, a real backend adapter, a rev
 
 ## Submission
 
-The public MCP origin cannot be localhost or a tunnel. Configure a unique widget/app domain, public privacy policy, support contact and screenshots. Scan the deployed endpoint in the plugin submission portal; tool metadata is versioned at scan time.
-
+The final public MCP origin must be stable HTTPS. This server publishes `/privacy` and `/support` on the same origin. Configure a unique widget/app domain and capture hosted screenshots, then scan the deployed endpoint in the plugin submission portal; tool metadata is versioned at scan time.

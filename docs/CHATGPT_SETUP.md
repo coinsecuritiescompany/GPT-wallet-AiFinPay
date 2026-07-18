@@ -17,11 +17,13 @@ These steps follow the official Apps SDK docs checked on 2026-07-18. Product lab
    npx @modelcontextprotocol/inspector@latest --server-url http://localhost:8787/mcp --transport http
    ```
 
-3. Expose port 8787 through an HTTPS tunnel, for example:
+3. For local iteration, expose port 8787 through an HTTPS tunnel, for example:
 
    ```bash
    ngrok http 8787
    ```
+
+   For a stable demo, use the README's **Deploy to Render** button and copy the resulting `https://<service>.onrender.com/mcp` URL.
 
 4. Open ChatGPT settings and enable Developer mode under **Settings → Security and login**.
 5. Open **Settings → Plugins** (or the current plugins page), create a developer-mode app and paste `https://YOUR-TUNNEL.example/mcp`.
@@ -35,7 +37,6 @@ These steps follow the official Apps SDK docs checked on 2026-07-18. Product lab
 7. After changing tool names, schemas, descriptions or metadata, redeploy/restart and use **Refresh** on the developer-mode app.
 8. Inspect MCP Inspector or server JSON logs for tool errors. Check browser developer tools for CSP or widget errors.
 9. Verify the widget makes no direct network calls; CSP connect/resource arrays are empty and only Polygon Amoy is allowed as an external redirect.
-10. Before submission, replace the tunnel with a stable HTTPS origin and update `WIDGET_PUBLIC_URL` to that unique origin.
+10. Before submission, replace the tunnel with a stable HTTPS origin. Render is detected automatically; on other hosts set `MCP_PUBLIC_URL` and `WIDGET_PUBLIC_URL` to the deployed origin.
 
 Official references: [Quickstart](https://developers.openai.com/apps-sdk/quickstart), [Connect from ChatGPT](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt), [Troubleshooting](https://developers.openai.com/apps-sdk/deploy/troubleshooting).
-

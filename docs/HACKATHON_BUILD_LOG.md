@@ -16,6 +16,7 @@ Baseline repository state: empty target repository; only the supplied task promp
 - unit, integration, MCP, widget and security tests
 - Docker, local environment and deployment configuration
 - repository audit, architecture, security, threat model, tool reference, setup, limitations, Devpost draft and demo script
+- one-click Render Blueprint, GitHub Actions CI, public landing/widget preview, privacy notice and support routes
 
 ### Changed
 
@@ -25,11 +26,11 @@ No pre-existing production files were modified.
 
 Amount parsing/formatting, address/schema behavior through tools, policy decisions, state transitions, idempotency, confirmation token enforcement, ownership boundary, audit chain tampering, MCP registration and widget rendering/actions.
 
-Final local verification: ESLint passed, TypeScript checks passed in all five workspaces, 29 automated tests passed, the single-file React production bundle built, the MCP server built, `/health` returned `ok`, and an MCP `initialize` request completed successfully.
+Final local verification: ESLint passed, TypeScript checks passed in all five workspaces, 33 automated tests passed, the single-file React production bundle built, the MCP server built, all public HTTP routes responded, `/health` returned `ok`, and an MCP `initialize` request completed successfully.
 
 ### Current limitations
 
-See `docs/LIMITATIONS.md`. Main gaps are production OAuth/signing/RPC, hosted URL, final ChatGPT screenshots and demo video.
+See `docs/LIMITATIONS.md`. Main gaps are production OAuth/signing/RPC, approving the one-click hosted deployment, final ChatGPT screenshots and demo video.
 
 ### Evidence placeholders
 

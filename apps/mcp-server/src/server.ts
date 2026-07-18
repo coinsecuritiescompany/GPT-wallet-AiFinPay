@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AppContext } from "./context.js";
 import { registerTools, WIDGET_URI } from "./tools/register-tools.js";
 
-function widgetHtml(): string {
+export function widgetHtml(): string {
   const candidates = [
     resolve(process.cwd(), "apps/wallet-widget/dist/index.html"),
     resolve(fileURLToPath(new URL("../../../wallet-widget/dist/index.html", import.meta.url)))
@@ -39,4 +39,3 @@ export function createMcpServer(ctx: AppContext): McpServer {
   registerTools(server, ctx);
   return server;
 }
-
