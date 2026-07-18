@@ -18,7 +18,7 @@ export const NETWORKS = {
 } as const;
 
 export const MAINNET_NETWORKS = {
-  polygon: { label: "Polygon", family: "EVM", chainId: 137, nativeToken: "POL", explorerBaseUrl: "https://polygonscan.com", mode: "FULL_CORE", enabledForSigning: true },
+  polygon: { label: "Polygon", family: "EVM", chainId: 137, nativeToken: "POL", explorerBaseUrl: "https://polygonscan.com", mode: "FULL_CORE", enabledForSigning: false },
   avalanche: { label: "Avalanche C-Chain", family: "EVM", chainId: 43114, nativeToken: "AVAX", explorerBaseUrl: "https://snowtrace.io", mode: "FULL_CORE", enabledForSigning: false },
   arbitrum: { label: "Arbitrum One", family: "EVM", chainId: 42161, nativeToken: "ETH", explorerBaseUrl: "https://arbiscan.io", mode: "FULL_CORE", enabledForSigning: false },
   bnb: { label: "BNB Chain", family: "EVM", chainId: 56, nativeToken: "BNB", explorerBaseUrl: "https://bscscan.com", mode: "FULL_CORE", enabledForSigning: false },
