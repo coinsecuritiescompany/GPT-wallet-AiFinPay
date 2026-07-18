@@ -1,4 +1,4 @@
-export type NetworkId = "POLYGON_AMOY";
+export type NetworkId = "POLYGON" | "POLYGON_AMOY";
 export type TokenSymbol = "USDC" | "POL";
 export type ActorType = "USER" | "AGENT";
 export type PolicyDecision = "AUTO_APPROVED" | "HUMAN_APPROVAL_REQUIRED" | "BLOCKED";
@@ -106,6 +106,5 @@ export interface WalletSummary {
   balances: Balance[];
   latestTransactions: TransactionRecord[];
   activeAgentPolicies: AgentPolicy[];
-  mode: "DEMO" | "TESTNET";
+  mode: "DEMO" | "TESTNET" | "MAINNET";
 }
-
