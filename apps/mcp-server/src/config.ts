@@ -27,7 +27,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     publicUrl: env.MCP_PUBLIC_URL ?? (renderOrigin ? `${renderOrigin}/mcp` : `${localOrigin}/mcp`),
     widgetDomain: env.WIDGET_PUBLIC_URL ?? renderOrigin ?? localOrigin,
     logLevel: env.LOG_LEVEL ?? "info",
-    walletMode: env.AIFINPAY_WALLET_MODE === "mainnet" ? "mainnet" : "demo",
+    walletMode: env.AIFINPAY_WALLET_MODE === "demo" ? "demo" : "mainnet",
     polygonRpcUrls: (env.POLYGON_RPC_URLS ?? "https://polygon.drpc.org,https://polygon.publicnode.com")
       .split(",").map((value) => value.trim()).filter(Boolean)
   };
