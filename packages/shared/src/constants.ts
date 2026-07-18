@@ -1,4 +1,12 @@
 export const NETWORKS = {
+  POLYGON: {
+    id: "POLYGON",
+    label: "Polygon",
+    chainId: 137,
+    nativeToken: "POL",
+    explorerBaseUrl: "https://polygonscan.com",
+    confirmations: 64
+  },
   POLYGON_AMOY: {
     id: "POLYGON_AMOY",
     label: "Polygon Amoy",
@@ -25,7 +33,7 @@ export const MAINNET_NETWORKS = {
 } as const;
 
 export const TOKENS = {
-  USDC: { symbol: "USDC", decimals: 6, address: "0x0000000000000000000000000000000000001010" },
+  USDC: { symbol: "USDC", decimals: 6, address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" },
   POL: { symbol: "POL", decimals: 18, address: null }
 } as const;
 
