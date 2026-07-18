@@ -11,7 +11,7 @@ describe("AiFinPay wallet widget", () => {
   it("renders wallet overview", () => {
     render(<App initialData={browserDemoData} />);
     expect(screen.getByText("2,543.68")).toBeInTheDocument();
-    expect(screen.getByText("DEMO ONLY")).toBeInTheDocument();
+    expect(screen.getByText("BETA")).toBeInTheDocument();
     expect(screen.getByText("Agent payment")).toBeInTheDocument();
   });
 
