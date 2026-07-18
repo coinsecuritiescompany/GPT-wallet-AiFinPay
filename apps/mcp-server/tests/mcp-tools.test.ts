@@ -5,7 +5,7 @@ import { AppContext } from "../src/context.js";
 import { createMcpServer } from "../src/server.js";
 import type { AppConfig } from "../src/config.js";
 
-const config: AppConfig = { port: 0, demoMode: true, databaseUrl: ":memory:", sessionSecret: "test-session-secret-at-least-thirty-two-chars", publicUrl: "http://localhost/mcp", widgetDomain: "http://localhost", logLevel: "silent" };
+const config: AppConfig = { port: 0, demoMode: true, databaseUrl: ":memory:", sessionSecret: "test-session-secret-at-least-thirty-two-chars", publicUrl: "http://localhost/mcp", widgetDomain: "http://localhost", logLevel: "silent", walletMode: "demo", polygonRpcUrls: ["https://polygon.example"] };
 
 describe("MCP tool registration", () => {
   const contexts: AppContext[] = [];
