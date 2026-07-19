@@ -40,6 +40,15 @@ The target repository had no implementation before the Build Week work began. No
 - public secret/artifact scanner, dependency audit and CodeQL;
 - Devpost checklist, submission copy and three-minute demo script.
 
+### All-12-network read-only balances — July 19, 2026
+
+- generalized the single-network Polygon reader into one `MainnetAdapter` covering every family: 9 EVM chains (`eth_getBalance` + ERC-20 `balanceOf`), Solana (`getBalance`), NEAR (`query view_account`) and Aptos (REST `CoinStore` resource);
+- consolidated `LIVE_NETWORKS` registry: per-network family, public RPC fallbacks, native token (symbol + decimals) and — where verified on-chain — the Circle USDC contract;
+- verified each USDC contract on 2026-07-19 by reading `symbol()`/`decimals()` from the live chain; shipped the 6 confirmed ones (Polygon, Avalanche, Arbitrum, Base, Optimism at 6 decimals; **BNB at 18 decimals**) and native-only reads elsewhere — no placeholder token addresses;
+- expanded `NetworkId`, the network schema and the ChatGPT tools so any of the 12 mainnets is selectable and its live balances flow through end to end;
+- optional `<NETWORK>_RPC_URLS` overrides with public defaults; signing/broadcasting stay disabled;
+- live end-to-end read confirmed on all 12 networks; adapter unit tests cover Polygon, Base (chain-specific USDC), BNB (18-decimal USDC) and NEAR (non-EVM native).
+
 ## Codex collaboration
 
 Codex researched official documentation, implemented code and tests, diagnosed deployment/mobile failures, inspected live health responses, compared repository and deployment state, and prepared review materials. Human decisions controlled custody boundaries, mainnet risk, public/private scope and product positioning.
@@ -49,6 +58,7 @@ Codex researched official documentation, implemented code and tests, diagnosed d
 - Initial reference implementation: lint, typecheck, build and 33 tests.
 - Wallet/Vault and mainnet iteration: lint, typecheck, build and 41 tests.
 - Public repository hardening: full checks, dependency audit and hosted-route verification recorded in GitHub history.
+- All-12-network read-only balances: security check, lint, typecheck, build and 61 tests, plus a live on-chain read across every network.
 
 ## Evidence
 

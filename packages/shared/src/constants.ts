@@ -61,6 +61,89 @@ export const TOKENS = {
   POL: { symbol: "POL", decimals: 18, address: null }
 } as const;
 
+// ---------------------------------------------------------------------------
+// Live read-only network registry.
+//
+// This is the single source of truth the read-only balance adapter uses to
+// resolve, per network: which key family the address comes from, which public
+// RPC endpoints to try, the native token (symbol + decimals) and — where a
+// canonical Circle USDC contract was verified on-chain — the stablecoin.
+//
+// USDC contracts and decimals below were each confirmed on 2026-07-19 by
+// reading symbol() and decimals() from the live contract. Chains without a
+// verified `usdc` entry expose the native balance only (never a placeholder).
+// ---------------------------------------------------------------------------
+export type AddressFamily = "evm" | "solana" | "near" | "aptos";
+export interface NativeTokenSpec { symbol: string; decimals: number }
+export interface UsdcSpec { address: string; decimals: number }
+
+export interface LiveNetworkSpec {
+  label: string;
+  family: MainnetFamily;
+  chainId: number | null;
+  rpcUrls: string[];
+  explorerBaseUrl: string;
+  addressField: AddressFamily;
+  native: NativeTokenSpec;
+  usdc?: UsdcSpec;
+  isTestnet?: boolean;
+}
+
+export const LIVE_NETWORKS = {
+  POLYGON: { label: "Polygon", family: "EVM", chainId: 137, addressField: "evm", explorerBaseUrl: "https://polygonscan.com",
+    rpcUrls: ["https://polygon.drpc.org", "https://polygon-bor-rpc.publicnode.com"],
+    native: { symbol: "POL", decimals: 18 }, usdc: { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", decimals: 6 } },
+  AVALANCHE: { label: "Avalanche C-Chain", family: "EVM", chainId: 43114, addressField: "evm", explorerBaseUrl: "https://snowtrace.io",
+    rpcUrls: ["https://api.avax.network/ext/bc/C/rpc", "https://avalanche-c-chain-rpc.publicnode.com"],
+    native: { symbol: "AVAX", decimals: 18 }, usdc: { address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", decimals: 6 } },
+  ARBITRUM: { label: "Arbitrum One", family: "EVM", chainId: 42161, addressField: "evm", explorerBaseUrl: "https://arbiscan.io",
+    rpcUrls: ["https://arb1.arbitrum.io/rpc", "https://arbitrum-one-rpc.publicnode.com"],
+    native: { symbol: "ETH", decimals: 18 }, usdc: { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 } },
+  BNB: { label: "BNB Chain", family: "EVM", chainId: 56, addressField: "evm", explorerBaseUrl: "https://bscscan.com",
+    rpcUrls: ["https://bsc-dataseed.binance.org", "https://bsc-rpc.publicnode.com"],
+    native: { symbol: "BNB", decimals: 18 }, usdc: { address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", decimals: 18 } },
+  BASE: { label: "Base", family: "EVM", chainId: 8453, addressField: "evm", explorerBaseUrl: "https://basescan.org",
+    rpcUrls: ["https://mainnet.base.org", "https://base-rpc.publicnode.com"],
+    native: { symbol: "ETH", decimals: 18 }, usdc: { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 } },
+  UNICHAIN: { label: "Unichain", family: "EVM", chainId: 130, addressField: "evm", explorerBaseUrl: "https://uniscan.xyz",
+    rpcUrls: ["https://mainnet.unichain.org", "https://unichain-rpc.publicnode.com"],
+    native: { symbol: "ETH", decimals: 18 } },
+  OPTIMISM: { label: "Optimism", family: "EVM", chainId: 10, addressField: "evm", explorerBaseUrl: "https://optimistic.etherscan.io",
+    rpcUrls: ["https://mainnet.optimism.io", "https://optimism-rpc.publicnode.com"],
+    native: { symbol: "ETH", decimals: 18 }, usdc: { address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", decimals: 6 } },
+  BOTCHAIN: { label: "BOT Chain", family: "EVM", chainId: 677, addressField: "evm", explorerBaseUrl: "https://scan.botchain.ai",
+    rpcUrls: ["https://rpc.botchain.ai"],
+    native: { symbol: "BOT", decimals: 18 } },
+  XRPLEVM: { label: "XRPL EVM", family: "EVM", chainId: 1440000, addressField: "evm", explorerBaseUrl: "https://explorer.xrplevm.org",
+    rpcUrls: ["https://rpc.xrplevm.org"],
+    native: { symbol: "XRP", decimals: 18 } },
+  SOLANA: { label: "Solana", family: "SOLANA", chainId: null, addressField: "solana", explorerBaseUrl: "https://solscan.io",
+    rpcUrls: ["https://api.mainnet-beta.solana.com"],
+    native: { symbol: "SOL", decimals: 9 } },
+  NEAR: { label: "NEAR", family: "NEAR", chainId: null, addressField: "near", explorerBaseUrl: "https://nearblocks.io",
+    rpcUrls: ["https://rpc.mainnet.near.org", "https://free.rpc.fastnear.com"],
+    native: { symbol: "NEAR", decimals: 24 } },
+  APTOS: { label: "Aptos", family: "APTOS", chainId: 1, addressField: "aptos", explorerBaseUrl: "https://explorer.aptoslabs.com",
+    rpcUrls: ["https://fullnode.mainnet.aptoslabs.com/v1"],
+    native: { symbol: "APT", decimals: 8 } }
+} as const satisfies Record<string, LiveNetworkSpec>;
+
+// The 12 mainnet networks the read-only balance layer serves.
+export const MAINNET_NETWORK_IDS = [
+  "POLYGON", "AVALANCHE", "ARBITRUM", "BNB", "BASE", "UNICHAIN",
+  "OPTIMISM", "BOTCHAIN", "XRPLEVM", "SOLANA", "NEAR", "APTOS"
+] as const;
+
+// Chain id + explorer for any network, spanning the demo/testnet map (NETWORKS)
+// and the 12 live mainnets (LIVE_NETWORKS). Falls back to Polygon.
+export function networkMeta(id: string): { chainId: number; explorerBaseUrl: string } {
+  const legacy = (NETWORKS as Record<string, { chainId: number; explorerBaseUrl: string }>)[id];
+  if (legacy) return { chainId: legacy.chainId, explorerBaseUrl: legacy.explorerBaseUrl };
+  const live = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[id];
+  if (live) return { chainId: live.chainId ?? 0, explorerBaseUrl: live.explorerBaseUrl };
+  return { chainId: NETWORKS.POLYGON.chainId, explorerBaseUrl: NETWORKS.POLYGON.explorerBaseUrl };
+}
+
 export const DEMO_USER_ID = "demo-user-001";
 export const DEMO_WALLET_ID = "wallet-demo-001";
 export const DEMO_WALLET_ADDRESS = "0xA1F1A1000000000000000000000000000000D3F0";

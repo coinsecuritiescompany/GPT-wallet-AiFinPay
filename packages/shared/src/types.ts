@@ -1,4 +1,8 @@
-export type NetworkId = "POLYGON" | "POLYGON_AMOY";
+export type NetworkId =
+  | "POLYGON" | "POLYGON_AMOY"
+  | "AVALANCHE" | "ARBITRUM" | "BNB" | "BASE" | "UNICHAIN" | "OPTIMISM" | "BOTCHAIN" | "XRPLEVM"
+  | "SOLANA" | "NEAR" | "APTOS";
+// Slot selector passed to adapters: "POL" = the network's native-token slot, "USDC" = the stablecoin slot.
 export type TokenSymbol = "USDC" | "POL";
 export type ActorType = "USER" | "AGENT";
 export type PolicyDecision = "AUTO_APPROVED" | "HUMAN_APPROVAL_REQUIRED" | "BLOCKED";
@@ -14,7 +18,8 @@ export type PolicyReasonCode =
 export type PaymentIntentStatus = "DRAFT" | "REQUIRES_CONFIRMATION" | "AUTO_APPROVED" | "BLOCKED" |
   "CONFIRMED" | "SIGNING" | "SUBMITTED" | "PENDING" | "COMPLETED" | "FAILED" | "CANCELLED" | "EXPIRED";
 
-export interface Balance { token: TokenSymbol; raw: string; formatted: string; decimals: number }
+// `token` is the display symbol of the actual asset read on-chain (e.g. "USDC", "AVAX", "SOL").
+export interface Balance { token: string; raw: string; formatted: string; decimals: number }
 
 export interface TransactionRecord {
   id: string;

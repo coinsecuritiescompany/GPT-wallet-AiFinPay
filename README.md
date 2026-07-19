@@ -10,11 +10,11 @@
   <a href="https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-0f766e.svg"></a>
   <a href="https://aifinpay-wallet-chatgpt.onrender.com/health"><img alt="Live service" src="https://img.shields.io/badge/service-live-16a34a.svg"></a>
-  <img alt="Polygon Mainnet" src="https://img.shields.io/badge/Polygon-mainnet-7c3aed.svg">
+  <img alt="12 Mainnet Networks" src="https://img.shields.io/badge/mainnet-12%20networks-7c3aed.svg">
 </p>
 
 > [!IMPORTANT]
-> This public repository is a transparent hackathon/reference implementation. Polygon balances are live and read-only. Mainnet transaction signing and broadcasting are deliberately disabled until per-user authentication, durable storage and reviewed local signing are complete. Do not treat this beta as a bank, exchange, custodian or financial adviser.
+> This public repository is a transparent hackathon/reference implementation. Balances are live and read-only across all 12 mainnet networks. Mainnet transaction signing and broadcasting are deliberately disabled until per-user authentication, durable storage and reviewed local signing are complete. Do not treat this beta as a bank, exchange, custodian or financial adviser.
 
 ## Try it
 
@@ -34,9 +34,9 @@ The hosted instance uses a free preview environment and can cold-start after ina
 | Local AES-256-GCM encrypted Vault | Beta | Password and ciphertext remain on the device |
 | EVM, Solana, NEAR and Aptos address derivation | Beta | OAuth tokens contain public addresses only |
 | One-time ChatGPT connection and automatic dashboard opening | Beta | OAuth 2.1 authorization code flow with PKCE |
-| 12-mainnet selector | Live UI | Polygon balance is live; the other network balance adapters are staged |
+| 12-mainnet selector | Live | Every selected network returns live read-only balances from public RPC |
 | Public mainnet deployment registry | Declared, verification pending | 12 contract/program identifiers; signing remains disabled |
-| Polygon PoS POL and native USDC balances | Live, read-only | Read from public Polygon RPC endpoints |
+| Native + USDC balances across all 12 mainnets | Live, read-only | Native token on all 12; verified Circle USDC on 6 EVM chains (Polygon, Avalanche, Arbitrum, BNB, Base, Optimism) |
 | Receive flow | Live | Displays public addresses only |
 | Agent policy engine and audit trail | Reference implementation | Server-side deterministic rules |
 | Mainnet transaction signing | Disabled | Requires personal auth and local user approval |
@@ -60,7 +60,7 @@ flowchart TD
     U["User"] --> C["ChatGPT + GPT-5.6"]
     C --> M["AiFinPay MCP server"]
     M --> P["Policy and intent services"]
-    M --> R["Polygon RPC (read-only)"]
+    M --> R["12-network public RPC (read-only)"]
     M --> A["OAuth 2.1 + PKCE"]
     M --> D[("Runtime intent and audit store")]
     C --> W["React wallet widget"]
@@ -125,7 +125,7 @@ Never paste a recovery phrase, private key, Vault password or API credential int
 
 ## Configuration
 
-The checked-in `.env.example` contains placeholders only. Polygon mainnet read-only mode is the default; demo mode must be selected explicitly.
+The checked-in `.env.example` contains placeholders only. Read-only mainnet mode (all 12 networks) is the default; demo mode must be selected explicitly. Each network falls back to public RPC defaults and can be overridden with a `<NETWORK>_RPC_URLS` variable.
 
 ```dotenv
 AIFINPAY_WALLET_MODE=mainnet
@@ -142,7 +142,7 @@ SESSION_SECRET=replace-with-at-least-32-random-characters
 - Recovery words are generated or entered only in the Vault page and are encrypted locally.
 - User-specific tools require OAuth 2.1 with PKCE and separate read/write scopes; access and refresh tokens carry validated public addresses only.
 - The MCP tool surface does not accept seed phrases, private keys, passwords or API keys.
-- Mainnet reads use official Polygon chain parameters and the native Polygon USDC contract.
+- Mainnet reads use each network's official chain parameters and, where available, its verified Circle USDC contract (native token elsewhere).
 - Financial values use integer base units rather than floating point.
 - CSP domains are explicit and the ChatGPT widget makes no direct network requests.
 - CI scans for accidentally committed keys, databases, archives and production configuration.
@@ -169,11 +169,11 @@ Codex was used as an engineering collaborator throughout the primary build threa
 - research current Apps SDK and MCP requirements;
 - implement and test the MCP server, React widget and local Vault;
 - diagnose mobile bundle size and split the Vault from the inline widget;
-- replace fabricated demo balances with read-only Polygon mainnet RPC data;
+- replace fabricated demo balances with read-only mainnet RPC data across all 12 networks;
 - model security boundaries, run regression checks and prepare deployment;
 - reconcile README, legal, security and submission documentation with actual behavior.
 
-Key human product decisions included choosing non-custodial local recovery, prohibiting mainnet signing until personal authentication exists, using Polygon as the first live network and keeping confidential production systems outside the public repository.
+Key human product decisions included choosing non-custodial local recovery, prohibiting mainnet signing until personal authentication exists, using Polygon as the first live network before extending read-only balances to all 12 mainnets, and keeping confidential production systems outside the public repository.
 
 GPT-5.6 is the conversational orchestration layer: it interprets wallet requests, selects the appropriate MCP tool and explains deterministic results. It is not the source of truth for policy, balances or transaction authorization.
 

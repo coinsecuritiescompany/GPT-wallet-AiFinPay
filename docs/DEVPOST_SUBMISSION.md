@@ -46,7 +46,7 @@ Human decisions included selecting non-custodial recovery, choosing Polygon as t
 
 - Non-custodial local 12/15-word Vault with encrypted browser storage.
 - 12 derived address networks across EVM, Solana, NEAR and Aptos families.
-- Live read-only Polygon POL and native USDC balances.
+- Live read-only balances across all 12 mainnet networks (native token everywhere; verified Circle USDC on 6 EVM chains).
 - 19 focused MCP tools and a versioned ChatGPT widget.
 - Deterministic policy/state-machine reference layer and tamper-evident audit chain.
 - Mobile widget reduced by separating the Vault bundle.

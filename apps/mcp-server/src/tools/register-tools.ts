@@ -5,7 +5,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { z } from "zod";
 import {
   AppError, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkSchema, safeError, tokenSchema,
-  type PaymentIntent
+  type NetworkId, type PaymentIntent
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
 
@@ -42,6 +42,13 @@ function resolveUser(ctx: AppContext, extra: { authInfo?: AuthInfo }, requiredSc
   const user = ctx.auth.resolve(extra.authInfo);
   if (user.addresses) ctx.store.upsertWalletConnection(user.userId, user.addresses);
   return user;
+}
+
+// The connected Vault has an address on every network, so any of the 12
+// mainnets is selectable in mainnet mode. When the caller does not specify one,
+// default to Polygon (mainnet) or Polygon Amoy (demo ledger).
+function resolveNetwork(ctx: AppContext, network?: NetworkId): NetworkId {
+  return network ?? (ctx.config.walletMode === "mainnet" ? "POLYGON" : "POLYGON_AMOY");
 }
 
 function publicIntent(intent: PaymentIntent) {
@@ -119,7 +126,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   }, async ({ network }, extra) => {
     try {
       const user = resolveUser(ctx, extra);
-      const selectedNetwork = ctx.config.walletMode === "mainnet" ? "POLYGON" : network;
+      const selectedNetwork = resolveNetwork(ctx, network);
       const summary = await ctx.adapter.getWalletSummary(user.userId, selectedNetwork);
       summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((policy) => policy.enabled);
       const connection = ctx.store.getWalletConnection(user.userId);
@@ -132,7 +139,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     description: "Use this when the user asks for the balance of a supported token in their AiFinPay wallet.",
     inputSchema: { token: tokenSchema, network: networkSchema }, annotations: readOnly, _meta: oauthMeta()
   }, async ({ token, network }, extra) => {
-    try { const user = resolveUser(ctx, extra); const selectedNetwork = ctx.config.walletMode === "mainnet" ? "POLYGON" : network; return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
+    try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
     catch (error) { return failure(error, ctx); }
   });
 
@@ -262,7 +269,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     description: "Use this after wallet data is requested to render the interactive AiFinPay wallet widget inside ChatGPT.",
     inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: oauthMeta(true)
   }, async ({ network }, extra) => {
-    try { const user = resolveUser(ctx, extra); const selectedNetwork = ctx.config.walletMode === "mainnet" ? "POLYGON" : network; const summary = await ctx.adapter.getWalletSummary(user.userId, selectedNetwork); summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((p) => p.enabled); const connection = ctx.store.getWalletConnection(user.userId); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Polygon balances are live; all 12 Vault addresses are selectable." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS }); }
+    try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); const summary = await ctx.adapter.getWalletSummary(user.userId, selectedNetwork); summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((p) => p.enabled); const connection = ctx.store.getWalletConnection(user.userId); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Live read-only balances across all 12 mainnet networks." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS }); }
     catch (error) { return failure(error, ctx); }
   });
 

@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { LIVE_NETWORKS } from "@aifinpay/shared";
 
 export interface AppConfig {
   port: number;
@@ -10,6 +11,23 @@ export interface AppConfig {
   logLevel: string;
   walletMode: "demo" | "mainnet";
   polygonRpcUrls: string[];
+  mainnetRpcUrls: Record<string, string[]>;
+}
+
+function parseRpcList(raw: string | undefined): string[] {
+  return (raw ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+}
+
+// Optional per-network RPC overrides, e.g. BASE_RPC_URLS="https://a,https://b".
+// Any network left unset falls back to the public defaults in LIVE_NETWORKS.
+function loadMainnetRpcUrls(env: NodeJS.ProcessEnv, polygonRpcUrls: string[]): Record<string, string[]> {
+  const overrides: Record<string, string[]> = {};
+  for (const networkId of Object.keys(LIVE_NETWORKS)) {
+    const list = parseRpcList(env[`${networkId}_RPC_URLS`]);
+    if (list.length) overrides[networkId] = list;
+  }
+  if (!overrides.POLYGON && polygonRpcUrls.length) overrides.POLYGON = polygonRpcUrls;
+  return overrides;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -19,6 +37,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const renderOrigin = env.RENDER_EXTERNAL_URL?.replace(/\/$/, "")
     ?? (env.RENDER_EXTERNAL_HOSTNAME ? `https://${env.RENDER_EXTERNAL_HOSTNAME}` : undefined);
   const localOrigin = `http://localhost:${env.PORT ?? 8787}`;
+  const polygonRpcUrls = parseRpcList(env.POLYGON_RPC_URLS ?? "https://polygon.drpc.org,https://polygon.publicnode.com");
   return {
     port: Number(env.PORT ?? 8787),
     demoMode,
@@ -28,7 +47,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     widgetDomain: env.WIDGET_PUBLIC_URL ?? renderOrigin ?? localOrigin,
     logLevel: env.LOG_LEVEL ?? "info",
     walletMode: env.AIFINPAY_WALLET_MODE === "demo" ? "demo" : "mainnet",
-    polygonRpcUrls: (env.POLYGON_RPC_URLS ?? "https://polygon.drpc.org,https://polygon.publicnode.com")
-      .split(",").map((value) => value.trim()).filter(Boolean)
+    polygonRpcUrls,
+    mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls)
   };
 }

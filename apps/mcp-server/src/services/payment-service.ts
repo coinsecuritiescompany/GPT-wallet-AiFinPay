@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { assertTransition, evaluatePolicy, type WalletAdapter } from "@aifinpay/aifinpay-adapter";
 import {
-  AppError, DEMO_WALLET_ID, NETWORKS, TOKENS, formatBaseUnits, parseBaseUnits,
+  AppError, DEMO_WALLET_ID, TOKENS, formatBaseUnits, networkMeta, parseBaseUnits,
   type NetworkId, type PaymentIntent, type RiskLevel, type TokenSymbol
 } from "@aifinpay/shared";
 import type { AuditService } from "../audit/audit-service.js";
@@ -69,7 +69,7 @@ export class PaymentService {
       ...(input.merchantCategory ? { merchantCategory: input.merchantCategory } : {}),
       ...(input.purpose || input.memo ? { purpose: input.purpose ?? input.memo } : {}),
       token: input.token, tokenAddress: token.address, amount: formatBaseUnits(amountBaseUnits, token.decimals),
-      amountBaseUnits: amountBaseUnits.toString(), network: input.network, chainId: NETWORKS[input.network].chainId,
+      amountBaseUnits: amountBaseUnits.toString(), network: input.network, chainId: networkMeta(input.network).chainId,
       estimatedFee: "0.0012 POL", status, policyDecision: policy.decision, policyReasonCodes: policy.reasonCodes,
       riskLevel, createdAt: now.toISOString(), expiresAt, idempotencyKey: input.idempotencyKey, auditReceiptId
     };
@@ -85,7 +85,7 @@ export class PaymentService {
     const intent = this.requireIntent(intentId, userId);
     if (!this.confirmations.verify(confirmationToken, intent.id, userId, intent.expiresAt)) throw new AppError("CONFIRMATION_REQUIRED", "A valid explicit confirmation token is required.");
     if (intent.status === "COMPLETED" && intent.transactionHash) {
-      return { intent, explorerUrl: `${NETWORKS[intent.network].explorerBaseUrl}/tx/${intent.transactionHash}` };
+      return { intent, explorerUrl: `${networkMeta(intent.network).explorerBaseUrl}/tx/${intent.transactionHash}` };
     }
     if (intent.status === "BLOCKED") throw new AppError("POLICY_BLOCKED", "Blocked payment intents cannot be confirmed.");
     if (new Date(intent.expiresAt) <= new Date()) {
