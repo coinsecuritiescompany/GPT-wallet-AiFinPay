@@ -18,7 +18,7 @@ The target repository had no implementation before the Build Week work began. No
 ### Non-custodial Vault
 
 - local 12/15-word BIP-39 create/restore flow;
-- EVM, Solana, NEAR and Aptos address derivation;
+- EVM, Solana, NEAR, Aptos and Casper address derivation;
 - local PBKDF2-SHA256 and AES-256-GCM encryption;
 - short-lived public-address-only pairing;
 - recovery verification and encrypted backup flow.
@@ -48,6 +48,27 @@ The target repository had no implementation before the Build Week work began. No
 - expanded `NetworkId`, the network schema and the ChatGPT tools so any of the 12 mainnets is selectable and its live balances flow through end to end;
 - optional `<NETWORK>_RPC_URLS` overrides with public defaults; signing/broadcasting stay disabled;
 - live end-to-end read confirmed on all 12 networks; adapter unit tests cover Polygon, Base (chain-specific USDC), BNB (18-decimal USDC) and NEAR (non-EVM native).
+
+### Casper as the 13th network — July 19, 2026
+
+- extended the Vault (SLIP-44 coin type 506, ed25519) to derive a Casper account public key alongside the existing families, and surfaced its address in the Receive view and network selector;
+- taught `MainnetAdapter` to read native CSPR via the `query_balance` JSON-RPC method keyed on the account's main purse public key (9 decimals), with an unfunded/no-purse account resolving to a zero balance instead of an error;
+- added a per-network Authorization header (`CASPER_RPC_AUTH`) because Casper mainnet nodes are API-key gated; the key is provided by environment/deployment configuration and never committed;
+- adapter unit tests cover the CSPR read (auth header + `query_balance` shape) and the unfunded-account zero case with a mocked RPC;
+- links back to the AiFinPay settlement contract already live on Casper mainnet (`contract-9903a5e3…`); signing/broadcasting remain disabled. Live CSPR read is to be confirmed on the deployment, which holds the provider key.
+
+### Widget live balances across every network — July 19, 2026
+
+- fixed the wallet card that only ever showed a live balance for Polygon: selecting any network now calls `get_wallet_summary` for that network and renders the emitted live read-only balances, so all 13 mainnets show real data instead of a "demo"/placeholder balance;
+- generalized the balance display to use USDC as the headline where a verified Circle contract exists and the network's native token (ETH, BNB, NEAR, CSPR, …) elsewhere, with a per-network loading state and an honest "balance unavailable — retry shortly" fallback when an RPC read fails;
+- a connected wallet in mainnet mode is never labelled demo; the demo balance path is reserved for explicit demo mode only.
+
+### Persistent in-ChatGPT login / onboarding — July 19, 2026
+
+- confirmed and documented that the wallet connection is durable at the OAuth layer: the access/refresh token carries the user's public addresses and a deterministic `userId`, so every returning tool call re-establishes the connection and "open my wallet" goes straight to the dashboard — no repeated Create/Connect, and no dependence on server-side session storage;
+- the recovery phrase and private keys are created, encrypted (PBKDF2-SHA256 + AES-256-GCM) and held only inside the separate Vault origin; ChatGPT and the backend ever receive public addresses only — the seed is never passed to a ChatGPT message, the LLM, a tool argument, logs or the database;
+- added a returning-device unlock gate: a device that already holds an encrypted vault must unlock (prove control of the password) before the wallet can be re-shared with ChatGPT, with recovery-phrase and remove-device escape hatches — re-auth on device-change, matching the onboarding spec, with no change to the normal in-ChatGPT dashboard path;
+- signing and broadcasting remain disabled; the transaction-confirmation, passkey/biometric unlock and MPC "no separate page" items are a deliberate next architecture step (they overlap the backend lane) and are not shipped blind.
 
 ## Codex collaboration
 

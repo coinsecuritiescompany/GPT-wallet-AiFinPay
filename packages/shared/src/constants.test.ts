@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { MAINNET_NETWORKS } from "./constants.js";
 
 describe("AiFinPay mainnet deployment registry", () => {
-  it("contains exactly nine EVM and three native deployments", () => {
+  it("contains exactly nine EVM and four native deployments", () => {
     const networks = Object.values(MAINNET_NETWORKS);
-    expect(networks).toHaveLength(12);
+    expect(networks).toHaveLength(13);
     expect(networks.filter((network) => network.family === "EVM")).toHaveLength(9);
-    expect(networks.filter((network) => network.family !== "EVM")).toHaveLength(3);
+    expect(networks.filter((network) => network.family !== "EVM")).toHaveLength(4);
   });
 
   it("keeps every declared deployment locked for signing pending verification", () => {
@@ -24,6 +24,7 @@ describe("AiFinPay mainnet deployment registry", () => {
       if (network.family === "SOLANA") expect(network.deployment.address).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
       if (network.family === "NEAR") expect(network.deployment.address).toMatch(/^[0-9a-f]{64}$/);
       if (network.family === "APTOS") expect(network.deployment.address).toMatch(/^0x[0-9a-f]{64}$/);
+      if (network.family === "CASPER") expect(network.deployment.address).toMatch(/^[0-9a-f]{64}$/);
     }
   });
 

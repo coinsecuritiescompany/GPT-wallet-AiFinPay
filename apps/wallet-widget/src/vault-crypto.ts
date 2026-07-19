@@ -7,7 +7,7 @@ import { sha512 } from "@noble/hashes/sha2.js";
 import bs58 from "bs58";
 import { privateKeyToAccount } from "viem/accounts";
 
-export interface VaultAddresses { evm: string; solana: string; near: string; aptos: string }
+export interface VaultAddresses { evm: string; solana: string; near: string; aptos: string; casper: string }
 export interface EncryptedVault { version: 1; cipher: "AES-GCM"; kdf: "PBKDF2-SHA256"; iterations: number; salt: string; iv: string; ciphertext: string; addresses: VaultAddresses; createdAt: string }
 
 const bytesToHex = (bytes: Uint8Array) => Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
@@ -39,7 +39,11 @@ export function deriveAddresses(mnemonic: string): VaultAddresses {
   const nearPublic = ed25519.getPublicKey(slip10(seed, [44, 397, 0]));
   const aptosPublic = ed25519.getPublicKey(slip10(seed, [44, 637, 0, 0, 0]));
   const aptosAuthKey = sha3_256(new Uint8Array([...aptosPublic, 0]));
-  return { evm, solana: bs58.encode(solanaPublic), near: bytesToHex(nearPublic), aptos: `0x${bytesToHex(aptosAuthKey)}` };
+  // Casper (SLIP-44 coin type 506). Account public key = ed25519 algorithm tag
+  // "01" prefixed to the raw public key hex — the identifier used to receive
+  // CSPR and to look up the account's main purse balance.
+  const casperPublic = ed25519.getPublicKey(slip10(seed, [44, 506, 0, 0, 0]));
+  return { evm, solana: bs58.encode(solanaPublic), near: bytesToHex(nearPublic), aptos: `0x${bytesToHex(aptosAuthKey)}`, casper: `01${bytesToHex(casperPublic)}` };
 }
 
 export async function encryptVault(mnemonic: string, password: string): Promise<EncryptedVault> {

@@ -1,7 +1,7 @@
 export type NetworkId =
   | "POLYGON" | "POLYGON_AMOY"
   | "AVALANCHE" | "ARBITRUM" | "BNB" | "BASE" | "UNICHAIN" | "OPTIMISM" | "BOTCHAIN" | "XRPLEVM"
-  | "SOLANA" | "NEAR" | "APTOS";
+  | "SOLANA" | "NEAR" | "APTOS" | "CASPER";
 // Slot selector passed to adapters: "POL" = the network's native-token slot, "USDC" = the stablecoin slot.
 export type TokenSymbol = "USDC" | "POL";
 export type ActorType = "USER" | "AGENT";

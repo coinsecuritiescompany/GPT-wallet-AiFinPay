@@ -4,11 +4,12 @@ import { MainnetAdapter } from "../src/services/mainnet-adapter.js";
 
 const EVM = "0x1111111111111111111111111111111111111111";
 const NEAR_ACCT = "548178623b44c06b5312a415f260e5fe2a2a7c5cc5704b19cbee1d094e7b78eb";
+const CASPER = `01${"a".repeat(64)}`; // ed25519 account public key
 
 function connectedStore(stores: Store[]): Store {
   const store = new Store(":memory:"); stores.push(store);
   store.createWalletPairing("pair", "demo-user-001", new Date(Date.now() + 60_000).toISOString());
-  store.completeWalletPairing("pair", { evm: EVM, solana: "So11111111111111111111111111111111111111112", near: NEAR_ACCT, aptos: "0x1" });
+  store.completeWalletPairing("pair", { evm: EVM, solana: "So11111111111111111111111111111111111111112", near: NEAR_ACCT, aptos: "0x1", casper: CASPER });
   return store;
 }
 
@@ -78,6 +79,35 @@ describe("MainnetAdapter", () => {
     // NEAR has no configured USDC slot, so the summary carries native only.
     const summary = await adapter.getWalletSummary("demo-user-001", "NEAR");
     expect(summary.balances.map((b) => b.token)).toEqual(["NEAR"]);
+  });
+
+  it("reads native CSPR via query_balance and sends the configured auth header (9 decimals)", async () => {
+    const store = connectedStore(stores);
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as { method: string; params: { purse_identifier: { main_purse_under_public_key: string } } };
+      expect(request.method).toBe("query_balance");
+      expect(request.params.purse_identifier.main_purse_under_public_key).toBe(CASPER);
+      return { ok: true, json: async () => ({ jsonrpc: "2.0", id: 1, result: { balance: "2500000000" } }) } as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new MainnetAdapter(store, { CASPER: ["https://casper.example/rpc"] }, { CASPER: "Bearer test-key" });
+    const cspr = await adapter.getBalance("demo-user-001", "POL", "CASPER");
+    expect(cspr).toEqual({ token: "CSPR", raw: "2500000000", formatted: "2.5", decimals: 9 });
+    expect((fetchMock.mock.calls[0][1]?.headers as Record<string, string>).authorization).toBe("Bearer test-key");
+    // Casper has no configured USDC slot, so the summary carries native only.
+    const summary = await adapter.getWalletSummary("demo-user-001", "CASPER");
+    expect(summary.balances.map((b) => b.token)).toEqual(["CSPR"]);
+  });
+
+  it("treats an unfunded Casper account (no main purse) as a zero balance, not an outage", async () => {
+    const store = connectedStore(stores);
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ jsonrpc: "2.0", id: 1, error: { code: -32003, message: "Failed to get the purse; account not found" } })
+    } as Response)));
+    const adapter = new MainnetAdapter(store, { CASPER: ["https://casper.example/rpc"] });
+    const cspr = await adapter.getBalance("demo-user-001", "POL", "CASPER");
+    expect(cspr).toEqual({ token: "CSPR", raw: "0", formatted: "0", decimals: 9 });
   });
 
   it("refuses mainnet reads until a wallet is connected", async () => {

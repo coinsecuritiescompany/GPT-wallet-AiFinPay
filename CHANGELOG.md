@@ -6,13 +6,14 @@ All notable public changes are documented here. The project follows the principl
 
 ### Added
 
-- Locally bundled, full-color logos for all 12 mainnet networks in the wallet selector.
+- Casper as the 13th read-only mainnet network: Vault CSPR address derivation (SLIP-44 506, ed25519), native CSPR balance reads via `query_balance`, a Receive row and selector logo, and an optional `CASPER_RPC_AUTH` header for key-gated nodes.
+- Locally bundled, full-color logos for all 13 mainnet networks in the wallet selector.
 - OAuth 2.1 authorization-code flow with PKCE, dynamic client registration and public-address-only access tokens.
 - OAuth security and audience tests, including authorization-code replay rejection.
 - Professional public-repository governance, legal, privacy, security and contribution documentation.
 - Public/private implementation boundary and automated public-safety scan.
 - OpenAI Build Week compliance checklist and ChatGPT app submission metadata.
-- Public registry for 12 owner-declared mainnet contract/program deployments and RPC endpoints.
+- Public registry for 13 owner-declared mainnet contract/program deployments and RPC endpoints.
 
 ### Changed
 

@@ -10,11 +10,11 @@ import solana from "@web3icons/core/svgs/networks/background/solana.svg.js";
 import near from "@web3icons/core/svgs/networks/background/near-protocol.svg.js";
 import aptos from "@web3icons/core/svgs/networks/background/aptos.svg.js";
 
-export type NetworkLogoId = "polygon" | "avalanche" | "arbitrum" | "bnb" | "base" | "unichain" | "optimism" | "botchain" | "xrplevm" | "solana" | "near" | "aptos";
+export type NetworkLogoId = "polygon" | "avalanche" | "arbitrum" | "bnb" | "base" | "unichain" | "optimism" | "botchain" | "xrplevm" | "solana" | "near" | "aptos" | "casper";
 
 const svgToDataUri = (svg: string) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
-const NETWORK_LOGOS: Record<Exclude<NetworkLogoId, "botchain">, string> = {
+const NETWORK_LOGOS: Record<Exclude<NetworkLogoId, "botchain" | "casper">, string> = {
   polygon,
   avalanche,
   arbitrum,
@@ -29,6 +29,15 @@ const NETWORK_LOGOS: Record<Exclude<NetworkLogoId, "botchain">, string> = {
 };
 
 export function NetworkLogo({ id }: { id: NetworkLogoId }) {
+  if (id === "casper") {
+    // Casper has no @web3icons asset yet — inline the brand mark (red badge, white "C").
+    return <span className="network-logo casper-logo" data-testid="network-logo-casper" aria-hidden="true">
+      <svg viewBox="0 0 32 32" focusable="false">
+        <circle cx="16" cy="16" r="16" fill="#FF473E" />
+        <path d="M21.5 11.4a7 7 0 1 0 0 9.2l-2.1-1.6a4.4 4.4 0 1 1 0-6z" fill="#fff" />
+      </svg>
+    </span>;
+  }
   if (id === "botchain") {
     return <span className="network-logo botchain-logo" data-testid="network-logo-botchain" aria-hidden="true">
       <svg viewBox="0 0 128 205" focusable="false">

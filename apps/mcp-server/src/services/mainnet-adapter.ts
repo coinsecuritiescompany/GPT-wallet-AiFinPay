@@ -24,22 +24,28 @@ function assertAddress(family: AddressFamily, address: string | undefined): stri
     if (family === "solana" && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) return address;
     if (family === "near" && (/^[0-9a-f]{64}$/.test(address) || /^[a-z0-9._-]{2,64}$/.test(address))) return address;
     if (family === "aptos" && /^0x[a-fA-F0-9]{1,64}$/.test(address)) return address;
+    // Casper account public key: 01 + 64 hex (ed25519) or 02 + 66 hex (secp256k1).
+    if (family === "casper" && /^0(1[0-9a-fA-F]{64}|2[0-9a-fA-F]{66})$/.test(address)) return address;
   }
   throw new AppError("WALLET_NOT_FOUND", "Connect your AiFinPay Vault before loading mainnet balances.", 404);
 }
 
 /**
  * Read-only mainnet adapter. Loads live public-chain balances for the connected
- * AiFinPay Vault across all 12 mainnet networks (9 EVM chains + Solana, NEAR,
- * Aptos). Signing and broadcasting remain deliberately disabled — `execute`
- * always fails closed.
+ * AiFinPay Vault across all 13 mainnet networks (9 EVM chains + Solana, NEAR,
+ * Aptos, Casper). Signing and broadcasting remain deliberately disabled —
+ * `execute` always fails closed.
  */
 export class MainnetAdapter implements WalletAdapter {
   readonly kind = "MAINNET" as const;
   private rpcId = 0;
   private readonly cache = new Map<string, { expiresAt: number; value: Balance }>();
 
-  constructor(private readonly store: Store, private readonly rpcOverrides: Record<string, string[]> = {}) {}
+  constructor(
+    private readonly store: Store,
+    private readonly rpcOverrides: Record<string, string[]> = {},
+    private readonly rpcAuth: Record<string, string> = {}
+  ) {}
 
   private rpcUrls(network: NetworkId): string[] {
     const override = this.rpcOverrides[network];
@@ -51,7 +57,13 @@ export class MainnetAdapter implements WalletAdapter {
     return assertAddress(family, addresses?.[family]);
   }
 
-  /** Minimal JSON-RPC POST helper with multi-endpoint failover (EVM, Solana, NEAR). */
+  /** Authorization header for key-gated nodes (e.g. Casper mainnet), if configured. */
+  private authHeaders(network: NetworkId): Record<string, string> {
+    const auth = this.rpcAuth[network];
+    return auth ? { authorization: auth } : {};
+  }
+
+  /** Minimal JSON-RPC POST helper with multi-endpoint failover (EVM, Solana, NEAR, Casper). */
   private async rpc<T>(network: NetworkId, method: string, params: unknown): Promise<T> {
     let lastError: unknown;
     for (const url of this.rpcUrls(network)) {
@@ -60,7 +72,7 @@ export class MainnetAdapter implements WalletAdapter {
       try {
         const response = await fetch(url, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", ...this.authHeaders(network) },
           body: JSON.stringify({ jsonrpc: "2.0", id: ++this.rpcId, method, params }),
           signal: controller.signal
         });
@@ -119,9 +131,46 @@ export class MainnetAdapter implements WalletAdapter {
         );
         return BigInt(res?.data.coin.value ?? "0");
       }
+      case "CASPER":
+        return this.readCasper(network, address);
       default:
         throw new AppError("NETWORK_UNSUPPORTED", `${spec.label} is not a supported live network.`);
     }
+  }
+
+  /**
+   * Casper native (CSPR) balance via the query_balance JSON-RPC method, keyed on
+   * the account's main purse under its public key. An unfunded account has no
+   * purse yet — that is a zero balance, not an outage — so purse/account "not
+   * found" errors resolve to 0 while genuine transport failures fail over.
+   */
+  private async readCasper(network: NetworkId, publicKey: string): Promise<bigint> {
+    const params = { purse_identifier: { main_purse_under_public_key: publicKey } };
+    let lastError: unknown;
+    for (const url of this.rpcUrls(network)) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...this.authHeaders(network) },
+          body: JSON.stringify({ jsonrpc: "2.0", id: ++this.rpcId, method: "query_balance", params }),
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error(`RPC HTTP ${response.status}`);
+        const payload = await response.json() as RpcEnvelope<{ balance: string }>;
+        if (payload.result?.balance !== undefined) return BigInt(payload.result.balance);
+        const message = payload.error?.message ?? "Malformed RPC response";
+        if (/purse|account|not found|valuenotfound|failed to get/i.test(message)) return 0n; // unfunded
+        throw new Error(message);
+      } catch (error) {
+        lastError = error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    void lastError;
+    throw new AppError("RPC_UNAVAILABLE", `${specFor(network).label} RPC is temporarily unavailable. Try again shortly.`, 503);
   }
 
   private async readUsdc(network: NetworkId, spec: LiveNetworkSpec, address: string): Promise<bigint> {

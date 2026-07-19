@@ -17,7 +17,7 @@ export const NETWORKS = {
   }
 } as const;
 
-export type MainnetFamily = "EVM" | "SOLANA" | "NEAR" | "APTOS";
+export type MainnetFamily = "EVM" | "SOLANA" | "NEAR" | "APTOS" | "CASPER";
 
 export interface MainnetDeployment {
   name: "AiFinPayCore" | "B2BSplitter" | "Program" | "Contract" | "Module";
@@ -53,7 +53,8 @@ export const MAINNET_NETWORKS = {
   xrplevm: { label: "XRPL EVM", family: "EVM", chainId: 1440000, nativeToken: "XRP", rpcUrl: "https://rpc.xrplevm.org", explorerBaseUrl: "https://explorer.xrplevm.org", mode: "SPLITTER_ONLY_RESTRICTED", enabledForSigning: false, deployment: { name: "B2BSplitter", address: "0xeE92807decAa3A02F1e165dd7Efcd92ab9aA83CB", status: "DEPLOYED_UNVERIFIED" } },
   solana: { label: "Solana", family: "SOLANA", chainId: null, nativeToken: "SOL", rpcUrl: "https://api.mainnet-beta.solana.com", explorerBaseUrl: "https://solscan.io", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "Program", address: "5g9zWHF1Vv6GiGpA2ZbJQbSCDZd5hAk9AyvabRJvKFx2", status: "DEPLOYED_UNVERIFIED" } },
   near: { label: "NEAR", family: "NEAR", chainId: null, nativeToken: "NEAR", rpcUrl: "https://rpc.mainnet.near.org", explorerBaseUrl: "https://nearblocks.io", mode: "SPLITTER_MVP", enabledForSigning: false, deployment: { name: "Contract", address: "548178623b44c06b5312a415f260e5fe2a2a7c5cc5704b19cbee1d094e7b78eb", status: "DEPLOYED_UNVERIFIED" } },
-  aptos: { label: "Aptos", family: "APTOS", chainId: 1, nativeToken: "APT", rpcUrl: "https://fullnode.mainnet.aptoslabs.com/v1", explorerBaseUrl: "https://explorer.aptoslabs.com", mode: "SPLITTER_MVP", enabledForSigning: false, deployment: { name: "Module", address: "0xc5feda4075a4f138a5b4e293a8bd41b9e37b76e5553ff35ee6131f4f046d27fd", moduleName: "splitter", status: "DEPLOYED_UNVERIFIED" } }
+  aptos: { label: "Aptos", family: "APTOS", chainId: 1, nativeToken: "APT", rpcUrl: "https://fullnode.mainnet.aptoslabs.com/v1", explorerBaseUrl: "https://explorer.aptoslabs.com", mode: "SPLITTER_MVP", enabledForSigning: false, deployment: { name: "Module", address: "0xc5feda4075a4f138a5b4e293a8bd41b9e37b76e5553ff35ee6131f4f046d27fd", moduleName: "splitter", status: "DEPLOYED_UNVERIFIED" } },
+  casper: { label: "Casper", family: "CASPER", chainId: null, nativeToken: "CSPR", rpcUrl: "https://node.mainnet.cspr.cloud/rpc", explorerBaseUrl: "https://cspr.live", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "Contract", address: "9903a5e3948e799196df54b17270bc6769338ac1cc36c9eb47e113f88d23f019", status: "DEPLOYED_UNVERIFIED" } }
 } as const satisfies Record<string, MainnetNetwork>;
 
 export const TOKENS = {
@@ -73,7 +74,7 @@ export const TOKENS = {
 // reading symbol() and decimals() from the live contract. Chains without a
 // verified `usdc` entry expose the native balance only (never a placeholder).
 // ---------------------------------------------------------------------------
-export type AddressFamily = "evm" | "solana" | "near" | "aptos";
+export type AddressFamily = "evm" | "solana" | "near" | "aptos" | "casper";
 export interface NativeTokenSpec { symbol: string; decimals: number }
 export interface UsdcSpec { address: string; decimals: number }
 
@@ -87,6 +88,9 @@ export interface LiveNetworkSpec {
   native: NativeTokenSpec;
   usdc?: UsdcSpec;
   isTestnet?: boolean;
+  // True when the default RPC endpoint needs an Authorization key (set via
+  // <NETWORK>_RPC_AUTH). Used by Casper's key-gated mainnet node.
+  requiresAuth?: boolean;
 }
 
 export const LIVE_NETWORKS = {
@@ -125,13 +129,21 @@ export const LIVE_NETWORKS = {
     native: { symbol: "NEAR", decimals: 24 } },
   APTOS: { label: "Aptos", family: "APTOS", chainId: 1, addressField: "aptos", explorerBaseUrl: "https://explorer.aptoslabs.com",
     rpcUrls: ["https://fullnode.mainnet.aptoslabs.com/v1"],
-    native: { symbol: "APT", decimals: 8 } }
+    native: { symbol: "APT", decimals: 8 } },
+  // Casper 2.0 mainnet. Balances read via the query_balance JSON-RPC method
+  // (main_purse_under_public_key). Casper's reliable mainnet RPC is API-key
+  // gated, so set CASPER_RPC_URLS + CASPER_RPC_AUTH in the deployment env; the
+  // default endpoint below expects an Authorization key. CSPR uses 9 decimals
+  // (motes). No canonical USDC on Casper — native CSPR only.
+  CASPER: { label: "Casper", family: "CASPER", chainId: null, addressField: "casper", explorerBaseUrl: "https://cspr.live",
+    rpcUrls: ["https://node.mainnet.cspr.cloud/rpc"], requiresAuth: true,
+    native: { symbol: "CSPR", decimals: 9 } }
 } as const satisfies Record<string, LiveNetworkSpec>;
 
-// The 12 mainnet networks the read-only balance layer serves.
+// The 13 mainnet networks the read-only balance layer serves.
 export const MAINNET_NETWORK_IDS = [
   "POLYGON", "AVALANCHE", "ARBITRUM", "BNB", "BASE", "UNICHAIN",
-  "OPTIMISM", "BOTCHAIN", "XRPLEVM", "SOLANA", "NEAR", "APTOS"
+  "OPTIMISM", "BOTCHAIN", "XRPLEVM", "SOLANA", "NEAR", "APTOS", "CASPER"
 ] as const;
 
 // Chain id + explorer for any network, spanning the demo/testnet map (NETWORKS)

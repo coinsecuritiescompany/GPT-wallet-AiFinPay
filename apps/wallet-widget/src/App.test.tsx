@@ -67,20 +67,26 @@ describe("AiFinPay wallet widget", () => {
     expect(screen.getByText("Polygon & EVM networks")).toBeInTheDocument();
   });
 
-  it("opens the 12-network selector and switches to the selected wallet address", () => {
+  it("opens the 13-network selector and fetches the selected network's live balance", async () => {
     const connection = { addresses: { evm: "0x1111111111111111111111111111111111111111", solana: "5L7xB9arfakeaddress111111111111111", near: "a".repeat(64), aptos: `0x${"b".repeat(64)}` }, connectedAt: "2026-07-18T10:00:00.000Z" };
     const summary = { ...browserDemoData.summary!, mode: "MAINNET" as const, selectedNetwork: "POLYGON" as const, balances: [{ token: "USDC" as const, raw: "0", formatted: "0", decimals: 6 }, { token: "POL" as const, raw: "0", formatted: "0", decimals: 18 }], latestTransactions: [] };
+    const solanaSummary = { ...summary, selectedNetwork: "SOLANA" as const, balances: [{ token: "SOL", raw: "2500000000", formatted: "2.5", decimals: 9 }] };
+    // Switching networks calls get_wallet_summary; the bridge emits the result to subscribers.
+    const call = vi.spyOn(bridge, "callTool").mockImplementation(async () => { const next = { view: "wallet" as const, summary: solanaSummary, connection }; (bridge as unknown as { emit: (d: unknown) => void }).emit(next); return next; });
     render(<App initialData={{ view: "wallet", summary, connection }} />);
     const selector = screen.getByRole("button", { name: "Choose network. Current: Polygon Mainnet" });
     fireEvent.click(selector);
     expect(screen.getByRole("dialog", { name: "Choose network" })).toBeInTheDocument();
-    expect(screen.getAllByRole("option")).toHaveLength(12);
+    expect(screen.getAllByRole("option")).toHaveLength(13);
     expect(screen.getByTestId("network-logo-botchain")).toBeInTheDocument();
-    expect(screen.getAllByTestId(/^network-logo-/)).toHaveLength(13);
+    expect(screen.getByTestId("network-logo-casper")).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^network-logo-/)).toHaveLength(14);
     fireEvent.click(screen.getByRole("option", { name: /Solana/ }));
+    expect(call).toHaveBeenCalledWith("get_wallet_summary", { network: "SOLANA" });
     expect(screen.getByRole("button", { name: "Choose network. Current: Solana" })).toBeInTheDocument();
     expect(screen.getByTestId("network-logo-solana")).toBeInTheDocument();
-    expect(screen.getByText("SOL balance adapter coming next")).toBeInTheDocument();
-    expect(screen.getAllByText("5L7xB9ar…111111")).toHaveLength(2);
+    await waitFor(() => expect(screen.getByText("Live Solana balance")).toBeInTheDocument());
+    expect(screen.getByText("SOL")).toBeInTheDocument();
+    call.mockRestore();
   });
 });

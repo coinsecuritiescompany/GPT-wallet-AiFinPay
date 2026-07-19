@@ -14,7 +14,7 @@
 </p>
 
 > [!IMPORTANT]
-> This public repository is a transparent hackathon/reference implementation. Balances are live and read-only across all 12 mainnet networks. Mainnet transaction signing and broadcasting are deliberately disabled until per-user authentication, durable storage and reviewed local signing are complete. Do not treat this beta as a bank, exchange, custodian or financial adviser.
+> This public repository is a transparent hackathon/reference implementation. Balances are read-only across all 13 mainnet networks (Casper reads native CSPR from a key-gated node). Mainnet transaction signing and broadcasting are deliberately disabled until per-user authentication, durable storage and reviewed local signing are complete. Do not treat this beta as a bank, exchange, custodian or financial adviser.
 
 ## Try it
 
@@ -32,11 +32,11 @@ The hosted instance uses a free preview environment and can cold-start after ina
 |---|---|---|
 | Local 12/15-word wallet creation and restore | Beta | Recovery phrase stays in the browser Vault |
 | Local AES-256-GCM encrypted Vault | Beta | Password and ciphertext remain on the device |
-| EVM, Solana, NEAR and Aptos address derivation | Beta | OAuth tokens contain public addresses only |
+| EVM, Solana, NEAR, Aptos and Casper address derivation | Beta | OAuth tokens contain public addresses only |
 | One-time ChatGPT connection and automatic dashboard opening | Beta | OAuth 2.1 authorization code flow with PKCE |
-| 12-mainnet selector | Live | Every selected network returns live read-only balances from public RPC |
-| Public mainnet deployment registry | Declared, verification pending | 12 contract/program identifiers; signing remains disabled |
-| Native + USDC balances across all 12 mainnets | Live, read-only | Native token on all 12; verified Circle USDC on 6 EVM chains (Polygon, Avalanche, Arbitrum, BNB, Base, Optimism) |
+| 13-mainnet selector | Live | Every selected network returns read-only balances from public RPC (Casper via a key-gated node) |
+| Public mainnet deployment registry | Declared, verification pending | 13 contract/program identifiers; signing remains disabled |
+| Native + USDC balances across all 13 mainnets | Live, read-only | Native token on all 13 (Casper CSPR via `query_balance` on a key-gated node); verified Circle USDC on 6 EVM chains (Polygon, Avalanche, Arbitrum, BNB, Base, Optimism) |
 | Receive flow | Live | Displays public addresses only |
 | Agent policy engine and audit trail | Reference implementation | Server-side deterministic rules |
 | Mainnet transaction signing | Disabled | Requires personal auth and local user approval |
@@ -125,7 +125,7 @@ Never paste a recovery phrase, private key, Vault password or API credential int
 
 ## Configuration
 
-The checked-in `.env.example` contains placeholders only. Read-only mainnet mode (all 12 networks) is the default; demo mode must be selected explicitly. Each network falls back to public RPC defaults and can be overridden with a `<NETWORK>_RPC_URLS` variable.
+The checked-in `.env.example` contains placeholders only. Read-only mainnet mode (all 13 networks) is the default; demo mode must be selected explicitly. Each network falls back to public RPC defaults and can be overridden with a `<NETWORK>_RPC_URLS` variable. Casper mainnet nodes are API-key gated: set `CASPER_RPC_URLS` and `CASPER_RPC_AUTH` (the provider key sent as the Authorization header) to enable CSPR balance reads.
 
 ```dotenv
 AIFINPAY_WALLET_MODE=mainnet
@@ -169,11 +169,11 @@ Codex was used as an engineering collaborator throughout the primary build threa
 - research current Apps SDK and MCP requirements;
 - implement and test the MCP server, React widget and local Vault;
 - diagnose mobile bundle size and split the Vault from the inline widget;
-- replace fabricated demo balances with read-only mainnet RPC data across all 12 networks;
+- replace fabricated demo balances with read-only mainnet RPC data across all 13 networks;
 - model security boundaries, run regression checks and prepare deployment;
 - reconcile README, legal, security and submission documentation with actual behavior.
 
-Key human product decisions included choosing non-custodial local recovery, prohibiting mainnet signing until personal authentication exists, using Polygon as the first live network before extending read-only balances to all 12 mainnets, and keeping confidential production systems outside the public repository.
+Key human product decisions included choosing non-custodial local recovery, prohibiting mainnet signing until personal authentication exists, using Polygon as the first live network before extending read-only balances to all 13 mainnets, and keeping confidential production systems outside the public repository.
 
 GPT-5.6 is the conversational orchestration layer: it interprets wallet requests, selects the appropriate MCP tool and explains deterministic results. It is not the source of truth for policy, balances or transaction authorization.
 

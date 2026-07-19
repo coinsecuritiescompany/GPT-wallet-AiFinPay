@@ -28,7 +28,7 @@ export class AppContext {
     this.audit = new AuditService(this.store);
     this.confirmations = new ConfirmationService(config.sessionSecret);
     this.adapter = config.walletMode === "mainnet"
-      ? new MainnetAdapter(this.store, config.mainnetRpcUrls)
+      ? new MainnetAdapter(this.store, config.mainnetRpcUrls, config.mainnetRpcAuth)
       : new DemoLedgerAdapter();
     this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter);
     this.policies = new PolicyService(this.store, this.audit, this.confirmations);

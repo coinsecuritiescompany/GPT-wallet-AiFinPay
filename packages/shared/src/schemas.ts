@@ -3,7 +3,7 @@ import { z } from "zod";
 export const networkSchema = z.enum([
   "POLYGON", "POLYGON_AMOY",
   "AVALANCHE", "ARBITRUM", "BNB", "BASE", "UNICHAIN", "OPTIMISM", "BOTCHAIN", "XRPLEVM",
-  "SOLANA", "NEAR", "APTOS"
+  "SOLANA", "NEAR", "APTOS", "CASPER"
 ]);
 export const tokenSchema = z.enum(["USDC", "POL"]);
 export const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Expected a valid EVM address").transform((v) => v.toLowerCase());

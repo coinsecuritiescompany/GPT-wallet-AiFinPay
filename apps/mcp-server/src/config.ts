@@ -12,6 +12,7 @@ export interface AppConfig {
   walletMode: "demo" | "mainnet";
   polygonRpcUrls: string[];
   mainnetRpcUrls: Record<string, string[]>;
+  mainnetRpcAuth: Record<string, string>;
 }
 
 function parseRpcList(raw: string | undefined): string[] {
@@ -28,6 +29,18 @@ function loadMainnetRpcUrls(env: NodeJS.ProcessEnv, polygonRpcUrls: string[]): R
   }
   if (!overrides.POLYGON && polygonRpcUrls.length) overrides.POLYGON = polygonRpcUrls;
   return overrides;
+}
+
+// Optional per-network RPC Authorization header, e.g. CASPER_RPC_AUTH="<api-key>".
+// Needed for key-gated nodes (Casper mainnet). Sent verbatim as the
+// Authorization header on that network's JSON-RPC requests.
+function loadMainnetRpcAuth(env: NodeJS.ProcessEnv): Record<string, string> {
+  const auth: Record<string, string> = {};
+  for (const networkId of Object.keys(LIVE_NETWORKS)) {
+    const value = env[`${networkId}_RPC_AUTH`]?.trim();
+    if (value) auth[networkId] = value;
+  }
+  return auth;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -48,6 +61,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: env.LOG_LEVEL ?? "info",
     walletMode: env.AIFINPAY_WALLET_MODE === "demo" ? "demo" : "mainnet",
     polygonRpcUrls,
-    mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls)
+    mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls),
+    mainnetRpcAuth: loadMainnetRpcAuth(env)
   };
 }

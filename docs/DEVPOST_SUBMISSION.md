@@ -22,7 +22,7 @@ AiFinPay opens a wallet interface inside ChatGPT, creates or restores a local en
 
 ## How it works
 
-GPT-5.6 interprets natural-language requests and selects a focused MCP tool. A TypeScript MCP server validates inputs and reads public chain state. A compact React widget renders the result inside ChatGPT. The separate browser Vault derives EVM, Solana, NEAR and Aptos addresses and encrypts recovery locally; the server receives public addresses only.
+GPT-5.6 interprets natural-language requests and selects a focused MCP tool. A TypeScript MCP server validates inputs and reads public chain state. A compact React widget renders the result inside ChatGPT. The separate browser Vault derives EVM, Solana, NEAR, Aptos and Casper addresses and encrypts recovery locally; the server receives public addresses only.
 
 ## How GPT-5.6 is used
 
@@ -45,8 +45,8 @@ Human decisions included selecting non-custodial recovery, choosing Polygon as t
 ## Accomplishments
 
 - Non-custodial local 12/15-word Vault with encrypted browser storage.
-- 12 derived address networks across EVM, Solana, NEAR and Aptos families.
-- Live read-only balances across all 12 mainnet networks (native token everywhere; verified Circle USDC on 6 EVM chains).
+- 13 derived address networks across EVM, Solana, NEAR, Aptos and Casper families.
+- Read-only balances across all 13 mainnet networks (native token everywhere, including Casper CSPR via a key-gated node; verified Circle USDC on 6 EVM chains).
 - 19 focused MCP tools and a versioned ChatGPT widget.
 - Deterministic policy/state-machine reference layer and tamper-evident audit chain.
 - Mobile widget reduced by separating the Vault bundle.

@@ -30,5 +30,6 @@ describe("local Vault cryptography", () => {
     expect(first.addresses.solana).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
     expect(first.addresses.near).toMatch(/^[a-f0-9]{64}$/);
     expect(first.addresses.aptos).toMatch(/^0x[a-f0-9]{64}$/);
+    expect(first.addresses.casper).toMatch(/^01[a-f0-9]{64}$/); // ed25519 account public key
   });
 });
