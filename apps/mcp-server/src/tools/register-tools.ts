@@ -94,8 +94,13 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
 
   registerAppTool(server, "create_wallet_pairing", {
     title: "Open or connect AiFinPay Wallet",
-    description: "Use this only when the user asks to open or initially connect their non-custodial AiFinPay Wallet. OAuth performs the one-time connection; returning users go directly to the wallet dashboard.",
-    inputSchema: {}, annotations: write, _meta: oauthMeta(true)
+    description: "Use this when the user asks to open their AiFinPay Wallet or connect it for the first time. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
+    // Opening/viewing the wallet is a read operation — it must require only
+    // wallet:read. Marking it write (readOnlyHint:false) makes ChatGPT demand the
+    // wallet:write tier to open the wallet, which produces a "needs more access"
+    // reconnect loop for a read-only connection. Keep the annotation and the
+    // OAuth scheme both on wallet:read.
+    inputSchema: {}, annotations: readOnly, _meta: oauthMeta(true)
   }, async (_args, extra) => {
     try {
       const user = resolveUser(ctx, extra);
