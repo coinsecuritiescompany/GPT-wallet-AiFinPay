@@ -2,15 +2,19 @@ import type { ExecutionResult, WalletAdapter } from "@aifinpay/aifinpay-adapter"
 import {
   AppError, LIVE_NETWORKS, formatBaseUnits,
   type AddressFamily, type Balance, type LiveNetworkSpec, type NetworkId,
-  type PaymentIntent, type TransactionRecord, type WalletSummary
+  type PaymentIntent, type TransactionRecord, type UnsignedEvmTransaction, type WalletSummary
 } from "@aifinpay/shared";
 import type { Store } from "../storage/store.js";
 
 interface RpcEnvelope<T> { result?: T; error?: { code: number; message: string } }
 
 const BALANCE_OF_SELECTOR = "0x70a08231";
+// ERC-20 transfer(address,uint256).
+const TRANSFER_SELECTOR = "0xa9059cbb";
 const CACHE_TTL_MS = 15_000;
 const RPC_TIMEOUT_MS = 4_000;
+
+const toHexQuantity = (value: bigint): string => `0x${value.toString(16)}`;
 
 function specFor(network: NetworkId): LiveNetworkSpec {
   const spec = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
@@ -31,10 +35,12 @@ function assertAddress(family: AddressFamily, address: string | undefined): stri
 }
 
 /**
- * Read-only mainnet adapter. Loads live public-chain balances for the connected
- * AiFinPay Vault across all 13 mainnet networks (9 EVM chains + Solana, NEAR,
- * Aptos, Casper). Signing and broadcasting remain deliberately disabled —
- * `execute` always fails closed.
+ * Mainnet adapter. Loads live public-chain balances for the connected AiFinPay
+ * Vault across all 13 mainnet networks (9 EVM chains + Solana, NEAR, Aptos,
+ * Casper). Custodial `execute` stays permanently locked — the server never holds
+ * a key. EVM sending is non-custodial: `buildTransferTransaction` prepares the
+ * unsigned tx, the Vault signs it on the device, and `broadcastRawTransaction`
+ * publishes the finished raw tx. Both are gated per-network by config.
  */
 export class MainnetAdapter implements WalletAdapter {
   readonly kind = "MAINNET" as const;
@@ -233,7 +239,82 @@ export class MainnetAdapter implements WalletAdapter {
 
   async execute(_intent: PaymentIntent): Promise<ExecutionResult> {
     void _intent;
-    throw new AppError("SIGNING_FAILED", "Mainnet broadcasting is locked until per-user authentication and local Vault signing are enabled.", 501);
+    // Server-side custodial execution stays permanently locked: the server never
+    // holds a key. Sending goes through the non-custodial pair below — the Vault
+    // signs on the device and the server only broadcasts the finished raw tx.
+    throw new AppError("SIGNING_FAILED", "Server-side signing is disabled by design. AiFinPay is non-custodial — the Vault signs on your device.", 501);
+  }
+
+  /**
+   * Build the exact EIP-1559 fields for a native or USDC transfer so the Vault
+   * can sign them locally. Nonce, gas and fees are read live from the network;
+   * the private key is never involved here — only public reads plus the intent's
+   * recipient/amount. The Vault re-derives the sender from its own key, so the
+   * returned tx has no `from` field to trust.
+   */
+  async buildTransferTransaction(userId: string, intent: PaymentIntent): Promise<UnsignedEvmTransaction> {
+    const network = intent.network;
+    const spec = specFor(network);
+    if (spec.family !== "EVM") throw new AppError("SIGNING_FAILED", `Local signing is not available on ${spec.label} yet.`, 501);
+    const from = this.addressFor(userId, "evm");
+    const amount = BigInt(intent.amountBaseUnits);
+    if (amount <= 0n) throw new AppError("INVALID_AMOUNT", "Transfer amount must be greater than zero.");
+    assertAddress("evm", intent.recipient);
+
+    let to: string;
+    let value: bigint;
+    let data: string;
+    if (intent.token === "USDC") {
+      if (!spec.usdc) throw new AppError("TOKEN_UNSUPPORTED", `USDC transfers are not available on ${spec.label}.`);
+      to = spec.usdc.address;
+      value = 0n;
+      data = `${TRANSFER_SELECTOR}${intent.recipient.slice(2).toLowerCase().padStart(64, "0")}${amount.toString(16).padStart(64, "0")}`;
+    } else {
+      to = intent.recipient;
+      value = amount;
+      data = "0x";
+    }
+
+    const [nonceHex, priorityHex, latestBlock] = await Promise.all([
+      this.rpc<string>(network, "eth_getTransactionCount", [from, "pending"]),
+      this.rpc<string>(network, "eth_maxPriorityFeePerGas", []).catch(() => "0x3b9aca00"), // 1 gwei fallback
+      this.rpc<{ baseFeePerGas?: string }>(network, "eth_getBlockByNumber", ["latest", false])
+    ]);
+    const baseFee = BigInt(latestBlock.baseFeePerGas ?? "0x0");
+    const priorityFee = BigInt(priorityHex);
+    // Head-room for one base-fee step up between build and inclusion.
+    const maxFee = baseFee * 2n + priorityFee;
+
+    const estimatedGas = await this.rpc<string>(network, "eth_estimateGas", [{ from, to, value: toHexQuantity(value), data }])
+      .then((hex) => BigInt(hex))
+      .catch(() => (intent.token === "USDC" ? 90_000n : 21_000n));
+    const gasWithBuffer = estimatedGas + estimatedGas / 5n; // +20%
+
+    return {
+      to,
+      value: toHexQuantity(value),
+      data,
+      nonce: Number(BigInt(nonceHex)),
+      gas: toHexQuantity(gasWithBuffer),
+      maxFeePerGas: toHexQuantity(maxFee),
+      maxPriorityFeePerGas: toHexQuantity(priorityFee),
+      chainId: spec.chainId ?? intent.chainId
+    };
+  }
+
+  /** Broadcast a Vault-signed raw transaction and report the resulting hash. */
+  async broadcastRawTransaction(network: NetworkId, rawTransaction: string): Promise<ExecutionResult> {
+    const spec = specFor(network);
+    if (spec.family !== "EVM") throw new AppError("SIGNING_FAILED", `Broadcasting is not available on ${spec.label} yet.`, 501);
+    if (!/^0x[0-9a-fA-F]+$/.test(rawTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is malformed.");
+    const hash = await this.rpc<string>(network, "eth_sendRawTransaction", [rawTransaction]);
+    return {
+      status: "PENDING",
+      transactionHash: hash,
+      explorerUrl: `${spec.explorerBaseUrl}/tx/${hash}`,
+      receiptId: `${network.toLowerCase()}:${hash}`,
+      confirmations: 0
+    };
   }
 
   async getTransactionStatus(transactionHash: string, network: NetworkId = "POLYGON"): Promise<ExecutionResult | null> {

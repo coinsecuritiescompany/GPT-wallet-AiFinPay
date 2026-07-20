@@ -113,3 +113,33 @@ export interface WalletSummary {
   activeAgentPolicies: AgentPolicy[];
   mode: "DEMO" | "TESTNET" | "MAINNET";
 }
+
+// Non-custodial signing handoff. The server builds these EIP-1559 fields from
+// the stored intent — nonce, gas and fees are fetched live from the network RPC;
+// the browser Vault signs them locally with the on-device key and the server
+// broadcasts the resulting raw transaction. The private key never leaves the
+// device. `to`/`value`/`data`/`gas`/`maxFeePerGas`/`maxPriorityFeePerGas` are
+// 0x-prefixed hex quantities; `nonce` and `chainId` are plain integers.
+export interface UnsignedEvmTransaction {
+  to: string;
+  value: string;
+  data: string;
+  nonce: number;
+  gas: string;
+  maxFeePerGas: string;
+  maxPriorityFeePerGas: string;
+  chainId: number;
+}
+
+export interface VaultSignRequest {
+  intentId: string;
+  transaction: UnsignedEvmTransaction;
+  display: {
+    recipient: string;
+    amount: string;
+    token: string;
+    network: NetworkId;
+    networkLabel: string;
+  };
+  expiresAt: string;
+}

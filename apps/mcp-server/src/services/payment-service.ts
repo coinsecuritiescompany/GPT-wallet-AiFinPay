@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { assertTransition, evaluatePolicy, type WalletAdapter } from "@aifinpay/aifinpay-adapter";
+import { assertTransition, evaluatePolicy, type ExecutionResult, type WalletAdapter } from "@aifinpay/aifinpay-adapter";
 import {
   AppError, DEMO_WALLET_ID, TOKENS, formatBaseUnits, networkMeta, parseBaseUnits,
   type NetworkId, type PaymentIntent, type RiskLevel, type TokenSymbol
@@ -105,6 +105,48 @@ export class PaymentService {
     this.audit.record({ userId, agentId: intent.initiatedByType === "AGENT" ? intent.initiatedById : null, action: "CONFIRM_TRANSFER",
       entityType: "PaymentIntent", entityId: intent.id, decision: intent.status, reasonCode: intent.policyReasonCodes.join(","),
       metadata: { transactionHash: execution.transactionHash, amountBaseUnits: intent.amountBaseUnits } });
+    return { intent, explorerUrl: execution.explorerUrl };
+  }
+
+  /**
+   * Validate that an intent can still be signed and broadcast by the Vault:
+   * owned by the user, not blocked, not already sent, and not expired. Returns
+   * the intent so the caller can build the unsigned transaction from it.
+   */
+  intentForSigning(userId: string, intentId: string): PaymentIntent {
+    const intent = this.requireIntent(intentId, userId);
+    if (intent.status === "BLOCKED") throw new AppError("POLICY_BLOCKED", "This payment was blocked by policy and cannot be signed.");
+    if (intent.transactionHash || ["SUBMITTED", "PENDING", "COMPLETED", "FAILED", "CANCELLED", "EXPIRED"].includes(intent.status)) {
+      throw new AppError("DUPLICATE_REQUEST", "This payment has already been submitted.");
+    }
+    if (new Date(intent.expiresAt) <= new Date()) {
+      if (intent.status === "REQUIRES_CONFIRMATION" || intent.status === "AUTO_APPROVED" || intent.status === "CONFIRMED") this.transition(intent, "EXPIRED");
+      throw new AppError("INTENT_EXPIRED", "The transfer preview expired. Prepare it again.");
+    }
+    return intent;
+  }
+
+  /**
+   * Record the result of a Vault-signed broadcast. The transaction has already
+   * been sent on-chain by the time this runs, so it always records the hash and
+   * walks the intent forward through the legal transitions to its final state.
+   */
+  finalizeVaultBroadcast(userId: string, intentId: string, execution: ExecutionResult): { intent: PaymentIntent; explorerUrl: string } {
+    const intent = this.requireIntent(intentId, userId);
+    const forward: PaymentIntent["status"][] =
+      intent.status === "REQUIRES_CONFIRMATION" || intent.status === "AUTO_APPROVED" ? ["CONFIRMED", "SIGNING", "SUBMITTED"]
+      : intent.status === "CONFIRMED" ? ["SIGNING", "SUBMITTED"]
+      : intent.status === "SIGNING" ? ["SUBMITTED"]
+      : [];
+    for (const next of forward) this.transition(intent, next);
+    if (!intent.confirmedAt) intent.confirmedAt = new Date().toISOString();
+    intent.submittedAt = new Date().toISOString();
+    intent.transactionHash = execution.transactionHash;
+    this.transition(intent, execution.status === "CONFIRMED" ? "COMPLETED" : execution.status === "FAILED" ? "FAILED" : "PENDING");
+    this.store.saveIntent(intent, this.digest({ idempotencyKey: intent.idempotencyKey }));
+    this.audit.record({ userId, agentId: intent.initiatedByType === "AGENT" ? intent.initiatedById : null, action: "VAULT_BROADCAST",
+      entityType: "PaymentIntent", entityId: intent.id, decision: intent.status, reasonCode: intent.policyReasonCodes.join(","),
+      metadata: { transactionHash: execution.transactionHash, amountBaseUnits: intent.amountBaseUnits, network: intent.network } });
     return { intent, explorerUrl: execution.explorerUrl };
   }
 

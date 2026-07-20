@@ -1,4 +1,4 @@
-import type { Balance, NetworkId, PaymentIntent, TransactionRecord, WalletSummary } from "@aifinpay/shared";
+import type { Balance, NetworkId, PaymentIntent, TransactionRecord, UnsignedEvmTransaction, WalletSummary } from "@aifinpay/shared";
 
 export interface ExecutionResult {
   status: "PENDING" | "CONFIRMED" | "FAILED";
@@ -15,4 +15,9 @@ export interface WalletAdapter {
   listTransactions(userId: string): Promise<TransactionRecord[]>;
   execute(intent: PaymentIntent): Promise<ExecutionResult>;
   getTransactionStatus(transactionHash: string): Promise<ExecutionResult | null>;
+  // Non-custodial signing pair, implemented only by the mainnet adapter. The
+  // server builds the unsigned tx for the on-device Vault to sign, then
+  // broadcasts the raw signed tx it returns. Absent on the demo adapter.
+  buildTransferTransaction?(userId: string, intent: PaymentIntent): Promise<UnsignedEvmTransaction>;
+  broadcastRawTransaction?(network: NetworkId, rawTransaction: string): Promise<ExecutionResult>;
 }

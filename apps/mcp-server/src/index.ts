@@ -4,6 +4,7 @@ import express, { type Request, type Response } from "express";
 import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { AppError, LIVE_NETWORKS, safeError, type VaultSignRequest } from "@aifinpay/shared";
 import { loadConfig } from "./config.js";
 import { AppContext } from "./context.js";
 import type { PublicWalletAddresses } from "./auth/oauth-provider.js";
@@ -108,6 +109,58 @@ app.post("/api/vault/pair", express.json({ limit: "16kb", type: "application/jso
   if (!/^[A-Za-z0-9_-]{32}$/.test(token) || !addresses) { res.status(400).json({ error: "INVALID_PAIRING_REQUEST" }); return; }
   const result = context.store.completeWalletPairing(createHash("sha256").update(token).digest("hex"), addresses);
   res.status(result === "invalid" ? 410 : 200).json(result === "invalid" ? { error: "PAIRING_EXPIRED_OR_UNKNOWN" } : { connected: true, alreadyConnected: result === "already_connected" });
+});
+
+// --- Non-custodial signing handoff -----------------------------------------
+// The Vault (separate origin, holds the on-device key) calls these two routes.
+// The server never receives a private key: it hands out an unsigned transaction
+// built from the stored intent, and later broadcasts the raw signed tx the
+// Vault returns. Both are gated on the intent's network being switched on via
+// AIFINPAY_SIGNING_NETWORKS, so with signing off they can never move funds.
+function signingEnabledFor(network: string): boolean {
+  return config.walletMode === "mainnet" && (config.signingNetworks as string[]).includes(network);
+}
+
+function respondSigningError(res: Response, error: unknown): void {
+  const safe = safeError(error);
+  const status = error instanceof AppError ? error.status : 500;
+  res.status(status).set("cache-control", "no-store").json({ error: safe.code, message: safe.message });
+}
+
+app.post("/api/vault/sign-request", express.json({ limit: "16kb", type: "application/json" }), async (req, res) => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token : "";
+    const claims = context.signing.verify(token);
+    if (!claims) { res.status(410).set("cache-control", "no-store").json({ error: "SIGN_REQUEST_EXPIRED_OR_INVALID" }); return; }
+    const intent = context.payments.intentForSigning(claims.userId, claims.intentId);
+    if (!signingEnabledFor(intent.network)) throw new AppError("SIGNING_FAILED", `Signing on ${intent.network} is not enabled.`, 403);
+    if (!context.adapter.buildTransferTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot build signing requests.", 501);
+    const transaction = await context.adapter.buildTransferTransaction(claims.userId, intent);
+    const spec = (LIVE_NETWORKS as Record<string, { label: string }>)[intent.network];
+    const payload: VaultSignRequest = {
+      intentId: intent.id,
+      transaction,
+      display: { recipient: intent.recipient, amount: intent.amount, token: intent.token, network: intent.network, networkLabel: spec?.label ?? intent.network },
+      expiresAt: intent.expiresAt
+    };
+    res.status(200).set("cache-control", "no-store").json(payload);
+  } catch (error) { respondSigningError(res, error); }
+});
+
+app.post("/api/vault/submit-signed", express.json({ limit: "16kb", type: "application/json" }), async (req, res) => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token : "";
+    const signedTransaction = typeof req.body?.signedTransaction === "string" ? req.body.signedTransaction : "";
+    const claims = context.signing.verify(token);
+    if (!claims) { res.status(410).set("cache-control", "no-store").json({ error: "SIGN_REQUEST_EXPIRED_OR_INVALID" }); return; }
+    if (!/^0x[0-9a-fA-F]{2,}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is missing or malformed.");
+    const intent = context.payments.intentForSigning(claims.userId, claims.intentId);
+    if (!signingEnabledFor(intent.network)) throw new AppError("SIGNING_FAILED", `Signing on ${intent.network} is not enabled.`, 403);
+    if (!context.adapter.broadcastRawTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot broadcast transactions.", 501);
+    const execution = await context.adapter.broadcastRawTransaction(intent.network, signedTransaction);
+    const result = context.payments.finalizeVaultBroadcast(claims.userId, claims.intentId, execution);
+    res.status(200).set("cache-control", "no-store").json({ transactionHash: execution.transactionHash, explorerUrl: result.explorerUrl, status: result.intent.status });
+  } catch (error) { respondSigningError(res, error); }
 });
 
 app.all("/mcp", async (req: Request & { auth?: AuthInfo }, res) => {

@@ -23,8 +23,8 @@ describe("MCP tool registration", () => {
     });
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", "confirm_transfer", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
-    expect(names).toHaveLength(19);
+    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "open_wallet", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", "confirm_transfer", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
+    expect(names).toHaveLength(20);
     for (const tool of tools.tools) {
       expect(tool.annotations).toMatchObject({
         readOnlyHint: expect.any(Boolean),
@@ -39,7 +39,7 @@ describe("MCP tool registration", () => {
     // Opening/viewing the wallet must never require the wallet:write tier — a
     // write requirement here causes ChatGPT's "needs more access" reconnect loop.
     const openTool = (name: string) => tools.tools.find((tool) => tool.name === name);
-    for (const name of ["create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "render_wallet", "list_transactions", "list_agent_policies", "get_audit_log"]) {
+    for (const name of ["open_wallet", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "render_wallet", "list_transactions", "list_agent_policies", "get_audit_log"]) {
       expect(openTool(name)?.annotations).toMatchObject({ readOnlyHint: true });
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
     }

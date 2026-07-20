@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { LIVE_NETWORKS } from "@aifinpay/shared";
+import type { LiveNetworkSpec, NetworkId } from "@aifinpay/shared";
 
 export interface AppConfig {
   port: number;
@@ -13,6 +14,10 @@ export interface AppConfig {
   polygonRpcUrls: string[];
   mainnetRpcUrls: Record<string, string[]>;
   mainnetRpcAuth: Record<string, string>;
+  // Networks on which local Vault signing + broadcast is switched on, from
+  // AIFINPAY_SIGNING_NETWORKS (comma list, e.g. "POLYGON"). Empty = every
+  // network stays send-locked, which is the safe default for production.
+  signingNetworks: NetworkId[];
 }
 
 function parseRpcList(raw: string | undefined): string[] {
@@ -43,6 +48,15 @@ function loadMainnetRpcAuth(env: NodeJS.ProcessEnv): Record<string, string> {
   return auth;
 }
 
+// Only EVM networks can be locally signed today (viem EIP-1559 path). A network
+// listed here that is unknown or non-EVM is ignored with no send enabled, so a
+// typo can never silently open an unintended chain.
+function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
+  const registry = LIVE_NETWORKS as Record<string, LiveNetworkSpec>;
+  const requested = parseRpcList(env.AIFINPAY_SIGNING_NETWORKS);
+  return requested.filter((id): id is NetworkId => registry[id]?.family === "EVM");
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const demoMode = env.AIFINPAY_DEMO_MODE !== "false";
   const sessionSecret = env.SESSION_SECRET ?? (demoMode ? "demo-only-session-secret-change-before-production" : "");
@@ -62,6 +76,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     walletMode: env.AIFINPAY_WALLET_MODE === "demo" ? "demo" : "mainnet",
     polygonRpcUrls,
     mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls),
-    mainnetRpcAuth: loadMainnetRpcAuth(env)
+    mainnetRpcAuth: loadMainnetRpcAuth(env),
+    signingNetworks: loadSigningNetworks(env)
   };
 }

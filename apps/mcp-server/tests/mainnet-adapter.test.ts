@@ -116,9 +116,74 @@ describe("MainnetAdapter", () => {
     await expect(adapter.getWalletSummary("demo-user-001", "POLYGON")).rejects.toMatchObject({ code: "WALLET_NOT_FOUND" });
   });
 
-  it("keeps mainnet signing locked", async () => {
+  it("keeps custodial (server-side) signing locked", async () => {
     const store = connectedStore(stores);
     const adapter = new MainnetAdapter(store);
     await expect(adapter.execute({} as never)).rejects.toMatchObject({ code: "SIGNING_FAILED" });
+  });
+
+  it("builds an EIP-1559 USDC transfer for the Vault to sign", async () => {
+    const store = connectedStore(stores);
+    const recipient = "0x2222222222222222222222222222222222222222";
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as { method: string };
+      const result = ({
+        eth_getTransactionCount: "0x5",
+        eth_maxPriorityFeePerGas: "0x77359400", // 2 gwei
+        eth_getBlockByNumber: { baseFeePerGas: "0x3b9aca00" }, // 1 gwei base fee
+        eth_estimateGas: "0x186a0" // 100000
+      } as Record<string, unknown>)[request.method];
+      return { ok: true, json: async () => ({ jsonrpc: "2.0", id: 1, result }) } as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new MainnetAdapter(store, { POLYGON: ["https://polygon.example"] });
+    const intent = { network: "POLYGON", chainId: 137, token: "USDC", recipient, amountBaseUnits: "100000" } as never;
+    const tx = await adapter.buildTransferTransaction("demo-user-001", intent);
+    expect(tx).toMatchObject({
+      to: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      value: "0x0",
+      nonce: 5,
+      chainId: 137,
+      maxPriorityFeePerGas: "0x77359400",
+      maxFeePerGas: "0xee6b2800", // base*2 + priority = 4 gwei
+      gas: "0x1d4c0" // 100000 + 20% buffer = 120000
+    });
+    expect(tx.data.startsWith("0xa9059cbb")).toBe(true); // transfer(address,uint256)
+    expect(tx.data).toContain(recipient.slice(2).toLowerCase().padStart(64, "0"));
+    expect(tx.data.endsWith("186a0")).toBe(true); // amount 100000 encoded
+  });
+
+  it("builds a native transfer with the amount as the value", async () => {
+    const store = connectedStore(stores);
+    const recipient = "0x2222222222222222222222222222222222222222";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as { method: string };
+      const result = ({ eth_getTransactionCount: "0x0", eth_maxPriorityFeePerGas: "0x0", eth_getBlockByNumber: { baseFeePerGas: "0x0" }, eth_estimateGas: "0x5208" } as Record<string, unknown>)[request.method];
+      return { ok: true, json: async () => ({ jsonrpc: "2.0", id: 1, result }) } as Response;
+    }));
+    const adapter = new MainnetAdapter(store, { POLYGON: ["https://polygon.example"] });
+    const intent = { network: "POLYGON", chainId: 137, token: "POL", recipient, amountBaseUnits: "1000000000000000000" } as never;
+    const tx = await adapter.buildTransferTransaction("demo-user-001", intent);
+    expect(tx).toMatchObject({ to: recipient, data: "0x", value: "0xde0b6b3a7640000" });
+  });
+
+  it("broadcasts a Vault-signed raw transaction and reports the explorer link", async () => {
+    const store = connectedStore(stores);
+    const hash = `0x${"a".repeat(64)}`;
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as { method: string; params: unknown[] };
+      expect(request.method).toBe("eth_sendRawTransaction");
+      expect(request.params[0]).toBe("0xdeadbeef");
+      return { ok: true, json: async () => ({ jsonrpc: "2.0", id: 1, result: hash }) } as Response;
+    }));
+    const adapter = new MainnetAdapter(store, { POLYGON: ["https://polygon.example"] });
+    const result = await adapter.broadcastRawTransaction("POLYGON", "0xdeadbeef");
+    expect(result).toMatchObject({ status: "PENDING", transactionHash: hash, explorerUrl: `https://polygonscan.com/tx/${hash}` });
+  });
+
+  it("rejects a malformed signed transaction before broadcasting", async () => {
+    const store = connectedStore(stores);
+    const adapter = new MainnetAdapter(store);
+    await expect(adapter.broadcastRawTransaction("POLYGON", "not-hex")).rejects.toMatchObject({ code: "SIGNING_FAILED" });
   });
 });

@@ -10,7 +10,7 @@ The target repository had no implementation before the Build Week work began. No
 
 - npm workspace TypeScript monorepo;
 - shared financial schemas and base-unit arithmetic;
-- 19 MCP tools and a versioned MCP App resource;
+- 20 MCP tools and a versioned MCP App resource;
 - compact React ChatGPT wallet widget;
 - deterministic policy engine, intent state machine and audit chain;
 - Docker, Render and CI configuration.
@@ -69,6 +69,15 @@ The target repository had no implementation before the Build Week work began. No
 - the recovery phrase and private keys are created, encrypted (PBKDF2-SHA256 + AES-256-GCM) and held only inside the separate Vault origin; ChatGPT and the backend ever receive public addresses only — the seed is never passed to a ChatGPT message, the LLM, a tool argument, logs or the database;
 - added a returning-device unlock gate: a device that already holds an encrypted vault must unlock (prove control of the password) before the wallet can be re-shared with ChatGPT, with recovery-phrase and remove-device escape hatches — re-auth on device-change, matching the onboarding spec, with no change to the normal in-ChatGPT dashboard path;
 - signing and broadcasting remain disabled; the transaction-confirmation, passkey/biometric unlock and MPC "no separate page" items are a deliberate next architecture step (they overlap the backend lane) and are not shipped blind.
+
+### Non-custodial EVM signing + broadcast — July 20, 2026
+
+- built the send path as a strictly non-custodial handoff: the server never holds or receives a private key. `MainnetAdapter.buildTransferTransaction` assembles the exact EIP-1559 fields for a native or USDC transfer (nonce from `eth_getTransactionCount` pending, fees from `eth_maxPriorityFeePerGas` + latest-block base fee, gas from `eth_estimateGas` with a 20% buffer), the browser Vault signs them locally with the on-device key via viem, and `broadcastRawTransaction` publishes the raw signed tx through `eth_sendRawTransaction`. The custodial `execute()` path stays permanently locked;
+- added a per-network gate: signing/broadcasting only activate for networks listed in `AIFINPAY_SIGNING_NETWORKS` (validated as EVM), empty by default so production stays send-locked exactly as before until deliberately switched on;
+- a self-contained, HMAC-signed, short-lived signing token (`SigningRequestService`, domain-separated from the confirmation token) carries the intent to the Vault; two new endpoints — `POST /api/vault/sign-request` (returns the unsigned tx + human-readable display) and `POST /api/vault/submit-signed` (broadcasts and records the result) — bracket the on-device signature;
+- `prepare_transfer` now returns a device signing link for enabled networks instead of a blanket safety error; the intent state machine walks REQUIRES_CONFIRMATION → CONFIRMED → SIGNING → SUBMITTED → PENDING/COMPLETED via `finalizeVaultBroadcast`, which is idempotent against double submission and always records the on-chain hash to the audit chain;
+- the Vault gained a review-and-sign screen (`?sign=` flow): unlock, show amount/recipient/network, sign locally, broadcast, then a block-explorer link. The decrypted phrase is held only in a ref and wiped immediately after signing;
+- covered by unit tests: EIP-1559 USDC and native transaction construction (fees, gas buffer, transfer calldata), raw broadcast + malformed-tx rejection, and full signing-token round-trip/tamper/expiry/wrong-secret cases. `npm run check` green (security, lint, typecheck, 72 tests, build).
 
 ## Codex collaboration
 

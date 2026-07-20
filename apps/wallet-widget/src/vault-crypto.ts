@@ -6,6 +6,7 @@ import { sha3_256 } from "@noble/hashes/sha3.js";
 import { sha512 } from "@noble/hashes/sha2.js";
 import bs58 from "bs58";
 import { privateKeyToAccount } from "viem/accounts";
+import type { UnsignedEvmTransaction } from "@aifinpay/shared";
 
 export interface VaultAddresses { evm: string; solana: string; near: string; aptos: string; casper: string }
 export interface EncryptedVault { version: 1; cipher: "AES-GCM"; kdf: "PBKDF2-SHA256"; iterations: number; salt: string; iv: string; ciphertext: string; addresses: VaultAddresses; createdAt: string }
@@ -44,6 +45,30 @@ export function deriveAddresses(mnemonic: string): VaultAddresses {
   // CSPR and to look up the account's main purse balance.
   const casperPublic = ed25519.getPublicKey(slip10(seed, [44, 506, 0, 0, 0]));
   return { evm, solana: bs58.encode(solanaPublic), near: bytesToHex(nearPublic), aptos: `0x${bytesToHex(aptosAuthKey)}`, casper: `01${bytesToHex(casperPublic)}` };
+}
+
+/**
+ * Sign an EIP-1559 transaction locally with the vault's EVM key. The mnemonic is
+ * decrypted only in memory for this call; the returned value is the serialized
+ * signed transaction (0x hex) that the server broadcasts. The private key never
+ * leaves this function.
+ */
+export async function signEvmTransaction(mnemonic: string, unsigned: UnsignedEvmTransaction): Promise<string> {
+  const seed = mnemonicToSeedSync(mnemonic);
+  const evmNode = HDKey.fromMasterSeed(seed).derive("m/44'/60'/0'/0/0");
+  if (!evmNode.privateKey) throw new Error("Could not derive the EVM account.");
+  const account = privateKeyToAccount(`0x${bytesToHex(evmNode.privateKey)}`);
+  return account.signTransaction({
+    to: unsigned.to as `0x${string}`,
+    value: BigInt(unsigned.value),
+    data: unsigned.data as `0x${string}`,
+    nonce: unsigned.nonce,
+    gas: BigInt(unsigned.gas),
+    maxFeePerGas: BigInt(unsigned.maxFeePerGas),
+    maxPriorityFeePerGas: BigInt(unsigned.maxPriorityFeePerGas),
+    chainId: unsigned.chainId,
+    type: "eip1559"
+  });
 }
 
 export async function encryptVault(mnemonic: string, password: string): Promise<EncryptedVault> {

@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { z } from "zod";
 import {
-  AppError, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkSchema, safeError, tokenSchema,
+  AppError, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkMeta, networkSchema, safeError, tokenSchema,
   type NetworkId, type PaymentIntent
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
@@ -58,6 +58,20 @@ function publicIntent(intent: PaymentIntent) {
   return safe;
 }
 
+// Non-custodial sending is switched on per-network via AIFINPAY_SIGNING_NETWORKS.
+// When off (the production default), mainnet prepare/confirm fail closed.
+function signingEnabled(ctx: AppContext, network: NetworkId): boolean {
+  return ctx.config.walletMode === "mainnet" && ctx.config.signingNetworks.includes(network);
+}
+
+// The device link that opens the intent in the Vault for local signing.
+function buildSignUrl(ctx: AppContext, userId: string, intent: PaymentIntent): string {
+  const token = ctx.signing.issue({ intentId: intent.id, userId, expiresAt: intent.expiresAt });
+  const url = new URL("/vault", ctx.config.widgetDomain);
+  url.searchParams.set("sign", token);
+  return url.href;
+}
+
 const prepareSchema = {
   recipient: evmAddressSchema,
   amount: decimalAmountSchema,
@@ -92,16 +106,12 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     inputSchema: {}, annotations: readOnly, _meta: { securitySchemes: [{ type: "noauth" }] }
   }, async () => data("AiFinPay supports addresses on 13 mainnet networks. Signing is enabled gradually after contract and treasury verification.", { view: "networks", networks: MAINNET_NETWORKS }));
 
-  registerAppTool(server, "create_wallet_pairing", {
-    title: "Open or connect AiFinPay Wallet",
-    description: "Use this when the user asks to open their AiFinPay Wallet or connect it for the first time. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
-    // Opening/viewing the wallet is a read operation — it must require only
-    // wallet:read. Marking it write (readOnlyHint:false) makes ChatGPT demand the
-    // wallet:write tier to open the wallet, which produces a "needs more access"
-    // reconnect loop for a read-only connection. Keep the annotation and the
-    // OAuth scheme both on wallet:read.
-    inputSchema: {}, annotations: readOnly, _meta: oauthMeta(true)
-  }, async (_args, extra) => {
+  // Opening/viewing the wallet is a read operation — it must require only
+  // wallet:read. Marking it write (readOnlyHint:false) makes ChatGPT demand the
+  // wallet:write tier to open the wallet, which produced a "needs more access"
+  // reconnect loop for a read-only connection. Both open tools below keep the
+  // annotation and the OAuth scheme on wallet:read.
+  const openWallet = async (_args: Record<string, never>, extra: { authInfo?: AuthInfo }) => {
     try {
       const user = resolveUser(ctx, extra);
       const connection = ctx.store.getWalletConnection(user.userId);
@@ -110,7 +120,22 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
       summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((policy) => policy.enabled);
       return rendered("AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS });
     } catch (error) { return failure(error, ctx); }
-  });
+  };
+
+  // Preferred entry point. Introduced as a fresh tool name so ChatGPT re-registers
+  // the permission contract (read-only, wallet:read) instead of reusing a cached
+  // schema that still demanded wallet:write from create_wallet_pairing.
+  registerAppTool(server, "open_wallet", {
+    title: "Open AiFinPay Wallet",
+    description: "Use this when the user asks to open, view, or connect their AiFinPay Wallet. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
+    inputSchema: {}, annotations: readOnly, _meta: oauthMeta(true)
+  }, openWallet);
+
+  registerAppTool(server, "create_wallet_pairing", {
+    title: "Open AiFinPay Wallet (deprecated — use open_wallet)",
+    description: "Deprecated alias of open_wallet, kept for backward compatibility. Prefer open_wallet. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
+    inputSchema: {}, annotations: readOnly, _meta: oauthMeta(true)
+  }, openWallet);
 
   registerAppTool(server, "get_wallet_connection", {
     title: "Get wallet connection status",
@@ -150,28 +175,47 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
 
   registerAppTool(server, "prepare_transfer", {
     title: "Prepare wallet transfer",
-    description: "Use this when the user requests a transfer preview. It writes a private demo intent in demo mode, never broadcasts, and returns a safety error in mainnet mode.",
+    description: "Use this when the user requests a transfer preview. In demo mode it writes a private demo intent and never broadcasts. In mainnet mode, where sending is enabled for the network, it prepares the intent and returns a device link the user opens to review and sign the payment in their Vault; where sending is not enabled it returns a safety error.",
     inputSchema: prepareSchema, annotations: write, _meta: oauthMeta(false, "wallet:write")
   }, async (args, extra) => {
     try {
-      if (ctx.config.walletMode === "mainnet") throw new AppError("SIGNING_FAILED", "Mainnet sending is locked until per-user authentication and local Vault signing are enabled.", 501);
+      if (ctx.config.walletMode === "mainnet" && !signingEnabled(ctx, args.network)) {
+        throw new AppError("SIGNING_FAILED", `Mainnet sending on ${args.network} is not enabled in this deployment.`, 501);
+      }
       const user = resolveUser(ctx, extra, "wallet:write");
       const result = await ctx.payments.prepare(user.userId, args);
-      return data(result.intent.status === "BLOCKED" ? "Blocked by AiFinPay Policy Engine." : "Transfer prepared. Explicit confirmation is required before execution.", {
-        view: result.intent.status === "BLOCKED" ? "blocked" : "transfer-preview",
-        intent: publicIntent(result.intent), confirmationToken: result.confirmationToken, policyExplanation: result.policyExplanation
+      if (result.intent.status === "BLOCKED") {
+        return data("Blocked by AiFinPay Policy Engine.", { view: "blocked", intent: publicIntent(result.intent), policyExplanation: result.policyExplanation });
+      }
+      if (signingEnabled(ctx, args.network)) {
+        const signUrl = buildSignUrl(ctx, user.userId, result.intent);
+        return data("Transfer prepared. Open your AiFinPay Vault on this device to review and sign it — the signed transaction broadcasts automatically. AiFinPay never holds your key.", {
+          view: "transfer-preview", intent: publicIntent(result.intent), signUrl, confirmationToken: result.confirmationToken, policyExplanation: result.policyExplanation
+        });
+      }
+      return data("Transfer prepared. Explicit confirmation is required before execution.", {
+        view: "transfer-preview", intent: publicIntent(result.intent), confirmationToken: result.confirmationToken, policyExplanation: result.policyExplanation
       });
     } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "confirm_transfer", {
     title: "Confirm prepared transfer",
-    description: "Use this only after explicit confirmation of a prepared demo transfer. It irreversibly completes the private demo intent; mainnet broadcasting is disabled.",
+    description: "Use this only after explicit confirmation of a prepared transfer. In demo mode it irreversibly completes the private demo intent. In mainnet mode the payment is signed on the user's device in their Vault, so this reports the transaction if it has already broadcast, or returns the device signing link to complete it.",
     inputSchema: { transferIntentId: z.string().min(8), confirmationToken: z.string().min(20), idempotencyKey: idempotencyKeySchema }, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
   }, async ({ transferIntentId, confirmationToken }, extra) => {
     try {
-      if (ctx.config.walletMode === "mainnet") throw new AppError("SIGNING_FAILED", "Mainnet broadcasting is not enabled in this deployment.", 501);
-      const user = resolveUser(ctx, extra, "wallet:write"); const result = await ctx.payments.confirm(user.userId, transferIntentId, confirmationToken);
+      const user = resolveUser(ctx, extra, "wallet:write");
+      if (ctx.config.walletMode === "mainnet") {
+        const intent = ctx.payments.requireIntent(transferIntentId, user.userId);
+        if (!signingEnabled(ctx, intent.network)) throw new AppError("SIGNING_FAILED", `Mainnet broadcasting on ${intent.network} is not enabled in this deployment.`, 501);
+        if (intent.transactionHash) {
+          return data("Transaction broadcast. It is settling on-chain now.", { view: "receipt", intent: publicIntent(intent), explorerUrl: `${networkMeta(intent.network).explorerBaseUrl}/tx/${intent.transactionHash}` });
+        }
+        const signUrl = buildSignUrl(ctx, user.userId, intent);
+        return data("This payment is signed on your device. Open your AiFinPay Vault to review and sign it — it broadcasts automatically once signed.", { view: "transfer-preview", intent: publicIntent(intent), signUrl });
+      }
+      const result = await ctx.payments.confirm(user.userId, transferIntentId, confirmationToken);
       return data("Demo transaction confirmed and an audit receipt was created.", { view: "receipt", intent: publicIntent(result.intent), explorerUrl: result.explorerUrl });
     } catch (error) { return failure(error, ctx); }
   });
