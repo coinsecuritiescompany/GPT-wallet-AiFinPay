@@ -86,9 +86,11 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
         : !isMainnet
           ? <><h1><small>$</small>{Number(usdc?.formatted ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</h1><span className="subtle">{usdc?.formatted} USDC</span></>
           : isLiveBalance
-            ? (usdc
+            ? (usdc && Number(usdc.formatted) > 0
                 ? <><h1><small>$</small>{Number(usdc.formatted).toLocaleString(undefined, { minimumFractionDigits: 2 })}</h1><span className="subtle">{usdc.formatted} USDC · {native?.formatted} {native?.token}</span></>
-                : <><h1>{Number(native!.formatted).toLocaleString(undefined, { maximumFractionDigits: 5 })} <small>{native!.token}</small></h1><span className="subtle">Live {network.label} balance</span></>)
+                : native
+                  ? <><h1>{Number(native.formatted).toLocaleString(undefined, { maximumFractionDigits: 6 })} <small>{native.token}</small></h1><span className="subtle">{usdc ? `${usdc.formatted} USDC · ` : ""}Live {network.label} balance</span></>
+                  : <><h1 className="balance-pending">—</h1><span className="subtle">{network.nativeToken} balance unavailable — retry shortly</span></>)
             : <><h1 className="balance-pending">—</h1><span className="subtle">{network.nativeToken} balance unavailable — retry shortly</span></>}
       </div>
       <button className="network" type="button" aria-haspopup="dialog" aria-expanded={networkOpen} aria-label={`Choose network. Current: ${networkLabel}`} onClick={() => setNetworkOpen(true)}><NetworkLogo id={selectedNetwork as NetworkLogoId} />{networkLabel}<span className="chevron">⌄</span></button>
