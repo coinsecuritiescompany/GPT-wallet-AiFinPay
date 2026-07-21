@@ -121,7 +121,38 @@ function Receive({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   const addresses = data.connection?.addresses;
   const copy = async (label: string, value?: string) => {
     if (!value) return;
-    await navigator.clipboard?.writeText(value);
+    let ok = false;
+    // The async Clipboard API is blocked inside ChatGPT's sandboxed iframe, so a
+    // rejection here must not stop the fallback (or the "COPIED" feedback) below.
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        ok = true;
+      }
+    } catch {
+      /* fall through to the execCommand path */
+    }
+    if (!ok) {
+      // Legacy fallback: a hidden textarea + execCommand, which works in more
+      // sandboxed contexts as long as it runs during the click gesture.
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.top = "-1000px";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        textarea.setSelectionRange(0, value.length);
+        ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } catch {
+        ok = false;
+      }
+    }
+    // Always show feedback so the button never looks dead; on the rare chance both
+    // paths fail, the address text is still shown for manual selection.
     setCopied(label);
     window.setTimeout(() => setCopied(""), 1_500);
   };
