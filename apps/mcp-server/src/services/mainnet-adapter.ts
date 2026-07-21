@@ -240,43 +240,52 @@ export class MainnetAdapter implements WalletAdapter {
   async listTransactions(userId: string): Promise<TransactionRecord[]> {
     const address = this.addressFor(userId, "evm");
     const lower = address.toLowerCase();
-    // Live Polygon history via Blockscout's keyless, Etherscan-compatible API.
-    // Any failure degrades to an empty list so the wallet still renders.
-    const url = `https://polygon.blockscout.com/api?module=account&action=txlist&address=${address}&sort=desc&page=1&offset=25`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
-    try {
-      const response = await fetch(url, { signal: controller.signal });
-      if (!response.ok) return [];
-      const body = await response.json() as { status?: string; result?: Array<{ hash: string; to: string | null; from: string; value: string; timeStamp: string; isError?: string; txreceipt_status?: string }> };
-      if (body.status !== "1" || !Array.isArray(body.result)) return [];
-      return body.result
-        .filter((tx) => tx.value && tx.value !== "0")
-        .slice(0, 20)
-        .map((tx): TransactionRecord => {
-          const failed = tx.isError === "1" || tx.txreceipt_status === "0";
-          return {
-            id: tx.hash,
-            timestamp: new Date(Number(tx.timeStamp) * 1000).toISOString(),
-            direction: tx.to?.toLowerCase() === lower ? "IN" : "OUT",
-            token: "POL",
-            amount: formatBaseUnits(tx.value, 18, 6),
-            amountBaseUnits: tx.value,
-            network: "POLYGON",
-            status: failed ? "FAILED" : "CONFIRMED",
-            recipient: tx.to ?? "",
-            initiatedByType: "USER",
-            initiatedById: "user",
-            policyDecision: "AUTO_APPROVED",
-            transactionHash: tx.hash,
-            auditReceiptId: tx.hash
-          };
-        });
-    } catch {
-      return [];
-    } finally {
-      clearTimeout(timeout);
+    const query = `module=account&action=txlist&address=${address}&sort=desc&page=1&offset=25`;
+    const key = process.env.ETHERSCAN_API_KEY?.trim();
+    // Etherscan V2 (fast, reliable) when a key is configured; Blockscout is a
+    // keyless best-effort fallback (slower and occasionally flaky). Any failure
+    // degrades to an empty list so the wallet still renders quickly.
+    const sources: Array<{ url: string; timeout: number }> = [
+      ...(key ? [{ url: `https://api.etherscan.io/v2/api?chainid=137&${query}&apikey=${key}`, timeout: 6_000 }] : []),
+      { url: `https://polygon.blockscout.com/api?${query}`, timeout: RPC_TIMEOUT_MS }
+    ];
+    for (const source of sources) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), source.timeout);
+      try {
+        const response = await fetch(source.url, { signal: controller.signal });
+        if (!response.ok) continue;
+        const body = await response.json() as { status?: string; result?: Array<{ hash: string; to: string | null; from: string; value: string; timeStamp: string; isError?: string; txreceipt_status?: string }> };
+        if (body.status !== "1" || !Array.isArray(body.result)) continue;
+        return body.result
+          .filter((tx) => tx.value && tx.value !== "0")
+          .slice(0, 20)
+          .map((tx): TransactionRecord => {
+            const failed = tx.isError === "1" || tx.txreceipt_status === "0";
+            return {
+              id: tx.hash,
+              timestamp: new Date(Number(tx.timeStamp) * 1000).toISOString(),
+              direction: tx.to?.toLowerCase() === lower ? "IN" : "OUT",
+              token: "POL",
+              amount: formatBaseUnits(tx.value, 18, 6),
+              amountBaseUnits: tx.value,
+              network: "POLYGON",
+              status: failed ? "FAILED" : "CONFIRMED",
+              recipient: tx.to ?? "",
+              initiatedByType: "USER",
+              initiatedById: "user",
+              policyDecision: "AUTO_APPROVED",
+              transactionHash: tx.hash,
+              auditReceiptId: tx.hash
+            };
+          });
+      } catch {
+        continue;
+      } finally {
+        clearTimeout(timeout);
+      }
     }
+    return [];
   }
 
   async execute(_intent: PaymentIntent): Promise<ExecutionResult> {
