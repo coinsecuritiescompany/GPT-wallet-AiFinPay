@@ -219,22 +219,64 @@ export class MainnetAdapter implements WalletAdapter {
     const spec = specFor(network);
     const address = this.addressFor(userId, spec.addressField);
     const tokenSlots: Array<"USDC" | "POL"> = spec.usdc ? ["USDC", "POL"] : ["POL"];
-    const balances = await Promise.all(tokenSlots.map((slot) => this.getBalance(userId, slot, network)));
+    // Fetch balances and live Polygon history in parallel (history is Blockscout,
+    // Polygon-only for now; other networks return no history rather than wrong data).
+    const [balances, latestTransactions] = await Promise.all([
+      Promise.all(tokenSlots.map((slot) => this.getBalance(userId, slot, network))),
+      network === "POLYGON" ? this.listTransactions(userId) : Promise.resolve<TransactionRecord[]>([])
+    ]);
     return {
       walletId: `${network.toLowerCase()}:${address.toLowerCase()}`,
       address,
       maskedAddress: `${address.slice(0, 8)}…${address.slice(-6)}`,
       selectedNetwork: network,
       balances,
-      latestTransactions: [],
+      latestTransactions,
       activeAgentPolicies: [],
       mode: "MAINNET"
     };
   }
 
   async listTransactions(userId: string): Promise<TransactionRecord[]> {
-    this.addressFor(userId, "evm");
-    return [];
+    const address = this.addressFor(userId, "evm");
+    const lower = address.toLowerCase();
+    // Live Polygon history via Blockscout's keyless, Etherscan-compatible API.
+    // Any failure degrades to an empty list so the wallet still renders.
+    const url = `https://polygon.blockscout.com/api?module=account&action=txlist&address=${address}&sort=desc&page=1&offset=25`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) return [];
+      const body = await response.json() as { status?: string; result?: Array<{ hash: string; to: string | null; from: string; value: string; timeStamp: string; isError?: string; txreceipt_status?: string }> };
+      if (body.status !== "1" || !Array.isArray(body.result)) return [];
+      return body.result
+        .filter((tx) => tx.value && tx.value !== "0")
+        .slice(0, 20)
+        .map((tx): TransactionRecord => {
+          const failed = tx.isError === "1" || tx.txreceipt_status === "0";
+          return {
+            id: tx.hash,
+            timestamp: new Date(Number(tx.timeStamp) * 1000).toISOString(),
+            direction: tx.to?.toLowerCase() === lower ? "IN" : "OUT",
+            token: "POL",
+            amount: formatBaseUnits(tx.value, 18, 6),
+            amountBaseUnits: tx.value,
+            network: "POLYGON",
+            status: failed ? "FAILED" : "CONFIRMED",
+            recipient: tx.to ?? "",
+            initiatedByType: "USER",
+            initiatedById: "user",
+            policyDecision: "AUTO_APPROVED",
+            transactionHash: tx.hash,
+            auditReceiptId: tx.hash
+          };
+        });
+    } catch {
+      return [];
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async execute(_intent: PaymentIntent): Promise<ExecutionResult> {

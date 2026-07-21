@@ -23,7 +23,9 @@ describe("MainnetAdapter", () => {
   it("loads Polygon native POL and native USDC balances for the connected public address", async () => {
     const store = connectedStore(stores);
     const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      const request = JSON.parse(String(init?.body)) as { method: string; params: any[] };
+      // The Blockscout history call is a bodyless GET; return an empty txlist.
+      if (!init?.body) return { ok: true, json: async () => ({ status: "0", result: [] }) } as Response;
+      const request = JSON.parse(String(init.body)) as { method: string; params: any[] };
       const result = request.method === "eth_getBalance" ? "0xde0b6b3a7640000" : "0x17d7840";
       return { ok: true, json: async () => ({ jsonrpc: "2.0", id: 1, result }) } as Response;
     });
@@ -35,7 +37,7 @@ describe("MainnetAdapter", () => {
       { token: "USDC", raw: "25000000", formatted: "25", decimals: 6 },
       { token: "POL", raw: "1000000000000000000", formatted: "1", decimals: 18 }
     ]);
-    const usdcCall = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)) as { method: string; params: any[] }).find((c) => c.method === "eth_call");
+    const usdcCall = fetchMock.mock.calls.filter((c) => c[1]?.body).map((c) => JSON.parse(String(c[1]?.body)) as { method: string; params: any[] }).find((c) => c.method === "eth_call");
     expect(String(usdcCall?.params[0].to)).toBe("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359");
   });
 
