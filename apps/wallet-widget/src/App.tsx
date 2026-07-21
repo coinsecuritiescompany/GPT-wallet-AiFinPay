@@ -97,7 +97,7 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
     </section>
     <div className="address"><span>{connectedAddress ? short(connectedAddress) : summary.maskedAddress}</span><span>{isLiveBalance ? (usdc && native ? `${native.formatted} ${native.token} gas` : "Live balance") : switching ? "Loading…" : isMainnet ? `${network.nativeToken} balance pending` : "Demo/Testnet"}</span></div>
     <nav className="actions">
-      <button onClick={() => onNavigate(isMainnet ? "mainnet-signing-locked" : "transfer-form")}><b>↗</b>Send</button>
+      <button onClick={() => onNavigate("transfer-form")}><b>↗</b>Send</button>
       <button onClick={() => onNavigate("receive")}><b>↙</b>Receive</button>
       <button onClick={() => void bridge.callTool("list_agent_policies", {})}><b>⌁</b>Agent limits</button>
       <button onClick={() => void bridge.callTool("get_audit_log", { limit: 30 })}><b>≡</b>Audit log</button>
@@ -168,19 +168,33 @@ function MainnetSigningLocked({ onBack }: { onBack: () => void }) {
   return <main className="card"><Header label="Mainnet security" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="blocked-icon">!</section><div className="center"><h2>Mainnet sending is locked</h2><p>Live balances and receiving are enabled. Sending will be activated only with per-user authentication, an explicit transaction preview, and local signing inside your encrypted Vault.</p></div><div className="policy-result"><div className="shield">✓</div><div><strong>YOUR KEYS STAY LOCAL</strong><span>AiFinPay and ChatGPT must never receive your recovery phrase or private key.</span></div></div><button className="primary" onClick={onBack}>Return to wallet</button></main>;
 }
 
-function TransferForm({ onBack }: { onBack: () => void }) {
-  const [recipient, setRecipient] = useState("0x2222222222222222222222222222222222222222");
-  const [amount, setAmount] = useState("10");
+function TransferForm({ data, onBack }: { data: WidgetData; onBack: () => void }) {
+  const summary = data.summary;
+  const isMainnet = summary?.mode === "MAINNET";
+  // Inherit the network the wallet is currently showing; native token for it.
+  const networkId = (summary?.selectedNetwork ?? "POLYGON").toUpperCase();
+  const networkParam = isMainnet ? networkId : "POLYGON_AMOY";
+  const nativeToken = summary?.balances?.find((b) => b.token !== "USDC")?.token ?? "POL";
+  const networkLabel = isMainnet ? (networkId === "POLYGON" ? "Polygon Mainnet" : networkId) : "Polygon Amoy";
+  const [recipient, setRecipient] = useState("");
+  const [amount, setAmount] = useState("");
+  const [token, setToken] = useState(nativeToken);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const submit = async (event: React.FormEvent) => {
-    event.preventDefault(); setBusy(true);
-    try { await bridge.callTool("prepare_transfer", { recipient, amount, token: "USDC", network: "POLYGON_AMOY", idempotencyKey: `widget-${Date.now()}` }); }
+    event.preventDefault();
+    if (!recipient.trim() || !amount.trim()) { setError("Enter a recipient address and an amount."); return; }
+    setBusy(true); setError("");
+    try { await bridge.callTool("prepare_transfer", { recipient: recipient.trim(), amount: amount.trim(), token, network: networkParam, idempotencyKey: `widget-${Date.now()}` }); }
+    catch { setError("Could not prepare the transfer. Check the address and amount."); }
     finally { setBusy(false); }
   };
-  return <main className="card"><Header label="New transfer" /><button className="back" onClick={onBack}>← Wallet</button>
-    <form className="form" onSubmit={submit}><label>Recipient<input aria-label="Recipient" value={recipient} onChange={(e) => setRecipient(e.target.value)} /></label>
-      <label>Amount<div className="amount-input"><input aria-label="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /><span>USDC</span></div></label>
-      <div className="info-row"><span>Network</span><strong>Polygon Amoy</strong></div>
+  return <main className="card"><Header label="New transfer" badge={isMainnet ? "MAINNET" : "BETA"} /><button className="back" onClick={onBack}>← Wallet</button>
+    <form className="form" onSubmit={submit}><label>Recipient<input aria-label="Recipient" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} /></label>
+      <label>Amount<div className="amount-input"><input aria-label="Amount" placeholder="0.0" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /><span>{token}</span></div></label>
+      <label>Token<select aria-label="Token" value={token} onChange={(e) => setToken(e.target.value)}><option value={nativeToken}>{nativeToken}</option><option value="USDC">USDC</option></select></label>
+      <div className="info-row"><span>Network</span><strong>{networkLabel}</strong></div>
+      {error && <p className="vault-error">{error}</p>}
       <button className="primary" disabled={busy}>{busy ? "Checking policy…" : "Review transfer"}</button></form>
   </main>;
 }
@@ -188,20 +202,32 @@ function TransferForm({ onBack }: { onBack: () => void }) {
 function IntentDetails({ intent }: { intent: PaymentIntent }) {
   return <div className="details">
     <div><span>Recipient</span><strong>{short(intent.recipient)}</strong></div><div><span>Amount</span><strong>{intent.amount} {intent.token}</strong></div>
-    <div><span>Network</span><strong>Polygon Amoy</strong></div><div><span>Estimated fee</span><strong>{intent.estimatedFee}</strong></div>
+    <div><span>Network</span><strong>{intent.network === "POLYGON_AMOY" ? "Polygon Amoy" : intent.network === "POLYGON" ? "Polygon Mainnet" : intent.network}</strong></div><div><span>Estimated fee</span><strong>{intent.estimatedFee}</strong></div>
     <div><span>Initiated by</span><strong>{intent.initiatedByType === "AGENT" ? intent.initiatedById : "You"}</strong></div><div><span>Risk</span><StatusPill value={intent.riskLevel} /></div>
   </div>;
 }
 
 function TransferPreview({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   const intent = data.intent!; const [busy, setBusy] = useState(false);
+  const signUrl = data.signUrl;
+  const cancel = () => void bridge.callTool("cancel_transfer", { transferIntentId: intent.id });
+  // Mainnet with signing enabled: the server returns a signUrl. Sending is
+  // non-custodial, so open the Vault where the key lives to review and sign.
+  const openVault = () => {
+    if (!signUrl) return;
+    if (window.openai?.openExternal) void window.openai.openExternal({ href: signUrl });
+    else window.open(signUrl, "_blank", "noopener,noreferrer");
+  };
   const confirm = async () => { setBusy(true); try { await bridge.callTool("confirm_transfer", { transferIntentId: intent.id, confirmationToken: data.confirmationToken!, idempotencyKey: `confirm-${intent.id}` }); } finally { setBusy(false); } };
   return <main className="card"><Header label="Review transfer" /><button className="back" onClick={onBack}>← Wallet</button>
     <section className="hero-icon">↗</section><div className="center"><span className="eyebrow">You are sending</span><h1>{intent.amount} <small>{intent.token}</small></h1></div>
     <IntentDetails intent={intent} />
     <div className="policy-result"><div className="shield">✓</div><div><strong>{intent.policyDecision.replaceAll("_", " ")}</strong><span>{data.policyExplanation ?? "Validated by deterministic AiFinPay policy rules."}</span></div></div>
-    <div className="button-row"><button className="secondary" onClick={() => void bridge.callTool("cancel_transfer", { transferIntentId: intent.id })}>Cancel</button><button className="primary" onClick={confirm} disabled={busy}>{busy ? "Signing demo transaction…" : "Confirm transfer"}</button></div>
-    <p className="disclaimer">Demo ledger only. No private key is exposed or transmitted.</p>
+    {signUrl
+      ? <><div className="button-row"><button className="secondary" onClick={cancel}>Cancel</button><button className="primary" onClick={openVault}>Open Vault to sign &amp; send</button></div>
+          <p className="disclaimer">You review and sign this transaction inside your encrypted Vault. Your private key never leaves your device.</p></>
+      : <><div className="button-row"><button className="secondary" onClick={cancel}>Cancel</button><button className="primary" onClick={confirm} disabled={busy}>{busy ? "Processing…" : "Confirm transfer"}</button></div>
+          <p className="disclaimer">No private key is exposed or transmitted.</p></>}
   </main>;
 }
 
@@ -343,7 +369,7 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
   if (data.view === "wallet") return <Wallet data={data} onNavigate={(view) => setData({ view })} />;
   if (data.view === "receive") return <Receive data={wallet} onBack={back} />;
   if (data.view === "mainnet-signing-locked") return <MainnetSigningLocked onBack={back} />;
-  if (data.view === "transfer-form") return <TransferForm onBack={back} />;
+  if (data.view === "transfer-form") return <TransferForm data={wallet} onBack={back} />;
   if (data.view === "transfer-preview") return <TransferPreview data={data} onBack={back} />;
   if (data.view === "blocked") return <Blocked data={data} onBack={back} />;
   if (data.view === "receipt") return <Receipt data={data} onBack={back} />;

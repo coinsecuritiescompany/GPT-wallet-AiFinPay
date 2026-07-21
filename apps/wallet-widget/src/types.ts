@@ -10,6 +10,7 @@ export interface WidgetData {
   summary?: WalletSummary;
   intent?: PaymentIntent;
   confirmationToken?: string;
+  signUrl?: string;
   policyExplanation?: string;
   explorerUrl?: string | null;
   transactions?: TransactionRecord[];
