@@ -43,8 +43,8 @@ p { color:var(--muted); line-height:1.5; }
 .tx-main strong,.tx-amount strong { font-size:13px; }.tx-main span,.tx-amount span { color:var(--muted); font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.tx-amount { text-align:right; }
 footer { display:flex; justify-content:space-between; color:var(--muted); font-size:10px; padding-top:16px; }
 .secure-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:4px; }.staged-dot{background:#8ca0ba}
-.network-sheet-backdrop { position:absolute; inset:0; z-index:50; display:flex; align-items:flex-start; justify-content:center; padding:82px 12px 12px; background:rgba(7,20,41,.38); backdrop-filter:blur(3px); }
-.network-sheet { width:min(596px,100%); max-height:min(82vh,720px); overflow:auto; padding:8px 16px 16px; border:1px solid #dfe7f2; border-radius:24px 24px 18px 18px; background:#fff; box-shadow:0 -20px 70px rgba(8,32,68,.22); animation:sheet-in .18s ease-out; }
+.network-sheet-backdrop { position:fixed; inset:0; z-index:50; display:flex; align-items:flex-start; justify-content:center; padding:82px 12px 12px; background:rgba(7,20,41,.38); backdrop-filter:blur(3px); overscroll-behavior:contain; }
+.network-sheet { width:min(596px,100%); max-height:min(82vh,720px); overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; touch-action:pan-y; padding:8px 16px 16px; border:1px solid #dfe7f2; border-radius:24px 24px 18px 18px; background:#fff; box-shadow:0 -20px 70px rgba(8,32,68,.22); animation:sheet-in .18s ease-out; }
 @keyframes sheet-in{from{opacity:.5;transform:translateY(24px)}to{opacity:1;transform:none}}
 .network-sheet-handle { width:42px; height:4px; margin:2px auto 14px; border-radius:99px; background:#d5deea; }
 .network-sheet-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }.network-sheet-head>div{display:grid;gap:3px}.network-sheet-head button{width:34px;height:34px;border:0;border-radius:50%;color:#61718a;background:#f0f4f9;font-size:22px;line-height:1}
