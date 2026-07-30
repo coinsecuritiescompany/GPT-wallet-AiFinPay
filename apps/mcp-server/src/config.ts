@@ -15,8 +15,7 @@ export interface AppConfig {
   mainnetRpcUrls: Record<string, string[]>;
   mainnetRpcAuth: Record<string, string>;
   // Networks on which local Vault signing + broadcast is switched on, from
-  // AIFINPAY_SIGNING_NETWORKS (comma list, e.g. "POLYGON"). Empty = every
-  // network stays send-locked, which is the safe default for production.
+  // AIFINPAY_SIGNING_NETWORKS. Empty = every network stays send-locked.
   signingNetworks: NetworkId[];
   changeNowApiKey?: string;
 }
@@ -49,13 +48,15 @@ function loadMainnetRpcAuth(env: NodeJS.ProcessEnv): Record<string, string> {
   return auth;
 }
 
-// Only EVM networks can be locally signed today (viem EIP-1559 path). A network
-// listed here that is unknown or non-EVM is ignored with no send enabled, so a
-// typo can never silently open an unintended chain.
+// Only chain families with a complete local signer + exact validator may be
+// enabled. Unknown, NEAR, Aptos and Casper values are ignored and stay locked.
 function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
   const registry = LIVE_NETWORKS as Record<string, LiveNetworkSpec>;
   const requested = parseRpcList(env.AIFINPAY_SIGNING_NETWORKS);
-  return requested.filter((id): id is NetworkId => registry[id]?.family === "EVM");
+  return requested.filter((id): id is NetworkId => {
+    const family = registry[id]?.family;
+    return family === "EVM" || family === "SOLANA";
+  });
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
