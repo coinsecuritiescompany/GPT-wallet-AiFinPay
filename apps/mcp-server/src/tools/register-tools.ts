@@ -11,12 +11,12 @@ import type { AppContext } from "../context.js";
 
 // Treat the resource URI as a release cache key. ChatGPT can cache an earlier
 // widget body for an unchanged URI, so every shipped UI revision gets a bump.
-export const WIDGET_URI = "ui://aifinpay/wallet-v12.html";
+export const WIDGET_URI = "ui://aifinpay/wallet-v13.html";
 // ChatGPT can keep a tool descriptor cached across conversations and devices.
 // Keep every previously published template URI readable so a cached descriptor
 // never fails between a server deploy and the user's next metadata refresh.
 export const LEGACY_WIDGET_URIS = Array.from(
-  { length: 11 },
+  { length: 12 },
   (_, index) => `ui://aifinpay/wallet-v${index + 1}.html`
 );
 
@@ -195,18 +195,26 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     } catch (error) { return failure(error, ctx); }
   };
 
-  // Preferred entry point. Introduced as a fresh tool name so ChatGPT re-registers
-  // the permission contract (read-only, wallet:read) instead of reusing a cached
-  // schema that still demanded wallet:write from create_wallet_pairing.
+  // Stable compatibility entry point. Introduced so ChatGPT could re-register the
+  // read-only wallet:read contract instead of reusing a cached schema that still
+  // demanded wallet:write from create_wallet_pairing.
   registerAppTool(server, "open_wallet", {
     title: "Open AiFinPay Wallet",
     description: "Use this when the user asks to open, view, or connect their AiFinPay Wallet. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
     inputSchema: {}, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta(true)
   }, openWallet);
 
+  // Fresh entry point for clients that cached an older open_wallet descriptor or
+  // template URI. Keep open_wallet above for compatibility with existing chats.
+  registerAppTool(server, "open_wallet_current", {
+    title: "Open current AiFinPay Wallet",
+    description: "Use this as the preferred current tool whenever the user asks to open, view, or connect their AiFinPay Wallet, including on mobile ChatGPT. Opening and viewing are read-only.",
+    inputSchema: {}, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta(true)
+  }, openWallet);
+
   registerAppTool(server, "create_wallet_pairing", {
-    title: "Open AiFinPay Wallet (deprecated — use open_wallet)",
-    description: "Deprecated alias of open_wallet, kept for backward compatibility. Prefer open_wallet. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
+    title: "Open AiFinPay Wallet (deprecated — use open_wallet_current)",
+    description: "Deprecated compatibility alias. Prefer open_wallet_current. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
     inputSchema: {}, outputSchema: toolOutputSchema, annotations: readOnly,
     _meta: { ...oauthMeta(true), ui: { resourceUri: WIDGET_URI, visibility: ["app"] } }
   }, openWallet);
