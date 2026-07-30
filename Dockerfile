@@ -9,6 +9,9 @@ COPY packages/demo-ledger/package.json packages/demo-ledger/package.json
 RUN npm ci
 COPY . .
 RUN npm run build
+# Keep compilers, linters and test runners out of the public runtime image.
+# Workspace production dependencies and compiled application files remain.
+RUN npm prune --omit=dev && npm cache clean --force
 
 FROM node:24-alpine AS runtime
 WORKDIR /app

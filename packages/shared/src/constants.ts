@@ -1,3 +1,5 @@
+import type { NetworkId, TokenSymbol } from "./types.js";
+
 export const NETWORKS = {
   POLYGON: {
     id: "POLYGON",
@@ -42,6 +44,7 @@ export interface MainnetNetwork {
 // at every identifier, but registry entries stay "DEPLOYED_UNVERIFIED" until
 // ABI/source, proxy/admin roles and release equivalence are reviewed as well.
 export const MAINNET_NETWORKS = {
+  casper: { label: "Casper", family: "CASPER", chainId: null, nativeToken: "CSPR", rpcUrl: "https://node.mainnet.cspr.cloud/rpc", explorerBaseUrl: "https://cspr.live", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "Contract", address: "9903a5e3948e799196df54b17270bc6769338ac1cc36c9eb47e113f88d23f019", status: "DEPLOYED_UNVERIFIED" } },
   polygon: { label: "Polygon", family: "EVM", chainId: 137, nativeToken: "POL", rpcUrl: "https://polygon.drpc.org", explorerBaseUrl: "https://polygonscan.com", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "AiFinPayCore", address: "0x1071Bb1C827223D3D0115B0e1f114adAb9ceB94f", status: "DEPLOYED_UNVERIFIED" } },
   avalanche: { label: "Avalanche C-Chain", family: "EVM", chainId: 43114, nativeToken: "AVAX", rpcUrl: "https://api.avax.network/ext/bc/C/rpc", explorerBaseUrl: "https://snowtrace.io", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "AiFinPayCore", address: "0x147d8ff8c027e24303b5b99cbc8843e1d3df94cc", status: "DEPLOYED_UNVERIFIED" } },
   arbitrum: { label: "Arbitrum One", family: "EVM", chainId: 42161, nativeToken: "ETH", rpcUrl: "https://arb1.arbitrum.io/rpc", explorerBaseUrl: "https://arbiscan.io", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "AiFinPayCore", address: "0x147d8ff8c027e24303b5b99cbc8843e1d3df94cc", status: "DEPLOYED_UNVERIFIED" } },
@@ -53,8 +56,7 @@ export const MAINNET_NETWORKS = {
   xrplevm: { label: "XRPL EVM", family: "EVM", chainId: 1440000, nativeToken: "XRP", rpcUrl: "https://rpc.xrplevm.org", explorerBaseUrl: "https://explorer.xrplevm.org", mode: "SPLITTER_ONLY_RESTRICTED", enabledForSigning: false, deployment: { name: "B2BSplitter", address: "0xeE92807decAa3A02F1e165dd7Efcd92ab9aA83CB", status: "DEPLOYED_UNVERIFIED" } },
   solana: { label: "Solana", family: "SOLANA", chainId: null, nativeToken: "SOL", rpcUrl: "https://api.mainnet-beta.solana.com", explorerBaseUrl: "https://solscan.io", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "Program", address: "5g9zWHF1Vv6GiGpA2ZbJQbSCDZd5hAk9AyvabRJvKFx2", status: "DEPLOYED_UNVERIFIED" } },
   near: { label: "NEAR", family: "NEAR", chainId: null, nativeToken: "NEAR", rpcUrl: "https://rpc.mainnet.near.org", explorerBaseUrl: "https://nearblocks.io", mode: "SPLITTER_MVP", enabledForSigning: false, deployment: { name: "Contract", address: "548178623b44c06b5312a415f260e5fe2a2a7c5cc5704b19cbee1d094e7b78eb", status: "DEPLOYED_UNVERIFIED" } },
-  aptos: { label: "Aptos", family: "APTOS", chainId: 1, nativeToken: "APT", rpcUrl: "https://fullnode.mainnet.aptoslabs.com/v1", explorerBaseUrl: "https://explorer.aptoslabs.com", mode: "SPLITTER_MVP", enabledForSigning: false, deployment: { name: "Module", address: "0xc5feda4075a4f138a5b4e293a8bd41b9e37b76e5553ff35ee6131f4f046d27fd", moduleName: "splitter", status: "DEPLOYED_UNVERIFIED" } },
-  casper: { label: "Casper", family: "CASPER", chainId: null, nativeToken: "CSPR", rpcUrl: "https://node.mainnet.cspr.cloud/rpc", explorerBaseUrl: "https://cspr.live", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "Contract", address: "9903a5e3948e799196df54b17270bc6769338ac1cc36c9eb47e113f88d23f019", status: "DEPLOYED_UNVERIFIED" } }
+  aptos: { label: "Aptos", family: "APTOS", chainId: 1, nativeToken: "APT", rpcUrl: "https://fullnode.mainnet.aptoslabs.com/v1", explorerBaseUrl: "https://explorer.aptoslabs.com", mode: "SPLITTER_MVP", enabledForSigning: false, deployment: { name: "Module", address: "0xc5feda4075a4f138a5b4e293a8bd41b9e37b76e5553ff35ee6131f4f046d27fd", moduleName: "splitter", status: "DEPLOYED_UNVERIFIED" } }
 } as const satisfies Record<string, MainnetNetwork>;
 
 export const TOKENS = {
@@ -77,6 +79,7 @@ export const TOKENS = {
 export type AddressFamily = "evm" | "solana" | "near" | "aptos" | "casper";
 export interface NativeTokenSpec { symbol: string; decimals: number }
 export interface UsdcSpec { address: string; decimals: number }
+export interface PaymentAssetSpec { symbol: string; decimals: number; address: string | null }
 
 export interface LiveNetworkSpec {
   label: string;
@@ -94,6 +97,14 @@ export interface LiveNetworkSpec {
 }
 
 export const LIVE_NETWORKS = {
+  // Casper 2.0 mainnet. Balances read via the query_balance JSON-RPC method
+  // (main_purse_under_public_key). Casper's reliable mainnet RPC is API-key
+  // gated, so set CASPER_RPC_URLS + CASPER_RPC_AUTH in the deployment env; the
+  // default endpoint below expects an Authorization key. CSPR uses 9 decimals
+  // (motes). No canonical USDC on Casper — native CSPR only.
+  CASPER: { label: "Casper", family: "CASPER", chainId: null, addressField: "casper", explorerBaseUrl: "https://cspr.live",
+    rpcUrls: ["https://node.mainnet.cspr.cloud/rpc"], requiresAuth: true,
+    native: { symbol: "CSPR", decimals: 9 } },
   POLYGON: { label: "Polygon", family: "EVM", chainId: 137, addressField: "evm", explorerBaseUrl: "https://polygonscan.com",
     rpcUrls: ["https://polygon.drpc.org", "https://polygon-bor-rpc.publicnode.com"],
     native: { symbol: "POL", decimals: 18 }, usdc: { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", decimals: 6 } },
@@ -129,25 +140,40 @@ export const LIVE_NETWORKS = {
     native: { symbol: "NEAR", decimals: 24 } },
   APTOS: { label: "Aptos", family: "APTOS", chainId: 1, addressField: "aptos", explorerBaseUrl: "https://explorer.aptoslabs.com",
     rpcUrls: ["https://fullnode.mainnet.aptoslabs.com/v1"],
-    native: { symbol: "APT", decimals: 8 } },
-  // Casper 2.0 mainnet. Balances read via the query_balance JSON-RPC method
-  // (main_purse_under_public_key). Casper's reliable mainnet RPC is API-key
-  // gated, so set CASPER_RPC_URLS + CASPER_RPC_AUTH in the deployment env; the
-  // default endpoint below expects an Authorization key. CSPR uses 9 decimals
-  // (motes). No canonical USDC on Casper — native CSPR only.
-  CASPER: { label: "Casper", family: "CASPER", chainId: null, addressField: "casper", explorerBaseUrl: "https://cspr.live",
-    rpcUrls: ["https://node.mainnet.cspr.cloud/rpc"], requiresAuth: true,
-    native: { symbol: "CSPR", decimals: 9 } }
+    native: { symbol: "APT", decimals: 8 } }
 } as const satisfies Record<string, LiveNetworkSpec>;
 
 // The 13 mainnet networks the read-only balance layer serves.
 export const MAINNET_NETWORK_IDS = [
-  "POLYGON", "AVALANCHE", "ARBITRUM", "BNB", "BASE", "UNICHAIN",
-  "OPTIMISM", "BOTCHAIN", "XRPLEVM", "SOLANA", "NEAR", "APTOS", "CASPER"
+  "CASPER", "POLYGON", "AVALANCHE", "ARBITRUM", "BNB", "BASE", "UNICHAIN",
+  "OPTIMISM", "BOTCHAIN", "XRPLEVM", "SOLANA", "NEAR", "APTOS"
 ] as const;
 
+/**
+ * Resolve the actual asset represented by the public tool's token slot.
+ *
+ * `POL` is retained as the backwards-compatible API value for "this network's
+ * native asset". The returned symbol is the real asset (ETH, AVAX, BNB, etc.).
+ * USDC decimals and contracts are network-specific; in particular, BNB's
+ * bridged USDC contract uses 18 decimals rather than the common 6.
+ */
+export function paymentAssetSpec(network: NetworkId, token: TokenSymbol): PaymentAssetSpec | null {
+  if (network === "POLYGON_AMOY") {
+    const legacy = TOKENS[token];
+    return { symbol: legacy.symbol, decimals: legacy.decimals, address: legacy.address };
+  }
+  const live = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
+  if (!live) return null;
+  if (token === "USDC") {
+    return live.usdc
+      ? { symbol: "USDC", decimals: live.usdc.decimals, address: live.usdc.address }
+      : null;
+  }
+  return { symbol: live.native.symbol, decimals: live.native.decimals, address: null };
+}
+
 // Chain id + explorer for any network, spanning the demo/testnet map (NETWORKS)
-// and the 12 live mainnets (LIVE_NETWORKS). Falls back to Polygon.
+// and the 13 live mainnets (LIVE_NETWORKS). Falls back to Polygon.
 export function networkMeta(id: string): { chainId: number; explorerBaseUrl: string } {
   const legacy = (NETWORKS as Record<string, { chainId: number; explorerBaseUrl: string }>)[id];
   if (legacy) return { chainId: legacy.chainId, explorerBaseUrl: legacy.explorerBaseUrl };

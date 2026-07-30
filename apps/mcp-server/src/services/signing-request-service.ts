@@ -1,9 +1,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { UnsignedEvmTransaction } from "@aifinpay/shared";
 
 export interface SigningRequestClaims {
   intentId: string;
   userId: string;
   expiresAt: string;
+}
+
+export interface SigningSubmissionClaims extends SigningRequestClaims {
+  transaction: UnsignedEvmTransaction;
 }
 
 /**
@@ -35,7 +40,32 @@ export class SigningRequestService {
     return { intentId, userId, expiresAt };
   }
 
+  issueSubmission(claims: SigningSubmissionClaims): string {
+    const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+    return `${payload}.${this.signFor("submit", payload)}`;
+  }
+
+  verifySubmission(token: string): SigningSubmissionClaims | null {
+    const [payload, signature] = token.split(".");
+    if (!payload || !signature) return null;
+    const expected = this.signFor("submit", payload);
+    if (signature.length !== expected.length) return null;
+    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+    try {
+      const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as SigningSubmissionClaims;
+      if (!claims.intentId || !claims.userId || !claims.expiresAt || !claims.transaction) return null;
+      if (new Date(claims.expiresAt).getTime() <= Date.now()) return null;
+      return claims;
+    } catch {
+      return null;
+    }
+  }
+
   private sign(payload: string): string {
-    return createHmac("sha256", this.secret).update(`sign:${payload}`).digest("base64url");
+    return this.signFor("sign", payload);
+  }
+
+  private signFor(purpose: "sign" | "submit", payload: string): string {
+    return createHmac("sha256", this.secret).update(`${purpose}:${payload}`).digest("base64url");
   }
 }

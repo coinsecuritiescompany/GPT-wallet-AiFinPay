@@ -326,10 +326,11 @@ export class MainnetAdapter implements WalletAdapter {
       data = "0x";
     }
 
-    const [nonceHex, priorityHex, latestBlock] = await Promise.all([
+    const [nonceHex, priorityHex, latestBlock, nativeBalanceHex] = await Promise.all([
       this.rpc<string>(network, "eth_getTransactionCount", [from, "pending"]),
       this.rpc<string>(network, "eth_maxPriorityFeePerGas", []).catch(() => "0x3b9aca00"), // 1 gwei fallback
-      this.rpc<{ baseFeePerGas?: string }>(network, "eth_getBlockByNumber", ["latest", false])
+      this.rpc<{ baseFeePerGas?: string }>(network, "eth_getBlockByNumber", ["latest", false]),
+      this.rpc<string>(network, "eth_getBalance", [from, "pending"])
     ]);
     const baseFee = BigInt(latestBlock.baseFeePerGas ?? "0x0");
     const priorityFee = BigInt(priorityHex);
@@ -340,6 +341,13 @@ export class MainnetAdapter implements WalletAdapter {
       .then((hex) => BigInt(hex))
       .catch(() => (intent.token === "USDC" ? 90_000n : 21_000n));
     const gasWithBuffer = estimatedGas + estimatedGas / 5n; // +20%
+    const maximumGasCost = gasWithBuffer * maxFee;
+    if (BigInt(nativeBalanceHex) < value + maximumGasCost) {
+      throw new AppError("INSUFFICIENT_FUNDS", `Insufficient ${spec.native.symbol} for the transfer amount and maximum network fee.`);
+    }
+    if (intent.token === "USDC" && await this.readUsdc(network, spec, from) < amount) {
+      throw new AppError("INSUFFICIENT_FUNDS", `Insufficient USDC on ${spec.label}.`);
+    }
 
     return {
       to,

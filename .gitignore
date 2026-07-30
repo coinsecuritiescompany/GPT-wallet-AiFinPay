@@ -2,7 +2,8 @@ node_modules/
 dist/
 dist-vault/
 .env
-.env.local
+.env.*
+!.env.example
 *.log
 data/*.sqlite
 data/*.sqlite-*

@@ -5,17 +5,16 @@ Roadmap items describe direction, not delivery commitments.
 ## Public reference app
 
 - Move OAuth refresh-token revocation and account metadata to a durable production identity provider.
-- Add durable user-scoped policy, intent and audit storage.
 - Add output schemas for every MCP tool and submission regression tests.
-- Add indexed Polygon transaction history without leaking private metadata.
+- Move the persistent single-instance SQLite state to managed multi-instance storage with tested encrypted backups.
+- Expand indexed history beyond the current best-effort Polygon integration without leaking private metadata.
 - Improve mobile cold-start behavior and accessibility QA.
 - Publish signed releases, SBOMs and dependency provenance.
 
 ## Security-gated production work
 
-- Local transaction construction, simulation and human-readable review.
-- User-presence confirmation and local signing inside the Vault.
-- Multi-RPC verification, nonce management, fee controls and confirmation monitoring.
+- Full transaction simulation, multi-RPC verification and adversarial signed-transaction fuzzing.
+- Non-EVM signing plus transaction replacement/cancellation and confirmation monitoring.
 - Independent wallet cryptography and application security audits.
 - Incident response, key-rotation and disaster-recovery exercises.
 - Jurisdiction-specific legal, privacy, AML/sanctions and licensing assessment.

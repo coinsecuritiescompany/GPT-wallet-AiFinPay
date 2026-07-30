@@ -1,6 +1,6 @@
 {
   "name": "@aifinpay/mcp-server",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "MCP server for the AiFinPay Wallet ChatGPT app.",
   "license": "MIT",
   "private": true,
@@ -19,6 +19,7 @@
     "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "express": "^5.2.1",
+    "viem": "^2.55.2",
     "zod": "^4.4.3"
   }
 }

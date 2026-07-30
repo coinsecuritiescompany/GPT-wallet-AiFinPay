@@ -1,6 +1,6 @@
 # OpenAI Build Week compliance checklist
 
-Checked against the official OpenAI Build Week rules and FAQ on July 18, 2026.
+Checked against the official OpenAI Build Week rules and FAQ on July 30, 2026.
 
 ## Required project and repository items
 
@@ -25,9 +25,9 @@ Checked against the official OpenAI Build Week rules and FAQ on July 18, 2026.
 2. Add the public `/mcp` endpoint in ChatGPT Developer Mode.
 3. Ask ChatGPT to open AiFinPay Wallet.
 4. Create a disposable Vault and pair public addresses.
-5. Reopen the wallet and inspect live Polygon balances.
-6. Open Receive and verify public addresses.
-7. Open Send and verify that mainnet signing is safely blocked.
+5. Reopen the wallet and scroll the complete 13-mainnet selector.
+6. Inspect live Polygon balances and verify public addresses in Receive.
+7. Open Send and verify that it is available only on a signing-enabled EVM network and requires separate local review/signing.
 
 ## Evidence
 

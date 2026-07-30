@@ -18,6 +18,7 @@ export interface AppConfig {
   // AIFINPAY_SIGNING_NETWORKS (comma list, e.g. "POLYGON"). Empty = every
   // network stays send-locked, which is the safe default for production.
   signingNetworks: NetworkId[];
+  changeNowApiKey?: string;
 }
 
 function parseRpcList(raw: string | undefined): string[] {
@@ -77,6 +78,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     polygonRpcUrls,
     mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls),
     mainnetRpcAuth: loadMainnetRpcAuth(env),
-    signingNetworks: loadSigningNetworks(env)
+    signingNetworks: loadSigningNetworks(env),
+    ...(env.CHANGENOW_API_KEY?.trim() ? { changeNowApiKey: env.CHANGENOW_API_KEY.trim() } : {})
   };
 }

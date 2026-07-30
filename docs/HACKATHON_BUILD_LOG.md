@@ -79,6 +79,17 @@ The target repository had no implementation before the Build Week work began. No
 - the Vault gained a review-and-sign screen (`?sign=` flow): unlock, show amount/recipient/network, sign locally, broadcast, then a block-explorer link. The decrypted phrase is held only in a ref and wiped immediately after signing;
 - covered by unit tests: EIP-1559 USDC and native transaction construction (fees, gas buffer, transfer calldata), raw broadcast + malformed-tx rejection, and full signing-token round-trip/tamper/expiry/wrong-secret cases. `npm run check` green (security, lint, typecheck, 72 tests, build).
 
+### Product hardening release 0.3.0 — July 30, 2026
+
+- fixed the mobile network chooser as a full-height, safe-area-aware bottom sheet with its own momentum-scrolling region and sticky header;
+- preserved Casper addresses through OAuth and SQLite connection state;
+- resolved every transfer asset through chain-specific native symbols, USDC contracts and decimals, including 18-decimal BNB USDC;
+- added live native/token balance preflight, real daily agent-spend accounting and accurate mainnet receipt labels;
+- bound each Vault submission token to the exact reviewed unsigned transaction, then decode, recover the signer and compare every EIP-1559 field before broadcast;
+- added encrypted Vault payload validation, 12-character passwords, memory cleanup, two-step device Vault removal and route rate limits;
+- changed the production Blueprint to an always-on service with persistent disk and Polygon as the only default signing-enabled network;
+- passed public-repository security scanning, lint, TypeScript, 81 tests, production builds and a zero-vulnerability production dependency audit.
+
 ## Codex collaboration
 
 Codex researched official documentation, implemented code and tests, diagnosed deployment/mobile failures, inspected live health responses, compared repository and deployment state, and prepared review materials. Human decisions controlled custody boundaries, mainnet risk, public/private scope and product positioning.
@@ -89,6 +100,7 @@ Codex researched official documentation, implemented code and tests, diagnosed d
 - Wallet/Vault and mainnet iteration: lint, typecheck, build and 41 tests.
 - Public repository hardening: full checks, dependency audit and hosted-route verification recorded in GitHub history.
 - All-12-network read-only balances: security check, lint, typecheck, build and 61 tests, plus a live on-chain read across every network.
+- Product hardening 0.3.0: security check, lint, typecheck, build and 81 tests; production dependency audit reports zero vulnerabilities.
 
 ## Evidence
 

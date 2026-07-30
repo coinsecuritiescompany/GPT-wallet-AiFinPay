@@ -1,10 +1,10 @@
 # MCP tools
 
-The server exposes 19 focused tools. User IDs and wallet IDs are resolved server-side and are never accepted from the model. Every tool declares explicit read-only, destructive and open-world annotations.
+The server exposes 24 focused tools. User IDs and wallet IDs are resolved server-side and are never accepted from the model. Every tool declares explicit read-only, destructive, open-world and idempotency annotations.
 
 ## Wallet connection and networks
 
-- `list_supported_mainnets()` — lists 12 derived address networks and current signing status.
+- `list_supported_mainnets()` — lists 13 derived-address networks and the runtime signing status of each.
 - `create_wallet_pairing()` — compatibility name for the open-wallet action; OAuth links a first-time user and returning users receive the dashboard directly.
 - `get_wallet_connection()` — returns the authenticated wallet status and public addresses only.
 
@@ -20,18 +20,27 @@ User-specific read tools declare `wallet:read`; intent, confirmation and policy 
 - `evaluate_payment_request(payment fields, agent, merchant, risk)`
 - `get_audit_log(limit)`
 
-In mainnet mode, wallet summary and balance tools select Polygon and read POL/native USDC through the mainnet adapter. Mainnet transaction history currently returns an honest empty result until an indexer is integrated.
+In mainnet mode, wallet summary and balance tools read native balances across all 13 networks and verified Circle USDC on six EVM networks. Transaction history is currently a best-effort Polygon-only indexed view.
 
 ## State and destructive tools
 
-- `prepare_transfer(...)` writes a private demo intent in demo mode; mainnet mode refuses.
-- `confirm_transfer(...)` irreversibly completes an eligible demo intent; mainnet mode refuses.
+- `prepare_transfer(...)` validates policy and funds, writes an expiring intent and returns the local Vault review URL on a signing-enabled EVM network.
+- `confirm_transfer(...)` records explicit approval and returns the local Vault signing URL. The Vault signs locally and submits the signed transaction to the authenticated broadcast endpoint.
 - `cancel_transfer(transferIntentId)` irreversibly cancels an eligible intent.
 - `create_agent_policy(...)` previews and then saves private policy state.
 - `update_agent_policy(policyId, enabled, confirmation=true)` updates private policy state.
 - `revoke_agent_policy(policyId, confirmation=true)` irreversibly revokes private policy state.
 
-None of these tools changes public internet state in the current implementation. Real-chain broadcasting will require new annotations and review when implemented.
+## Cross-chain swap tools
+
+- `list_swap_assets()` — reads the provider's active assets and returns only networks whose payout address maps unambiguously to the connected Vault.
+- `get_swap_quote(fromAsset, toAsset, fromAmount)` — returns an estimated quote and a short-lived HMAC-bound quote token; it creates no order and moves no funds.
+- `create_swap_order(quoteToken, confirmed=true)` — after explicit user confirmation, creates a provider deposit order. Payout and refund addresses are resolved server-side from the authenticated Vault rather than accepted from the model.
+- `get_swap_status(orderReference)` — reads status using a private, user-bound signed order reference.
+
+These tools are marked open-world because they call ChangeNOW. The partner API key is server-side only. Creating an order does not transfer funds; funding still requires a separate user-signed wallet transaction.
+
+MCP tools do not receive recovery words, private keys or signed transaction bytes. Public-chain broadcast happens only after the user opens the separate Vault page, reviews the canonical transaction and signs it locally. The server verifies that the signed fields and signer exactly match the reviewed transaction before broadcasting.
 
 ## Render tools
 
@@ -39,7 +48,7 @@ None of these tools changes public internet state in the current implementation.
 - `render_transfer_preview(transferIntentId)`
 - `render_transaction_receipt(transferIntentId)`
 
-Render tools attach `ui://aifinpay/wallet-v8.html`. The widget communicates through the MCP Apps bridge and keeps data-fetching responsibilities on the server.
+Render tools attach `ui://aifinpay/wallet-v10.html`. The widget communicates through the standard MCP Apps bridge and keeps data-fetching responsibilities on the server.
 
 ## Submission note
 

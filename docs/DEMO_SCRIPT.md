@@ -14,13 +14,13 @@ Say: “Open my AiFinPay wallet.” Show the branded inline widget and explain t
 
 Open the Vault creation flow. Show the network selection and explain that recovery is generated locally. Cut or blur the phrase step completely. Show local encryption and the final public-address pairing screen.
 
-## 1:20–1:50 — Live Polygon mainnet data
+## 1:20–1:50 — Live 13-mainnet data
 
-Return to ChatGPT and reopen the wallet. Show the `MAINNET` badge, paired address, live POL/native USDC balances and Receive view. Explain that only public addresses reach the MCP server.
+Return to ChatGPT and reopen the wallet. Show the `MAINNET` badge, scroll the 13-network selector to Casper, then show Polygon POL/USDC balances and Receive. Explain that only public addresses reach the MCP server.
 
-## 1:50–2:15 — Safety gate
+## 1:50–2:15 — Local signing boundary
 
-Open Send. Show that mainnet signing is deliberately locked until personal authentication, canonical transaction preview and local signing are complete. Emphasize that the project does not fake successful mainnet transactions.
+Using a disposable funded test wallet, prepare a small Polygon transfer. Show the canonical preview and separate Vault review, but cut before the final signature if the demo should not move funds. Explain that the server accepts only the exact transaction reviewed and signed by the connected address.
 
 ## 2:15–2:40 — Codex and GPT-5.6
 
@@ -28,4 +28,4 @@ Show a brief Codex/build-log or commit-history view. Explain that Codex created 
 
 ## 2:40–3:00 — Architecture and impact
 
-Show the README architecture: user → GPT-5.6 → MCP → Polygon RPC, with local Vault ownership. End: “A wallet interface built for AI agents, without giving the model the keys.”
+Show the README architecture: user → GPT-5.6 → MCP → chain RPC, with local Vault ownership. End: “A wallet interface built for AI agents, without giving the model the keys.”

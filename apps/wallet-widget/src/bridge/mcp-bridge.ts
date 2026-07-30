@@ -30,7 +30,7 @@ class McpAppsBridge {
     if (this.ready) return this.ready;
     if (window.parent === window) { this.ready = Promise.resolve(); return this.ready; }
     this.ready = this.request("ui/initialize", {
-      appInfo: { name: "aifinpay-wallet-widget", version: "0.1.0" }, appCapabilities: {}, protocolVersion: "2026-01-26"
+      appInfo: { name: "aifinpay-wallet-widget", version: "0.3.0" }, appCapabilities: {}, protocolVersion: "2026-01-26"
     }).then(() => { this.notify("ui/notifications/initialized", {}); });
     return this.ready;
   }

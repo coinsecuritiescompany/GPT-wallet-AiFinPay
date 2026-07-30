@@ -2,7 +2,7 @@ services:
   - type: web
     name: aifinpay-wallet-chatgpt
     runtime: docker
-    plan: free
+    plan: starter
     healthCheckPath: /health
     autoDeployTrigger: "commit"
     envVars:
@@ -10,13 +10,27 @@ services:
         value: "false"
       - key: AIFINPAY_WALLET_MODE
         value: mainnet
+      - key: AIFINPAY_SIGNING_NETWORKS
+        value: POLYGON
       - key: POLYGON_RPC_URLS
         value: https://polygon.drpc.org,https://polygon.publicnode.com
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
-        value: /tmp/aifinpay-runtime.sqlite
+        value: /var/data/aifinpay-runtime.sqlite
+      - key: ETHERSCAN_API_KEY
+        sync: false
+      - key: CASPER_RPC_URLS
+        sync: false
+      - key: CASPER_RPC_AUTH
+        sync: false
+      - key: CHANGENOW_API_KEY
+        sync: false
       - key: LOG_LEVEL
         value: info
       - key: SESSION_SECRET
         generateValue: true
+    disk:
+      name: aifinpay-wallet-data
+      mountPath: /var/data
+      sizeGB: 1

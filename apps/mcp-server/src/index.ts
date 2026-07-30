@@ -4,12 +4,13 @@ import express, { type Request, type Response } from "express";
 import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { AppError, LIVE_NETWORKS, safeError, type VaultSignRequest } from "@aifinpay/shared";
+import { AppError, LIVE_NETWORKS, paymentAssetSpec, safeError, type VaultSignRequest } from "@aifinpay/shared";
 import { loadConfig } from "./config.js";
 import { AppContext } from "./context.js";
 import type { PublicWalletAddresses } from "./auth/oauth-provider.js";
 import { landingPage, privacyPage, supportPage, termsPage } from "./public-pages.js";
 import { appIconPng, createMcpServer, vaultHtml, widgetHtml } from "./server.js";
+import { validateSignedEvmTransaction } from "./services/signed-transaction-validator.js";
 import { WIDGET_URI } from "./tools/register-tools.js";
 
 const config = loadConfig();
@@ -20,6 +21,30 @@ const issuerUrl = new URL(config.widgetDomain.replace(/\/$/, "") + "/");
 const resourceUrl = new URL(config.publicUrl);
 
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
+
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+function rateLimit(name: string, max: number, windowMs: number) {
+  return (req: Request, res: Response, next: () => void) => {
+    const now = Date.now();
+    const key = `${name}:${req.ip || req.socket.remoteAddress || "unknown"}`;
+    const current = rateBuckets.get(key);
+    const bucket = !current || current.resetAt <= now ? { count: 0, resetAt: now + windowMs } : current;
+    bucket.count += 1;
+    rateBuckets.set(key, bucket);
+    if (bucket.count > max) {
+      res.status(429).set({
+        "cache-control": "no-store",
+        "retry-after": String(Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)))
+      }).json({ error: "RATE_LIMITED" });
+      return;
+    }
+    if (rateBuckets.size > 10_000) {
+      for (const [bucketKey, value] of rateBuckets) if (value.resetAt <= now) rateBuckets.delete(bucketKey);
+    }
+    next();
+  };
+}
 
 function sendHtml(res: Response, html: string, allowSelfConnect = false): void {
   res.status(200).set({
@@ -39,8 +64,15 @@ function validAddresses(value: unknown): PublicWalletAddresses | null {
   const solana = typeof addresses.solana === "string" ? addresses.solana : "";
   const near = typeof addresses.near === "string" ? addresses.near : "";
   const aptos = typeof addresses.aptos === "string" ? addresses.aptos : "";
-  if (!/^0x[a-fA-F0-9]{40}$/.test(evm) || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solana) || !/^[a-f0-9]{64}$/.test(near) || !/^0x[a-f0-9]{64}$/.test(aptos)) return null;
-  return { evm, solana, near, aptos };
+  const casper = typeof addresses.casper === "string" ? addresses.casper : "";
+  if (
+    !/^0x[a-fA-F0-9]{40}$/.test(evm)
+    || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solana)
+    || !/^[a-f0-9]{64}$/.test(near)
+    || !/^0x[a-f0-9]{64}$/.test(aptos)
+    || !/^0(1[a-fA-F0-9]{64}|2[a-fA-F0-9]{66})$/.test(casper)
+  ) return null;
+  return { evm, solana, near, aptos, casper };
 }
 
 app.use(mcpAuthRouter({
@@ -65,7 +97,7 @@ app.options("/mcp", (_req, res) => {
 app.get("/health", (_req, res) => {
   res.status(200).set({ "cache-control": "no-store", "x-content-type-options": "nosniff" }).json({
     status: "ok",
-    version: "0.2.0",
+    version: "0.3.0",
     uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
     demoMode: config.demoMode,
     walletMode: config.walletMode,
@@ -73,6 +105,7 @@ app.get("/health", (_req, res) => {
     tokenData: "public-addresses-only",
     database: "ok",
     blockchainAdapter: context.adapter.kind,
+    swapProvider: context.swaps.enabled ? "configured" : "not_configured",
     widgetResource: WIDGET_URI,
     release: process.env.RENDER_GIT_COMMIT?.slice(0, 12) ?? "local"
   });
@@ -91,7 +124,7 @@ app.get("/privacy", (_req, res) => sendHtml(res, privacyPage()));
 app.get("/terms", (_req, res) => sendHtml(res, termsPage()));
 app.get("/support", (_req, res) => sendHtml(res, supportPage()));
 
-app.post("/api/oauth/approve", express.json({ limit: "16kb", type: "application/json" }), (req, res) => {
+app.post("/api/oauth/approve", rateLimit("oauth-approve", 20, 10 * 60_000), express.json({ limit: "16kb", type: "application/json" }), (req, res) => {
   try {
     const request = typeof req.body?.request === "string" ? req.body.request : "";
     const addresses = validAddresses(req.body?.addresses);
@@ -103,7 +136,7 @@ app.post("/api/oauth/approve", express.json({ limit: "16kb", type: "application/
 });
 
 // Kept temporarily so an already-open v7 Vault page fails safely instead of uploading secrets.
-app.post("/api/vault/pair", express.json({ limit: "16kb", type: "application/json" }), (req, res) => {
+app.post("/api/vault/pair", rateLimit("vault-pair", 30, 10 * 60_000), express.json({ limit: "16kb", type: "application/json" }), (req, res) => {
   const token = typeof req.body?.token === "string" ? req.body.token : "";
   const addresses = validAddresses(req.body?.addresses);
   if (!/^[A-Za-z0-9_-]{32}$/.test(token) || !addresses) { res.status(400).json({ error: "INVALID_PAIRING_REQUEST" }); return; }
@@ -127,7 +160,7 @@ function respondSigningError(res: Response, error: unknown): void {
   res.status(status).set("cache-control", "no-store").json({ error: safe.code, message: safe.message });
 }
 
-app.post("/api/vault/sign-request", express.json({ limit: "16kb", type: "application/json" }), async (req, res) => {
+app.post("/api/vault/sign-request", rateLimit("sign-request", 30, 10 * 60_000), express.json({ limit: "16kb", type: "application/json" }), async (req, res) => {
   try {
     const token = typeof req.body?.token === "string" ? req.body.token : "";
     const claims = context.signing.verify(token);
@@ -137,25 +170,30 @@ app.post("/api/vault/sign-request", express.json({ limit: "16kb", type: "applica
     if (!context.adapter.buildTransferTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot build signing requests.", 501);
     const transaction = await context.adapter.buildTransferTransaction(claims.userId, intent);
     const spec = (LIVE_NETWORKS as Record<string, { label: string }>)[intent.network];
+    const asset = paymentAssetSpec(intent.network, intent.token);
     const payload: VaultSignRequest = {
       intentId: intent.id,
+      submissionToken: context.signing.issueSubmission({ intentId: intent.id, userId: claims.userId, expiresAt: intent.expiresAt, transaction }),
       transaction,
-      display: { recipient: intent.recipient, amount: intent.amount, token: intent.token, network: intent.network, networkLabel: spec?.label ?? intent.network },
+      display: { recipient: intent.recipient, amount: intent.amount, token: asset?.symbol ?? intent.token, network: intent.network, networkLabel: spec?.label ?? intent.network },
       expiresAt: intent.expiresAt
     };
     res.status(200).set("cache-control", "no-store").json(payload);
   } catch (error) { respondSigningError(res, error); }
 });
 
-app.post("/api/vault/submit-signed", express.json({ limit: "16kb", type: "application/json" }), async (req, res) => {
+app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000), express.json({ limit: "16kb", type: "application/json" }), async (req, res) => {
   try {
     const token = typeof req.body?.token === "string" ? req.body.token : "";
     const signedTransaction = typeof req.body?.signedTransaction === "string" ? req.body.signedTransaction : "";
-    const claims = context.signing.verify(token);
+    const claims = context.signing.verifySubmission(token);
     if (!claims) { res.status(410).set("cache-control", "no-store").json({ error: "SIGN_REQUEST_EXPIRED_OR_INVALID" }); return; }
     if (!/^0x[0-9a-fA-F]{2,}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is missing or malformed.");
     const intent = context.payments.intentForSigning(claims.userId, claims.intentId);
     if (!signingEnabledFor(intent.network)) throw new AppError("SIGNING_FAILED", `Signing on ${intent.network} is not enabled.`, 403);
+    const connectedAddress = context.store.getWalletConnection(claims.userId)?.addresses.evm;
+    if (!connectedAddress) throw new AppError("WALLET_NOT_FOUND", "Connect your wallet before signing.", 404);
+    await validateSignedEvmTransaction(connectedAddress, signedTransaction, claims.transaction);
     if (!context.adapter.broadcastRawTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot broadcast transactions.", 501);
     const execution = await context.adapter.broadcastRawTransaction(intent.network, signedTransaction);
     const result = context.payments.finalizeVaultBroadcast(claims.userId, claims.intentId, execution);
@@ -163,7 +201,7 @@ app.post("/api/vault/submit-signed", express.json({ limit: "16kb", type: "applic
   } catch (error) { respondSigningError(res, error); }
 });
 
-app.all("/mcp", async (req: Request & { auth?: AuthInfo }, res) => {
+app.all("/mcp", rateLimit("mcp", 180, 60_000), async (req: Request & { auth?: AuthInfo }, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
   const authorization = req.headers.authorization;

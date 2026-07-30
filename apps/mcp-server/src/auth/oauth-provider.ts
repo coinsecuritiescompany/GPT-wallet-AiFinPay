@@ -11,6 +11,7 @@ export interface PublicWalletAddresses {
   solana: string;
   near: string;
   aptos: string;
+  casper: string;
 }
 
 type SignedPayload = Record<string, unknown> & { iat: number; exp: number };
@@ -78,7 +79,12 @@ export class AiFinPayOAuthProvider implements OAuthServerProvider {
   readonly clientsStore: StatelessClientsStore;
   private readonly usedCodes = new Set<string>();
 
-  constructor(private readonly secret: string, private readonly issuer: URL, private readonly resource: URL) {
+  constructor(
+    private readonly secret: string,
+    private readonly issuer: URL,
+    private readonly resource: URL,
+    private readonly consumePersistedCode?: (codeHash: string, expiresAtUnixSeconds: number) => boolean
+  ) {
     this.clientsStore = new StatelessClientsStore(this.sign.bind(this), this.verify.bind(this));
   }
 
@@ -131,7 +137,16 @@ export class AiFinPayOAuthProvider implements OAuthServerProvider {
   approveAuthorization(requestToken: string, addresses: PublicWalletAddresses): string {
     const request = this.verify<AuthorizationRequest>("authorize", requestToken);
     const normalized = canonicalAddresses(addresses);
-    const userId = `wallet_${createHash("sha256").update(JSON.stringify(normalized)).digest("hex").slice(0, 32)}`;
+    // Keep the established wallet identity stable when a new address family is
+    // added. Existing users were identified by these original four addresses;
+    // Casper is carried in tokens and storage without changing that user id.
+    const identityAddresses = {
+      evm: normalized.evm,
+      solana: normalized.solana,
+      near: normalized.near,
+      aptos: normalized.aptos
+    };
+    const userId = `wallet_${createHash("sha256").update(JSON.stringify(identityAddresses)).digest("hex").slice(0, 32)}`;
     const now = Math.floor(Date.now() / 1000);
     const code = this.sign("code", { ...request, addresses: normalized, userId, iat: now, exp: now + AUTH_CODE_TTL_SECONDS });
     const redirect = new URL(request.redirectUri);
@@ -149,9 +164,12 @@ export class AiFinPayOAuthProvider implements OAuthServerProvider {
   async exchangeAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string, _codeVerifier?: string, redirectUri?: string, resource?: URL): Promise<OAuthTokens> {
     const code = this.verify<AuthorizationCode>("code", authorizationCode);
     const codeHash = createHash("sha256").update(authorizationCode).digest("hex");
-    if (this.usedCodes.has(codeHash)) throw new InvalidGrantError("Authorization code was already used.");
     if (code.clientId !== client.client_id || code.redirectUri !== redirectUri || !sameResource(code.resource, resource)) throw new InvalidGrantError("Authorization code context does not match the token request.");
-    this.usedCodes.add(codeHash);
+    const consumed = this.consumePersistedCode
+      ? this.consumePersistedCode(codeHash, code.exp)
+      : !this.usedCodes.has(codeHash);
+    if (!consumed) throw new InvalidGrantError("Authorization code was already used.");
+    if (!this.consumePersistedCode) this.usedCodes.add(codeHash);
     return this.issueTokens(code);
   }
 

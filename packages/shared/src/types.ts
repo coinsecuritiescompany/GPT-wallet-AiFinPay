@@ -112,6 +112,37 @@ export interface WalletSummary {
   latestTransactions: TransactionRecord[];
   activeAgentPolicies: AgentPolicy[];
   mode: "DEMO" | "TESTNET" | "MAINNET";
+  balanceError?: { code: string; message: string };
+}
+
+export interface SwapAsset {
+  ticker: string;
+  name: string;
+  network: string;
+  image?: string;
+}
+
+export interface SwapQuote {
+  provider: "CHANGENOW";
+  fromAsset: SwapAsset;
+  toAsset: SwapAsset;
+  fromAmount: string;
+  estimatedAmount: string;
+  minimumAmount?: string;
+  validUntil: string;
+}
+
+export interface SwapOrder {
+  provider: "CHANGENOW";
+  id: string;
+  status: string;
+  fromAsset: SwapAsset;
+  toAsset: SwapAsset;
+  fromAmount: string;
+  expectedAmount: string;
+  payinAddress: string;
+  payoutAddress: string;
+  createdAt: string;
 }
 
 // Non-custodial signing handoff. The server builds these EIP-1559 fields from
@@ -133,6 +164,7 @@ export interface UnsignedEvmTransaction {
 
 export interface VaultSignRequest {
   intentId: string;
+  submissionToken: string;
   transaction: UnsignedEvmTransaction;
   display: {
     recipient: string;

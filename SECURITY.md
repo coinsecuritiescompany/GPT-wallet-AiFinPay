@@ -25,12 +25,13 @@ Maintainers will acknowledge reports on a best-effort basis, reproduce them in a
 
 ## Security boundaries
 
-- Mainnet balances are read-only.
-- Mainnet signing and broadcasting are disabled.
+- Mainnet balance access is read-only; transfers are a separate explicitly confirmed flow.
+- Mainnet signing is local to the browser Vault and enabled only for configured EVM networks.
+- Submission tokens bind the exact reviewed EIP-1559 fields; the server verifies the signer and every transaction field before broadcasting.
 - Recovery phrases and passwords are processed only by the browser Vault.
 - OAuth 2.1 with PKCE authenticates user-specific tools; signed tokens contain validated public addresses only.
 - Production mode never falls back to the shared demo identity.
-- Runtime intent, policy and audit storage on the free preview remains ephemeral.
+- The production Blueprint declares persistent runtime storage, but external backup and restoration procedures are not yet demonstrated.
 - The project has not completed an independent production security audit.
 
 See [Security model](docs/SECURITY_MODEL.md), [Threat model](docs/THREAT_MODEL.md) and [Public/private boundary](docs/PUBLIC_PRIVATE_BOUNDARY.md).

@@ -1,6 +1,6 @@
 {
   "name": "@aifinpay/wallet-widget",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Compact ChatGPT wallet widget and local non-custodial Vault.",
   "license": "MIT",
   "private": true,
@@ -18,6 +18,7 @@
     "@scure/bip39": "^1.6.0",
     "@web3icons/core": "4.0.53",
     "bs58": "^6.0.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "viem": "^2.55.2"

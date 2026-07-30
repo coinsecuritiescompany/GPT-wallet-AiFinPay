@@ -5,18 +5,18 @@
 | User exposes recovery words in chat or screenshot | Critical | Repeated warnings; tools never request words | User education cannot prevent voluntary disclosure; rotate wallet immediately |
 | Malicious page reads the local Vault | Critical | Same-origin browser storage and CSP | Add dedicated origin, hardware-backed options and security audit |
 | Weak Vault password / offline guessing | Critical | PBKDF2-SHA256 and minimum length | Review KDF parameters; consider memory-hard KDF and platform key store |
-| Pairing-token theft | High | Random token, hash at rest, ten-minute expiry, one-time use | Avoid URL leakage; bind to authenticated user/device in production |
-| Cross-user wallet confusion | Critical | Server-side user resolution | Shared beta session is unsuitable for public multi-user production; add OAuth |
-| Prompt injection requests secrets or payment | Critical | No secret inputs; deterministic policy; mainnet send disabled | Add model/tool abuse testing and user-presence signing |
+| OAuth code/token theft | High | PKCE S256, exact redirect/resource binding, two-minute one-use codes, scoped one-hour access tokens | Add durable refresh-token revocation and device/session management |
+| Cross-user wallet confusion | Critical | OAuth identity plus server-side user resolution | Add formal authorization testing and account recovery procedures |
+| Prompt injection requests secrets or payment | Critical | No secret inputs; deterministic policy; explicit review and local user-presence signing | Add adversarial model/tool abuse testing |
 | RPC returns false balance data | High | Two-provider fallback and cache | Add multi-provider comparison and explorer verification |
 | Supply-chain compromise | Critical | Lockfile, CI, dependency audit, limited CSP | Add CodeQL, SBOM, provenance and signed releases |
-| Replay or duplicate intent | High | Idempotency and state machine in demo flow | Use transactional distributed idempotency in production |
-| Recipient/amount substitution | Critical | Prepared intent binds validated fields | Local signing preview must bind canonical transaction bytes |
+| Replay or duplicate intent | High | Idempotency, expiring intents, state machine and single-use intent state | Use transactional distributed idempotency for multi-instance deployment |
+| Recipient/amount/fee substitution | Critical | Canonical preview, HMAC submission binding, signed-byte decoding, signer and field comparison | Add independent transaction simulation and fuzzing |
 | Browser/XSS compromise | Critical | No dynamic third-party widget assets; restrictive headers | External assessment, Trusted Types and isolated Vault origin |
 | Logging or support leakage | High | Minimal structured logs and public warnings | Central redaction rules and private support channel |
-| Ephemeral storage loss | Medium | Disclosed preview limitation | Managed database with encrypted backups and retention controls |
+| Runtime storage loss | High | Persistent disk declared in the production Blueprint | Add encrypted external backups, restore tests and managed database migration |
 | Unauthorized repository disclosure | Critical | Public/private boundary and CI scan | Manual review, branch protection and private repo access controls |
 
-## Out of scope for the current public beta
+## Out of scope for the current mainnet beta
 
-Real transaction signing, broadcasting, fiat/payment-card processing, regulated custody and production customer data. Enabling any of these changes the threat model and requires a new review.
+Non-EVM signing, custodial recovery, fiat/payment-card processing, exchange/brokerage services, regulated custody and claims of regulatory authorization. Enabling any of these changes the threat model and requires a new review.

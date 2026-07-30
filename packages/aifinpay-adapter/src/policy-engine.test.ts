@@ -24,4 +24,8 @@ describe("deterministic policy engine", () => {
   it("blocks an unapproved merchant", () => expect(evaluatePolicy({ ...base, merchantId: "unknown" }, [DEMO_POLICY]).reasonCodes).toContain("MERCHANT_NOT_ALLOWED"));
   it("blocks a high-risk request", () => expect(evaluatePolicy({ ...base, riskLevel: "HIGH" }, [DEMO_POLICY]).decision).toBe("BLOCKED"));
   it("always requires confirmation for a human transfer", () => expect(evaluatePolicy({ ...base, agentId: undefined }, [DEMO_POLICY]).reasonCodes).toContain("USER_CONFIRMATION_REQUIRED"));
+  it("uses BNB USDC's 18 decimals when checking the available balance", () => {
+    const result = evaluatePolicy({ ...base, agentId: undefined, network: "BNB", amount: "1", availableBalanceRaw: "500000000000000000" }, []);
+    expect(result.reasonCodes).toContain("INSUFFICIENT_BALANCE");
+  });
 });
