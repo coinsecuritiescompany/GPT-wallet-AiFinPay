@@ -2,12 +2,13 @@
 
 This document records public AiFinPay deployment identifiers supplied by the project owner. It contains no private keys, recovery phrases, OAuth secrets, RPC credentials, treasury credentials or signing material.
 
-> Status: `DEPLOYED_UNVERIFIED`. Live RPC checks on 2026-07-18 confirmed EVM bytecode at all nine EVM addresses, an executable Solana program, a nonzero NEAR code hash and the Aptos `splitter` module ABI. The wallet still does not enable mainnet signing merely because code is present: bytecode/source equivalence, ABI or IDL, proxy implementation, admin and pause roles, supported tokens, treasury destinations and test vectors must pass an independent release gate first.
+> Status: `DEPLOYED_UNVERIFIED`. Live RPC checks on 2026-07-18 confirmed EVM bytecode at all nine EVM addresses, an executable Solana program, a nonzero NEAR code hash and the Aptos `splitter` module ABI. Casper identifiers below are cross-checked against the public [`AiFinPay/casper-contract`](https://github.com/AiFinPay/casper-contract) mainnet deployment record, including its install deploy and published real-value settlement evidence. The wallet still does not enable mainnet signing merely because code is present: bytecode/source equivalence, ABI or IDL, proxy implementation, admin and pause roles, supported tokens, treasury destinations and test vectors must pass an independent release gate first.
 
 Operational note: the owner-supplied `https://polygon-rpc.com` endpoint returned `tenant disabled` during verification. The registry uses `https://polygon.drpc.org`, the current endpoint listed in Polygon's developer documentation and already configured as the wallet's primary Polygon read provider.
 
 ## RPC verification snapshot — 2026-07-18
 
+- Casper's public project record identifies contract `9903a5e3…f019`, package `7ad34a20…a375` and install deploy `0d560c62…0386` on Casper 2.0 mainnet. The wallet uses `query_balance` for CSPR reads; the configured cspr.cloud node requires a server-side `CASPER_RPC_AUTH` value.
 - Polygon, Avalanche, Arbitrum, BNB Chain, Base and Unichain returned 10,637 bytes of `AiFinPayCore` bytecode on their expected chain IDs. Their bytecode hashes are not identical, so release equivalence still needs build-artifact and immutable/configuration review.
 - Optimism and XRPL EVM returned identical 2,866-byte `B2BSplitter` bytecode.
 - BOT Chain returned 3,704 bytes of `B2BSplitter` bytecode. This differs from the Optimism/XRPL EVM deployment and must be treated as a separate contract version during review.
@@ -19,6 +20,7 @@ These checks confirm code presence, not business-logic correctness, ownership sa
 
 | Network | Chain ID | Deployment | Public identifier | RPC | Explorer |
 |---|---:|---|---|---|---|
+| Casper | — | Contract (package `hash-7ad34a204952eef63d5dcf5159fb7d009e85dea4f49cbdf73dde190652dfa375`) | `9903a5e3948e799196df54b17270bc6769338ac1cc36c9eb47e113f88d23f019` | `https://node.mainnet.cspr.cloud/rpc` (Authorization required) | `https://cspr.live/contract/9903a5e3948e799196df54b17270bc6769338ac1cc36c9eb47e113f88d23f019` |
 | Polygon | 137 | AiFinPayCore | `0x1071Bb1C827223D3D0115B0e1f114adAb9ceB94f` | `https://polygon.drpc.org` | `https://polygonscan.com` |
 | Avalanche C-Chain | 43114 | AiFinPayCore | `0x147d8ff8c027e24303b5b99cbc8843e1d3df94cc` | `https://api.avax.network/ext/bc/C/rpc` | `https://snowtrace.io` |
 | Arbitrum One | 42161 | AiFinPayCore | `0x147d8ff8c027e24303b5b99cbc8843e1d3df94cc` | `https://arb1.arbitrum.io/rpc` | `https://arbiscan.io` |
