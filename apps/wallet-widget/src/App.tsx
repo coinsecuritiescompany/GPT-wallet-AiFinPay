@@ -47,6 +47,8 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
   const networkOptions = Object.entries(networkRegistry) as [MainnetId, (typeof MAINNET_NETWORKS)[MainnetId]][];
   const [networkOpen, setNetworkOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const networkScrollRef = useRef<HTMLDivElement>(null);
+  const [networkScroll, setNetworkScroll] = useState({ top: 0, max: 0 });
   // The loaded summary is for one network at a time; keep the selector in sync with it.
   const summaryNetwork = (summary.selectedNetwork ?? "").toLowerCase();
   const [selectedNetwork, setSelectedNetwork] = useState<MainnetId>(() => {
@@ -87,6 +89,37 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [networkOpen]);
+  const updateNetworkScroll = useCallback(() => {
+    const element = networkScrollRef.current;
+    if (!element) return;
+    setNetworkScroll({
+      top: Math.round(element.scrollTop),
+      max: Math.max(0, Math.round(element.scrollHeight - element.clientHeight))
+    });
+  }, []);
+  useEffect(() => {
+    if (!networkOpen) return;
+    const frame = window.requestAnimationFrame(updateNetworkScroll);
+    window.addEventListener("resize", updateNetworkScroll);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateNetworkScroll);
+    };
+  }, [networkOpen, updateNetworkScroll]);
+  const scrollNetworksTo = (requestedTop: number, smooth = false) => {
+    const element = networkScrollRef.current;
+    if (!element) return;
+    const max = Math.max(0, element.scrollHeight - element.clientHeight);
+    const top = Math.max(0, Math.min(requestedTop, max));
+    if (smooth && typeof element.scrollTo === "function") element.scrollTo({ top, behavior: "smooth" });
+    else element.scrollTop = top;
+    setNetworkScroll({ top: Math.round(top), max: Math.round(max) });
+  };
+  const pageNetworks = (direction: -1 | 1) => {
+    const element = networkScrollRef.current;
+    if (!element) return;
+    scrollNetworksTo(element.scrollTop + direction * Math.max(160, element.clientHeight * 0.72), true);
+  };
   return <main className="card"><Header badge={isMainnet ? "MAINNET" : "BETA"} />
     {data.connection && <div className="connected-strip"><span>✓ Wallet connected</span><strong>{short(connectedAddress)}</strong></div>}
     <section className="wallet-top">
@@ -120,11 +153,28 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
       <section className="network-sheet" role="dialog" aria-modal="true" aria-labelledby="network-sheet-title" onClick={(event) => event.stopPropagation()}>
         <div className="network-sheet-handle" />
         <div className="network-sheet-head"><div><span className="eyebrow">13 MAINNETS</span><h2 id="network-sheet-title">Choose network</h2></div><button type="button" aria-label="Close network selector" onClick={() => setNetworkOpen(false)}>×</button></div>
-        <div className="network-sheet-scroll" data-testid="network-sheet-scroll">
-          <div className="network-options" role="listbox" aria-label="AiFinPay wallet networks">{networkOptions.map(([id, item]) => <button type="button" role="option" aria-selected={selectedNetwork === id} className={selectedNetwork === id ? "selected" : ""} key={id} onClick={() => void selectNetwork(id)}>
-            <NetworkLogo id={id as NetworkLogoId} /><span className="network-option-copy"><strong>{item.label}</strong><small>{item.family} · {item.nativeToken}{item.chainId ? ` · Chain ${item.chainId}` : ""}</small></span><span className={`network-availability ${item.enabledForSigning ? "live" : "ready"}`}>{item.enabledForSigning ? "SEND + BALANCE" : "LIVE BALANCE"}</span>{selectedNetwork === id && <b aria-hidden="true">✓</b>}
-          </button>)}</div>
-          <p>One Vault controls five chain-family addresses across 13 networks. EVM networks intentionally share one account; balances remain network-specific. Your keys never leave your device.</p>
+        <div className="network-sheet-body">
+          <div id="network-sheet-scroll" ref={networkScrollRef} className="network-sheet-scroll" data-testid="network-sheet-scroll" onScroll={updateNetworkScroll}>
+            <div className="network-options" role="listbox" aria-label="AiFinPay wallet networks">{networkOptions.map(([id, item]) => <button type="button" role="option" aria-selected={selectedNetwork === id} className={selectedNetwork === id ? "selected" : ""} key={id} onClick={() => void selectNetwork(id)}>
+              <NetworkLogo id={id as NetworkLogoId} /><span className="network-option-copy"><strong>{item.label}</strong><small>{item.family} · {item.nativeToken}{item.chainId ? ` · Chain ${item.chainId}` : ""}</small></span><span className={`network-availability ${item.enabledForSigning ? "live" : "ready"}`}>{item.enabledForSigning ? "SEND + BALANCE" : "LIVE BALANCE"}</span>{selectedNetwork === id && <b aria-hidden="true">✓</b>}
+            </button>)}</div>
+            <p>One Vault controls five chain-family addresses across 13 networks. EVM networks intentionally share one account; balances remain network-specific. Your keys never leave your device.</p>
+          </div>
+          <div className="network-scroll-controls" aria-label="Network list scroll controls">
+            <button type="button" aria-label="Scroll networks up" disabled={networkScroll.top <= 0} onClick={() => pageNetworks(-1)}>▲</button>
+            <input
+              type="range"
+              aria-label="Scroll networks"
+              aria-controls="network-sheet-scroll"
+              min="0"
+              max={Math.max(1, networkScroll.max)}
+              step="1"
+              value={Math.min(networkScroll.top, Math.max(1, networkScroll.max))}
+              disabled={networkScroll.max <= 0}
+              onChange={(event) => scrollNetworksTo(Number(event.currentTarget.value))}
+            />
+            <button type="button" aria-label="Scroll networks down" disabled={networkScroll.max <= 0 || networkScroll.top >= networkScroll.max - 1} onClick={() => pageNetworks(1)}>▼</button>
+          </div>
         </div>
       </section>
     </div>}
