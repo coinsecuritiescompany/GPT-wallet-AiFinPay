@@ -11,7 +11,7 @@ services:
       - key: AIFINPAY_WALLET_MODE
         value: mainnet
       - key: AIFINPAY_SIGNING_NETWORKS
-        value: POLYGON
+        value: POLYGON,AVALANCHE,ARBITRUM,BNB,BASE,UNICHAIN,OPTIMISM
       - key: POLYGON_RPC_URLS
         value: https://polygon.drpc.org,https://polygon.publicnode.com
       - key: APP_ENV
