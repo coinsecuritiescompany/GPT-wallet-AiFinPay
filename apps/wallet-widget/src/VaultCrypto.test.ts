@@ -19,6 +19,15 @@ describe("local Vault cryptography", () => {
     await expect(decryptVault(vault, "correct horse battery staple")).resolves.toBe(mnemonic);
   });
 
+  it("treats visually equivalent Unicode passwords consistently across mobile keyboards", async () => {
+    const composed = "sécuré-wallet-2026";
+    const decomposed = "se\u0301cure\u0301-wallet-2026";
+    expect(composed).not.toBe(decomposed);
+    const vault = await encryptVault(mnemonic, decomposed);
+    await expect(decryptVault(vault, composed)).resolves.toBe(mnemonic);
+    await expect(decryptVault(vault, decomposed)).resolves.toBe(mnemonic);
+  });
+
   it("uses fresh salt and IV while deriving stable public addresses", async () => {
     const first = await encryptVault(mnemonic, "correct horse battery staple");
     const second = await encryptVault(mnemonic, "correct horse battery staple");
