@@ -86,6 +86,16 @@ describe("AiFinPay wallet widget", () => {
     expect(screen.getByTestId("network-logo-botchain")).toBeInTheDocument();
     expect(screen.getByTestId("network-logo-casper")).toBeInTheDocument();
     expect(screen.getAllByTestId(/^network-logo-/)).toHaveLength(14);
+    const scrollArea = screen.getByTestId("network-sheet-scroll");
+    Object.defineProperties(scrollArea, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1000 }
+    });
+    scrollArea.scrollTop = 240;
+    fireEvent.scroll(scrollArea);
+    expect(screen.getByRole("slider", { name: "Scroll networks" })).toHaveValue("240");
+    fireEvent.change(screen.getByRole("slider", { name: "Scroll networks" }), { target: { value: "600" } });
+    expect(scrollArea.scrollTop).toBe(600);
     fireEvent.click(screen.getByRole("option", { name: /Solana/ }));
     expect(call).toHaveBeenCalledWith("get_wallet_summary", { network: "SOLANA" });
     expect(screen.getByRole("button", { name: "Choose network. Current: Solana" })).toBeInTheDocument();
