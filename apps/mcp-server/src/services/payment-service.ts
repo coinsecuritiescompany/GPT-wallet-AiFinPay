@@ -22,6 +22,10 @@ export interface PrepareTransferInput {
 }
 
 function validatedRecipient(network: NetworkId, value: string): string {
+  if (network === "POLYGON_AMOY") {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(value)) throw new AppError("INVALID_ADDRESS", "Expected a valid EVM recipient address.");
+    return value.toLowerCase();
+  }
   const spec = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
   if (!spec) throw new AppError("NETWORK_UNSUPPORTED", `${network} is not supported.`);
   if (spec.family === "EVM") {
@@ -128,11 +132,6 @@ export class PaymentService {
     return { intent, explorerUrl: execution.explorerUrl };
   }
 
-  /**
-   * Validate that an intent can still be signed and broadcast by the Vault:
-   * owned by the user, not blocked, not already sent, and not expired. Returns
-   * the intent so the caller can build the unsigned transaction from it.
-   */
   intentForSigning(userId: string, intentId: string): PaymentIntent {
     const intent = this.requireIntent(intentId, userId);
     if (intent.status === "BLOCKED") throw new AppError("POLICY_BLOCKED", "This payment was blocked by policy and cannot be signed.");
@@ -146,11 +145,6 @@ export class PaymentService {
     return intent;
   }
 
-  /**
-   * Record the result of a Vault-signed broadcast. The transaction has already
-   * been sent on-chain by the time this runs, so it always records the hash and
-   * walks the intent forward through the legal transitions to its final state.
-   */
   finalizeVaultBroadcast(userId: string, intentId: string, execution: ExecutionResult): { intent: PaymentIntent; explorerUrl: string } {
     const intent = this.requireIntent(intentId, userId);
     const forward: PaymentIntent["status"][] =
