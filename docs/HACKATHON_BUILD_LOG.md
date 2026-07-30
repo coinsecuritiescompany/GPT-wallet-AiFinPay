@@ -53,7 +53,7 @@ The target repository had no implementation before the Build Week work began. No
 
 - extended the Vault (SLIP-44 coin type 506, ed25519) to derive a Casper account public key alongside the existing families, and surfaced its address in the Receive view and network selector;
 - taught `MainnetAdapter` to read native CSPR via the `query_balance` JSON-RPC method keyed on the account's main purse public key (9 decimals), with an unfunded/no-purse account resolving to a zero balance instead of an error;
-- added a per-network Authorization header (`CASPER_RPC_AUTH`) because Casper mainnet nodes are API-key gated; the key is provided by environment/deployment configuration and never committed;
+- added an optional per-network Authorization header (`CASPER_RPC_AUTH`) for authenticated providers such as cspr.cloud; the default public Casper mainnet node is keyless, and provider keys are never committed;
 - adapter unit tests cover the CSPR read (auth header + `query_balance` shape) and the unfunded-account zero case with a mocked RPC;
 - links back to the AiFinPay settlement contract already live on Casper mainnet (`contract-9903a5e3…`); signing/broadcasting remain disabled. Live CSPR read is to be confirmed on the deployment, which holds the provider key.
 

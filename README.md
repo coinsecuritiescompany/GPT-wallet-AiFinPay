@@ -34,9 +34,9 @@ The checked-in production Blueprint uses an always-on Render service with persis
 | Local AES-256-GCM encrypted Vault | Beta | Password and ciphertext remain on the device |
 | EVM, Solana, NEAR, Aptos and Casper address derivation | Beta | OAuth tokens contain public addresses only |
 | One-time ChatGPT connection and automatic dashboard opening | Beta | OAuth 2.1 authorization code flow with PKCE |
-| 13-mainnet selector | Live | Every selected network returns read-only balances from public RPC (Casper via a key-gated node) |
+| 13-mainnet selector | Live | Every selected network returns read-only balances from mainnet RPC; Casper defaults to its keyless public node |
 | Public mainnet deployment registry | Declared, verification pending | 13 contract/program identifiers; wallet-transfer capability is gated separately per network |
-| Native + USDC balances across all 13 mainnets | Live, read-only | Native token on all 13 (Casper CSPR via `query_balance` on a key-gated node); verified Circle USDC on 6 EVM chains (Polygon, Avalanche, Arbitrum, BNB, Base, Optimism) |
+| Native + USDC balances across all 13 mainnets | Live, read-only | Native token on all 13 (Casper CSPR via `query_balance`); verified Circle USDC on 6 EVM chains (Polygon, Avalanche, Arbitrum, BNB, Base, Optimism) |
 | Receive flow | Live | Casper-first network picker, QR code, full public address and one-tap copy |
 | Cross-chain swap | Ready after provider key | Live ChangeNOW asset list, quote, explicit order confirmation, Vault-derived payout/refund addresses, deposit QR and status tracking |
 | Agent policy engine and audit trail | Reference implementation | Server-side deterministic rules |
@@ -128,7 +128,7 @@ Never paste a recovery phrase, private key, Vault password or API credential int
 
 ## Configuration
 
-The checked-in `.env.example` contains placeholders only. Read-only mainnet mode (all 13 networks) is the default; demo mode must be selected explicitly. Each network falls back to public RPC defaults and can be overridden with a `<NETWORK>_RPC_URLS` variable. Casper mainnet nodes are API-key gated: set `CASPER_RPC_URLS` and `CASPER_RPC_AUTH` (the provider key sent as the Authorization header) to enable CSPR balance reads.
+The checked-in `.env.example` contains placeholders only. Read-only mainnet mode (all 13 networks) is the default; demo mode must be selected explicitly. Each network falls back to public RPC defaults and can be overridden with a `<NETWORK>_RPC_URLS` variable. Casper defaults to the keyless public mainnet node. A faster `cspr.cloud` endpoint can be selected with `CASPER_RPC_URLS`, with its server-side key stored only in `CASPER_RPC_AUTH`.
 
 ```dotenv
 AIFINPAY_WALLET_MODE=mainnet

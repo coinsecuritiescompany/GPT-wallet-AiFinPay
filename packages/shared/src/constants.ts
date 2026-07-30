@@ -44,7 +44,7 @@ export interface MainnetNetwork {
 // at every identifier, but registry entries stay "DEPLOYED_UNVERIFIED" until
 // ABI/source, proxy/admin roles and release equivalence are reviewed as well.
 export const MAINNET_NETWORKS = {
-  casper: { label: "Casper", family: "CASPER", chainId: null, nativeToken: "CSPR", rpcUrl: "https://node.mainnet.cspr.cloud/rpc", explorerBaseUrl: "https://cspr.live", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "Contract", address: "9903a5e3948e799196df54b17270bc6769338ac1cc36c9eb47e113f88d23f019", status: "DEPLOYED_UNVERIFIED" } },
+  casper: { label: "Casper", family: "CASPER", chainId: null, nativeToken: "CSPR", rpcUrl: "https://node.mainnet.casper.network/rpc", explorerBaseUrl: "https://cspr.live", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "Contract", address: "9903a5e3948e799196df54b17270bc6769338ac1cc36c9eb47e113f88d23f019", status: "DEPLOYED_UNVERIFIED" } },
   polygon: { label: "Polygon", family: "EVM", chainId: 137, nativeToken: "POL", rpcUrl: "https://polygon.drpc.org", explorerBaseUrl: "https://polygonscan.com", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "AiFinPayCore", address: "0x1071Bb1C827223D3D0115B0e1f114adAb9ceB94f", status: "DEPLOYED_UNVERIFIED" } },
   avalanche: { label: "Avalanche C-Chain", family: "EVM", chainId: 43114, nativeToken: "AVAX", rpcUrl: "https://api.avax.network/ext/bc/C/rpc", explorerBaseUrl: "https://snowtrace.io", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "AiFinPayCore", address: "0x147d8ff8c027e24303b5b99cbc8843e1d3df94cc", status: "DEPLOYED_UNVERIFIED" } },
   arbitrum: { label: "Arbitrum One", family: "EVM", chainId: 42161, nativeToken: "ETH", rpcUrl: "https://arb1.arbitrum.io/rpc", explorerBaseUrl: "https://arbiscan.io", mode: "FULL_CORE", enabledForSigning: false, deployment: { name: "AiFinPayCore", address: "0x147d8ff8c027e24303b5b99cbc8843e1d3df94cc", status: "DEPLOYED_UNVERIFIED" } },
@@ -91,19 +91,20 @@ export interface LiveNetworkSpec {
   native: NativeTokenSpec;
   usdc?: UsdcSpec;
   isTestnet?: boolean;
-  // True when the default RPC endpoint needs an Authorization key (set via
-  // <NETWORK>_RPC_AUTH). Used by Casper's key-gated mainnet node.
+  // True when a default RPC endpoint needs an Authorization key (set via
+  // <NETWORK>_RPC_AUTH). Optional authenticated provider overrides can also
+  // use the header even when the public default is keyless.
   requiresAuth?: boolean;
 }
 
 export const LIVE_NETWORKS = {
   // Casper 2.0 mainnet. Balances read via the query_balance JSON-RPC method
-  // (main_purse_under_public_key). Casper's reliable mainnet RPC is API-key
-  // gated, so set CASPER_RPC_URLS + CASPER_RPC_AUTH in the deployment env; the
-  // default endpoint below expects an Authorization key. CSPR uses 9 decimals
-  // (motes). No canonical USDC on Casper — native CSPR only.
+  // (main_purse_under_public_key). The default endpoint is the keyless public
+  // Casper node. CASPER_RPC_URLS can point to cspr.cloud and CASPER_RPC_AUTH
+  // supplies its Authorization value. CSPR uses 9 decimals (motes). No
+  // canonical USDC on Casper — native CSPR only.
   CASPER: { label: "Casper", family: "CASPER", chainId: null, addressField: "casper", explorerBaseUrl: "https://cspr.live",
-    rpcUrls: ["https://node.mainnet.cspr.cloud/rpc"], requiresAuth: true,
+    rpcUrls: ["https://node.mainnet.casper.network/rpc"],
     native: { symbol: "CSPR", decimals: 9 } },
   POLYGON: { label: "Polygon", family: "EVM", chainId: 137, addressField: "evm", explorerBaseUrl: "https://polygonscan.com",
     rpcUrls: ["https://polygon.drpc.org", "https://polygon-bor-rpc.publicnode.com"],

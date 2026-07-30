@@ -21,7 +21,7 @@ services:
       - key: ETHERSCAN_API_KEY
         sync: false
       - key: CASPER_RPC_URLS
-        sync: false
+        value: https://node.mainnet.casper.network/rpc
       - key: CASPER_RPC_AUTH
         sync: false
       - key: CHANGENOW_API_KEY
