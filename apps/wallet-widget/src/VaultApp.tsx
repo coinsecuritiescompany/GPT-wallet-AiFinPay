@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { generateMnemonic, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import type { VaultSignRequest } from "@aifinpay/shared";
-import { decryptVault, encryptVault, normalizeVaultPassword, parseEncryptedVault, signEvmTransaction, signSolanaTransaction, type EncryptedVault } from "./vault-crypto.js";
+import { decryptVault, encryptVault, normalizeVaultPassword, parseEncryptedVault, signAptosTransaction, signEvmTransaction, signNearTransaction, signSolanaTransaction, type EncryptedVault } from "./vault-crypto.js";
 
 const STORAGE_KEY = "aifinpay.vault.v1";
 type Step = "welcome" | "phrase" | "verify" | "password" | "restore" | "unlock" | "ready" | "sign" | "signed";
@@ -12,9 +12,6 @@ const short = (value: string) => `${value.slice(0, 8)}…${value.slice(-6)}`;
 
 export function VaultApp() {
   const stored = useMemo(() => { try { return parseEncryptedVault(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")); } catch { return null; } }, []);
-  // A returning device already holds an encrypted vault. Require an unlock
-  // (proof the person controls the password) before the wallet can be re-shared
-  // with ChatGPT — re-auth on device-change, per the onboarding spec.
   const [step, setStep] = useState<Step>(stored ? "unlock" : "welcome");
   const [mnemonic, setMnemonic] = useState("");
   const [wordCount, setWordCount] = useState<12 | 15>(12);
@@ -36,8 +33,6 @@ export function VaultApp() {
   const [signResult, setSignResult] = useState<{ transactionHash: string; explorerUrl: string } | null>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const confirmPasswordInputRef = useRef<HTMLInputElement>(null);
-  // Held only in a ref so the decrypted phrase is never surfaced in React state
-  // or the render tree; wiped immediately after the transaction is signed.
   const mnemonicRef = useRef("");
   useEffect(() => {
     const clear = () => { mnemonicRef.current = ""; };
@@ -55,9 +50,6 @@ export function VaultApp() {
     setError(""); setStep("password");
   };
   const save = async (source = mnemonic) => {
-    // Android password managers and WebViews can update the visible DOM value
-    // without dispatching the React change event. Read the field itself at
-    // submit time so the value the person sees is the value used for encryption.
     const submittedPassword = passwordInputRef.current?.value ?? password;
     const submittedConfirmation = confirmPasswordInputRef.current?.value ?? confirmPassword;
     if (normalizeVaultPassword(submittedPassword).length < 12) { setError("Use at least 12 characters."); return; }
@@ -73,8 +65,7 @@ export function VaultApp() {
       await decryptVault(persisted, submittedPassword);
       savedAndVerified = true;
       setVault(persisted); setMnemonic(""); setRestoreText(""); setPassword(""); setConfirmPassword(""); setStep("ready");
-    }
-    catch { setError("The vault could not be created on this device."); }
+    } catch { setError("The vault could not be created on this device."); }
     finally {
       if (!savedAndVerified && previous !== localStorage.getItem(STORAGE_KEY)) {
         if (previous === null) localStorage.removeItem(STORAGE_KEY);
@@ -97,11 +88,7 @@ export function VaultApp() {
     try { phrase = await decryptVault(vault, submittedPassword); }
     catch { setError("Incorrect password or damaged vault."); setBusy(false); return; }
     setPassword("");
-    // Normal unlock — reconnect / view. No signing requested.
     if (!signToken) { setStep("ready"); setBusy(false); return; }
-    // Signing handoff: fetch the exact transaction the server prepared for this
-    // intent, show it for review, and keep the phrase in memory only until it is
-    // signed on the next tap.
     try {
       const response = await fetch("/api/vault/sign-request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: signToken }) });
       if (!response.ok) throw new Error("SIGN_REQUEST_FAILED");
@@ -115,13 +102,18 @@ export function VaultApp() {
     if (!signRequest || !signToken || !mnemonicRef.current) return;
     setBusy(true); setError("");
     try {
-      const signed = signRequest.transaction.kind === "SOLANA"
-        ? signSolanaTransaction(mnemonicRef.current, signRequest.transaction)
-        : await signEvmTransaction(mnemonicRef.current, signRequest.transaction);
+      const transaction = signRequest.transaction;
+      const signed = transaction.kind === "SOLANA"
+        ? signSolanaTransaction(mnemonicRef.current, transaction)
+        : transaction.kind === "NEAR"
+          ? signNearTransaction(mnemonicRef.current, transaction)
+          : transaction.kind === "APTOS"
+            ? signAptosTransaction(mnemonicRef.current, transaction)
+            : await signEvmTransaction(mnemonicRef.current, transaction);
       const response = await fetch("/api/vault/submit-signed", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: signRequest.submissionToken, signedTransaction: signed }) });
       const result = await response.json() as { transactionHash?: string; explorerUrl?: string; message?: string };
       if (!response.ok || !result.transactionHash) throw new Error(result.message ?? "The transaction could not be broadcast.");
-      mnemonicRef.current = ""; // wipe the key from memory
+      mnemonicRef.current = "";
       setSignResult({ transactionHash: result.transactionHash, explorerUrl: result.explorerUrl ?? "" });
       setStep("signed");
     } catch (err) { setError(err instanceof Error ? err.message : "The transaction could not be broadcast. Please try again."); }
