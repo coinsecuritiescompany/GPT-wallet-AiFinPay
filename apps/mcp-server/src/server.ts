@@ -5,7 +5,7 @@ import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MAINNET_NETWORKS } from "@aifinpay/shared";
 import type { AppContext } from "./context.js";
-import { registerTools, WIDGET_URI } from "./tools/register-tools.js";
+import { LEGACY_WIDGET_URIS, registerTools, WIDGET_URI } from "./tools/register-tools.js";
 
 export function widgetHtml(): string {
   const candidates = [
@@ -47,23 +47,25 @@ export function createMcpServer(ctx: AppContext): McpServer {
   }, {
     instructions: "Never request or expose private keys, recovery phrases, or Vault passwords. User-specific tools require OAuth 2.1 with PKCE and receive public wallet addresses only. Open authenticated users directly in the wallet dashboard. Balances are read from live mainnet RPCs. Transfers are available only on networks explicitly marked signing-enabled and require review plus local Vault signing."
   });
-  registerAppResource(server, "aifinpay-wallet-widget", WIDGET_URI, {}, async () => ({
-    contents: [{
-      uri: WIDGET_URI,
-      mimeType: RESOURCE_MIME_TYPE,
-      text: widgetHtml(),
-      _meta: {
-        ui: {
-          prefersBorder: true,
-          csp: { connectDomains: [], resourceDomains: [], redirectDomains: explorerOrigins },
-          ...(ctx.config.widgetDomain.startsWith("https://") ? { domain: ctx.config.widgetDomain } : {})
-        },
-        "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, plus locally approved transfers on enabled EVM networks.",
-        "openai/widgetPrefersBorder": true,
-        "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: [...explorerOrigins, "https://amoy.polygonscan.com"] }
-      }
-    }]
-  }));
+  for (const [index, resourceUri] of [WIDGET_URI, ...LEGACY_WIDGET_URIS].entries()) {
+    registerAppResource(server, `aifinpay-wallet-widget-${index}`, resourceUri, {}, async () => ({
+      contents: [{
+        uri: resourceUri,
+        mimeType: RESOURCE_MIME_TYPE,
+        text: widgetHtml(),
+        _meta: {
+          ui: {
+            prefersBorder: true,
+            csp: { connectDomains: [], resourceDomains: [], redirectDomains: explorerOrigins },
+            ...(ctx.config.widgetDomain.startsWith("https://") ? { domain: ctx.config.widgetDomain } : {})
+          },
+          "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, plus locally approved transfers on enabled EVM networks.",
+          "openai/widgetPrefersBorder": true,
+          "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: [...explorerOrigins, "https://amoy.polygonscan.com"] }
+        }
+      }]
+    }));
+  }
   registerTools(server, ctx);
   return server;
 }
