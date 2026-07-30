@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { AgentPolicy, AuditEvent, PaymentIntent } from "@aifinpay/shared";
 
 export type WalletPairingResult = "connected" | "already_connected" | "invalid";
-export interface StoredWalletAddresses { evm: string; solana: string; near: string; aptos: string; casper: string }
+export interface StoredWalletAddresses extends Record<string, string> { evm: string; solana: string; near: string; aptos: string; casper: string }
 
 function sameAddresses(left: StoredWalletAddresses, right: StoredWalletAddresses): boolean {
   return (["evm", "solana", "near", "aptos", "casper"] as const).every((key) => {
