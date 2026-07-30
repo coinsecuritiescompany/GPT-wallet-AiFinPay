@@ -59,6 +59,38 @@ describe("Vault pairing UI", () => {
     expect(JSON.stringify(body)).not.toContain(vault.salt);
   });
 
+  it("uses the password visibly autofilled by an Android WebView even without a React change event", async () => {
+    localStorage.setItem("aifinpay.vault.v1", JSON.stringify(vault));
+    render(<VaultApp />);
+    const input = screen.getByLabelText("Password") as HTMLInputElement;
+    input.value = "correct horse battery";
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(screen.getByText("AiFinPay Wallet")).toBeInTheDocument());
+  });
+
+  it("reads back and verifies a newly saved vault before accepting it", async () => {
+    render(<VaultApp />);
+    fireEvent.click(screen.getByRole("button", { name: "Restore existing wallet" }));
+    fireEvent.change(screen.getByPlaceholderText("Enter 12 or 15 words separated by spaces"), {
+      target: { value: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct horse battery" } });
+    fireEvent.change(screen.getByLabelText("Repeat password"), { target: { value: "correct horse battery" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create encrypted vault" }));
+    await waitFor(() => expect(screen.getByText("AiFinPay Wallet")).toBeInTheDocument());
+    const stored = JSON.parse(localStorage.getItem("aifinpay.vault.v1") ?? "null") as EncryptedVault | null;
+    expect(stored?.cipher).toBe("AES-GCM");
+    expect(stored?.ciphertext).not.toContain("abandon");
+
+    cleanup();
+    render(<VaultApp />);
+    expect(screen.getByText("Unlock your wallet")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct horse battery" } });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(screen.getByText("AiFinPay Wallet")).toBeInTheDocument());
+  });
+
   it("shows random recovery words only after wallet creation", () => {
     render(<VaultApp />);
     expect(screen.queryByText("Polygon")).not.toBeInTheDocument();
