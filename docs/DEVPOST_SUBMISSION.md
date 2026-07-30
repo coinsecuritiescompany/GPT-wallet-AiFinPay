@@ -46,7 +46,7 @@ Human decisions included selecting non-custodial recovery, choosing Polygon as t
 
 - Non-custodial local 12/15-word Vault with encrypted browser storage.
 - 13 derived address networks across EVM, Solana, NEAR, Aptos and Casper families.
-- Read-only balances across all 13 mainnet networks (native token everywhere, including Casper CSPR via a key-gated node; verified Circle USDC on 6 EVM chains).
+- Read-only balances across all 13 mainnet networks (native token everywhere, including Casper CSPR through its separate non-EVM JSON-RPC handler; verified Circle USDC on 6 EVM chains).
 - 19 focused MCP tools and a versioned ChatGPT widget.
 - Deterministic policy/state-machine reference layer and tamper-evident audit chain.
 - OAuth 2.1 with PKCE and local EIP-1559 signing on explicitly enabled networks.

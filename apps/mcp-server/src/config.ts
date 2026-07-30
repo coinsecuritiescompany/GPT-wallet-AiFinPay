@@ -38,8 +38,8 @@ function loadMainnetRpcUrls(env: NodeJS.ProcessEnv, polygonRpcUrls: string[]): R
 }
 
 // Optional per-network RPC Authorization header, e.g. CASPER_RPC_AUTH="<api-key>".
-// Needed for key-gated nodes (Casper mainnet). Sent verbatim as the
-// Authorization header on that network's JSON-RPC requests.
+// Needed when CASPER_RPC_URLS uses a key-gated provider such as cspr.cloud.
+// Sent verbatim as the Authorization header on that network's requests.
 function loadMainnetRpcAuth(env: NodeJS.ProcessEnv): Record<string, string> {
   const auth: Record<string, string> = {};
   for (const networkId of Object.keys(LIVE_NETWORKS)) {

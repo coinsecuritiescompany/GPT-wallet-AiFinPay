@@ -31,7 +31,7 @@ None was present. Searches for private keys, seed phrases, signing, WalletConnec
 
 The repository was scaffolded as an npm workspace monorepo with a TypeScript MCP server, single-file React widget, shared schemas, deterministic demo ledger, backend adapter contract, policy engine, SQLite persistence, audit chain, tests and submission documentation.
 
-Subsequent work added a separate locally encrypted non-custodial Vault, address derivation across 13 mainnet networks, OAuth 2.1 with PKCE, mainnet balances across all 13 networks (native token everywhere, including Casper CSPR via a key-gated node; verified Circle USDC on 6 EVM chains), per-network EVM transfer gates, local signing, signed-byte validation, mobile bundle/scroll optimization and public repository governance/security controls.
+Subsequent work added a separate locally encrypted non-custodial Vault, address derivation across 13 mainnet networks, OAuth 2.1 with PKCE, mainnet balances across all 13 networks (native token everywhere, including Casper CSPR through its separate non-EVM JSON-RPC path; verified Circle USDC on 6 EVM chains), per-network EVM transfer gates, local signing, signed-byte validation, mobile bundle/scroll optimization and public repository governance/security controls.
 
 ## Reuse boundary
 
