@@ -11,7 +11,10 @@ import { AppContext } from "./context.js";
 import type { PublicWalletAddresses } from "./auth/oauth-provider.js";
 import { landingPage, privacyPage, supportPage, termsPage } from "./public-pages.js";
 import { appIconPng, createMcpServer, vaultHtml, widgetHtml } from "./server.js";
-import { validateSignedEvmTransaction, validateSignedSolanaTransaction } from "./services/signed-transaction-validator.js";
+import {
+  validateSignedAptosTransaction, validateSignedEvmTransaction,
+  validateSignedNearTransaction, validateSignedSolanaTransaction
+} from "./services/signed-transaction-validator.js";
 import { WIDGET_URI } from "./tools/register-tools.js";
 
 const config = loadConfig();
@@ -23,8 +26,6 @@ const resourceUrl = new URL(config.publicUrl);
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-// Widget resources are single-file HTML bundles. Compressing JSON/HTML cuts
-// the hosted transfer from roughly 350 KB to roughly one third of that size.
 app.use(compression({ threshold: 1_024 }));
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -140,7 +141,6 @@ app.post("/api/oauth/approve", rateLimit("oauth-approve", 20, 10 * 60_000), expr
   }
 });
 
-// Kept temporarily so an already-open v7 Vault page fails safely instead of uploading secrets.
 app.post("/api/vault/pair", rateLimit("vault-pair", 30, 10 * 60_000), express.json({ limit: "16kb", type: "application/json" }), (req, res) => {
   const token = typeof req.body?.token === "string" ? req.body.token : "";
   const addresses = validAddresses(req.body?.addresses);
@@ -149,10 +149,6 @@ app.post("/api/vault/pair", rateLimit("vault-pair", 30, 10 * 60_000), express.js
   res.status(result === "invalid" ? 410 : 200).json(result === "invalid" ? { error: "PAIRING_EXPIRED_OR_UNKNOWN" } : { connected: true, alreadyConnected: result === "already_connected" });
 });
 
-// --- Non-custodial signing handoff -----------------------------------------
-// The Vault holds the on-device key. The server hands out exact unsigned bytes,
-// validates the returned signature against the connected public address and only
-// then broadcasts. A disabled network can never move funds through these routes.
 function signingEnabledFor(network: string): boolean {
   return config.walletMode === "mainnet" && (config.signingNetworks as string[]).includes(network);
 }
@@ -185,7 +181,7 @@ app.post("/api/vault/sign-request", rateLimit("sign-request", 30, 10 * 60_000), 
   } catch (error) { respondSigningError(res, error); }
 });
 
-app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000), express.json({ limit: "16kb", type: "application/json" }), async (req, res) => {
+app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000), express.json({ limit: "32kb", type: "application/json" }), async (req, res) => {
   try {
     const token = typeof req.body?.token === "string" ? req.body.token : "";
     const signedTransaction = typeof req.body?.signedTransaction === "string" ? req.body.signedTransaction : "";
@@ -198,16 +194,17 @@ app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000)
 
     if (claims.transaction.kind === "SOLANA") {
       if (intent.network !== "SOLANA") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
-      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed Solana transaction is missing or malformed.");
-      const connectedAddress = connection.addresses.solana;
-      if (!connectedAddress) throw new AppError("WALLET_NOT_FOUND", "Connect your Solana wallet before signing.", 404);
-      validateSignedSolanaTransaction(connectedAddress, signedTransaction, claims.transaction);
+      validateSignedSolanaTransaction(connection.addresses.solana, signedTransaction, claims.transaction);
+    } else if (claims.transaction.kind === "NEAR") {
+      if (intent.network !== "NEAR") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      validateSignedNearTransaction(connection.addresses.near, signedTransaction, claims.transaction);
+    } else if (claims.transaction.kind === "APTOS") {
+      if (intent.network !== "APTOS") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      validateSignedAptosTransaction(connection.addresses.aptos, signedTransaction, claims.transaction);
     } else {
-      if (intent.network === "SOLANA") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (["SOLANA", "NEAR", "APTOS"].includes(intent.network)) throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
       if (!/^0x[0-9a-fA-F]{2,}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is missing or malformed.");
-      const connectedAddress = connection.addresses.evm;
-      if (!connectedAddress) throw new AppError("WALLET_NOT_FOUND", "Connect your EVM wallet before signing.", 404);
-      await validateSignedEvmTransaction(connectedAddress, signedTransaction, claims.transaction);
+      await validateSignedEvmTransaction(connection.addresses.evm, signedTransaction, claims.transaction);
     }
 
     if (!context.adapter.broadcastRawTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot broadcast transactions.", 501);

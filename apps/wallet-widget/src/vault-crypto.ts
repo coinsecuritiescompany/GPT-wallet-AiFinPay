@@ -3,12 +3,15 @@ import { mnemonicToSeedSync } from "@scure/bip39";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha3_256 } from "@noble/hashes/sha3.js";
-import { sha512 } from "@noble/hashes/sha2.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import bs58 from "bs58";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  serializeNearSignedTransaction,
   serializeSolanaSignedTransaction,
+  type UnsignedAptosTransaction,
   type UnsignedEvmTransaction,
+  type UnsignedNearTransaction,
   type UnsignedSolanaTransaction
 } from "@aifinpay/shared";
 
@@ -18,6 +21,7 @@ export interface EncryptedVault { version: 1; cipher: "AES-GCM"; kdf: "PBKDF2-SH
 const bytesToHex = (bytes: Uint8Array) => Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+const hexToBytes = (value: string) => Uint8Array.from(value.replace(/^0x/, "").match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? []);
 export const normalizeVaultPassword = (password: string) => password.normalize("NFKC");
 
 export function parseEncryptedVault(value: unknown): EncryptedVault | null {
@@ -77,19 +81,10 @@ export function deriveAddresses(mnemonic: string): VaultAddresses {
   const nearPublic = ed25519.getPublicKey(slip10(seed, [44, 397, 0]));
   const aptosPublic = ed25519.getPublicKey(slip10(seed, [44, 637, 0, 0, 0]));
   const aptosAuthKey = sha3_256(new Uint8Array([...aptosPublic, 0]));
-  // Casper (SLIP-44 coin type 506). Account public key = ed25519 algorithm tag
-  // "01" prefixed to the raw public key hex — the identifier used to receive
-  // CSPR and to look up the account's main purse balance.
   const casperPublic = ed25519.getPublicKey(slip10(seed, [44, 506, 0, 0, 0]));
   return { evm, solana: bs58.encode(solanaPublic), near: bytesToHex(nearPublic), aptos: `0x${bytesToHex(aptosAuthKey)}`, casper: `01${bytesToHex(casperPublic)}` };
 }
 
-/**
- * Sign an EIP-1559 transaction locally with the vault's EVM key. The mnemonic is
- * decrypted only in memory for this call; the returned value is the serialized
- * signed transaction (0x hex) that the server broadcasts. The private key never
- * leaves this function.
- */
 export async function signEvmTransaction(mnemonic: string, unsigned: UnsignedEvmTransaction): Promise<string> {
   const seed = mnemonicToSeedSync(mnemonic);
   const evmNode = HDKey.fromMasterSeed(seed).derive("m/44'/60'/0'/0/0");
@@ -108,13 +103,34 @@ export async function signEvmTransaction(mnemonic: string, unsigned: UnsignedEvm
   });
 }
 
-/** Sign the exact server-built Solana message and return one base64 wire transaction. */
 export function signSolanaTransaction(mnemonic: string, unsigned: UnsignedSolanaTransaction): string {
   const seed = mnemonicToSeedSync(mnemonic);
   const solanaSeed = slip10(seed, [44, 501, 0, 0]);
   const message = base64ToBytes(unsigned.messageBase64);
   const signature = ed25519.sign(message, solanaSeed);
   return bytesToBase64(serializeSolanaSignedTransaction(message, signature));
+}
+
+export function signNearTransaction(mnemonic: string, unsigned: UnsignedNearTransaction): string {
+  const seed = mnemonicToSeedSync(mnemonic);
+  const nearSeed = slip10(seed, [44, 397, 0]);
+  const transaction = base64ToBytes(unsigned.transactionBase64);
+  const signature = ed25519.sign(sha256(transaction), nearSeed);
+  return bytesToBase64(serializeNearSignedTransaction(transaction, signature));
+}
+
+export function signAptosTransaction(mnemonic: string, unsigned: UnsignedAptosTransaction): string {
+  const seed = mnemonicToSeedSync(mnemonic);
+  const aptosSeed = slip10(seed, [44, 637, 0, 0, 0]);
+  const publicKey = ed25519.getPublicKey(aptosSeed);
+  const signingMessage = hexToBytes(unsigned.signingMessageHex);
+  if (!signingMessage.length) throw new Error("The Aptos signing message is invalid.");
+  const signature = ed25519.sign(signingMessage, aptosSeed);
+  return JSON.stringify({
+    request: unsigned.request,
+    publicKeyHex: `0x${bytesToHex(publicKey)}`,
+    signatureHex: `0x${bytesToHex(signature)}`
+  });
 }
 
 export async function encryptVault(mnemonic: string, password: string): Promise<EncryptedVault> {
@@ -145,9 +161,6 @@ async function decryptVaultWithPassword(vault: EncryptedVault, password: string)
 }
 
 export async function decryptVault(vault: EncryptedVault, password: string): Promise<string> {
-  // Try the exact input first so vaults created by older releases remain
-  // unlockable. Then try the Unicode-normalized form used by new vaults. This
-  // avoids Android keyboard/IME composition differences changing the PBKDF2 key.
   const normalized = normalizeVaultPassword(password);
   const candidates = normalized === password ? [password] : [password, normalized];
   let lastError: unknown;

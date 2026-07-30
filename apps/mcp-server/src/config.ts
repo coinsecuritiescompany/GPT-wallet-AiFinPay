@@ -14,8 +14,6 @@ export interface AppConfig {
   polygonRpcUrls: string[];
   mainnetRpcUrls: Record<string, string[]>;
   mainnetRpcAuth: Record<string, string>;
-  // Networks on which local Vault signing + broadcast is switched on, from
-  // AIFINPAY_SIGNING_NETWORKS. Empty = every network stays send-locked.
   signingNetworks: NetworkId[];
   changeNowApiKey?: string;
 }
@@ -24,8 +22,6 @@ function parseRpcList(raw: string | undefined): string[] {
   return (raw ?? "").split(",").map((value) => value.trim()).filter(Boolean);
 }
 
-// Optional per-network RPC overrides, e.g. BASE_RPC_URLS="https://a,https://b".
-// Any network left unset falls back to the public defaults in LIVE_NETWORKS.
 function loadMainnetRpcUrls(env: NodeJS.ProcessEnv, polygonRpcUrls: string[]): Record<string, string[]> {
   const overrides: Record<string, string[]> = {};
   for (const networkId of Object.keys(LIVE_NETWORKS)) {
@@ -36,9 +32,6 @@ function loadMainnetRpcUrls(env: NodeJS.ProcessEnv, polygonRpcUrls: string[]): R
   return overrides;
 }
 
-// Optional per-network RPC Authorization header, e.g. CASPER_RPC_AUTH="<api-key>".
-// Needed when CASPER_RPC_URLS uses a key-gated provider such as cspr.cloud.
-// Sent verbatim as the Authorization header on that network's requests.
 function loadMainnetRpcAuth(env: NodeJS.ProcessEnv): Record<string, string> {
   const auth: Record<string, string> = {};
   for (const networkId of Object.keys(LIVE_NETWORKS)) {
@@ -48,14 +41,14 @@ function loadMainnetRpcAuth(env: NodeJS.ProcessEnv): Record<string, string> {
   return auth;
 }
 
-// Only chain families with a complete local signer + exact validator may be
-// enabled. Unknown, NEAR, Aptos and Casper values are ignored and stay locked.
+// Only chain families with a complete local signer, exact validator and
+// broadcaster may be enabled. Casper remains ignored until its deploy codec is complete.
 function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
   const registry = LIVE_NETWORKS as Record<string, LiveNetworkSpec>;
   const requested = parseRpcList(env.AIFINPAY_SIGNING_NETWORKS);
   return requested.filter((id): id is NetworkId => {
     const family = registry[id]?.family;
-    return family === "EVM" || family === "SOLANA";
+    return family === "EVM" || family === "SOLANA" || family === "NEAR" || family === "APTOS";
   });
 }
 

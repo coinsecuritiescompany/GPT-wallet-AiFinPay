@@ -36,6 +36,15 @@ function validatedRecipient(network: NetworkId, value: string): string {
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) throw new AppError("INVALID_ADDRESS", "Expected a valid Solana recipient address.");
     return value;
   }
+  if (spec.family === "NEAR") {
+    const normalized = value.toLowerCase();
+    if (!/^[a-z0-9._-]{2,64}$/.test(normalized)) throw new AppError("INVALID_ADDRESS", "Expected a valid NEAR account ID.");
+    return normalized;
+  }
+  if (spec.family === "APTOS") {
+    if (!/^0x[a-fA-F0-9]{1,64}$/.test(value)) throw new AppError("INVALID_ADDRESS", "Expected a valid Aptos address.");
+    return `0x${value.slice(2).toLowerCase().padStart(64, "0")}`;
+  }
   throw new AppError("SIGNING_FAILED", `Direct sending on ${spec.label} is not implemented yet.`, 501);
 }
 

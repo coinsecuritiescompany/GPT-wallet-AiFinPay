@@ -4,12 +4,12 @@ import { DatabaseSync } from "node:sqlite";
 import type { AgentPolicy, AuditEvent, PaymentIntent } from "@aifinpay/shared";
 
 export type WalletPairingResult = "connected" | "already_connected" | "invalid";
-export interface StoredWalletAddresses { evm: string; solana: string; near: string; aptos: string; casper: string }
+export interface StoredWalletAddresses extends Record<string, string> { evm: string; solana: string; near: string; aptos: string; casper: string }
 
-function sameAddresses(left: Record<string, string>, right: StoredWalletAddresses): boolean {
+function sameAddresses(left: StoredWalletAddresses, right: StoredWalletAddresses): boolean {
   return (["evm", "solana", "near", "aptos", "casper"] as const).every((key) => {
-    const a = left[key] ?? "";
-    const b = right[key] ?? "";
+    const a = left[key];
+    const b = right[key];
     return key === "evm" ? a.toLowerCase() === b.toLowerCase() : a === b;
   });
 }
@@ -50,11 +50,6 @@ export class Store {
 
   close(): void { this.db.close(); }
 
-  /**
-   * Atomically records an OAuth authorization-code hash. The primary key makes
-   * a second exchange fail even after a process restart or across two service
-   * instances sharing the same persistent SQLite database.
-   */
   consumeOAuthAuthorizationCode(codeHash: string, expiresAtUnixSeconds: number, now = new Date()): boolean {
     const nowIso = now.toISOString();
     this.db.prepare("DELETE FROM oauth_authorization_codes WHERE expires_at<=?").run(nowIso);
@@ -167,9 +162,9 @@ export class Store {
     }
   }
 
-  getWalletConnection(userId: string): { addresses: Record<string, string>; connectedAt: string } | null {
+  getWalletConnection(userId: string): { addresses: StoredWalletAddresses; connectedAt: string } | null {
     const row = this.db.prepare("SELECT addresses_json,connected_at FROM wallet_connections WHERE user_id=?").get(userId) as { addresses_json: string; connected_at: string } | undefined;
-    return row ? { addresses: JSON.parse(row.addresses_json) as Record<string, string>, connectedAt: row.connected_at } : null;
+    return row ? { addresses: JSON.parse(row.addresses_json) as StoredWalletAddresses, connectedAt: row.connected_at } : null;
   }
 
   upsertWalletConnection(userId: string, addresses: StoredWalletAddresses, connectedAt = new Date().toISOString()): void {
