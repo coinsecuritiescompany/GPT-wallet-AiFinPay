@@ -9,7 +9,7 @@ import { ConfirmationService } from "./services/confirmation-service.js";
 import { SigningRequestService } from "./services/signing-request-service.js";
 import { PaymentService } from "./services/payment-service.js";
 import { PolicyService } from "./services/policy-service.js";
-import { MainnetAdapter } from "./services/mainnet-adapter.js";
+import { UniversalMainnetAdapter } from "./services/universal-mainnet-adapter.js";
 import { SwapService } from "./services/swap-service.js";
 import { Store } from "./storage/store.js";
 
@@ -38,7 +38,7 @@ export class AppContext {
     this.confirmations = new ConfirmationService(config.sessionSecret);
     this.signing = new SigningRequestService(config.sessionSecret);
     this.adapter = config.walletMode === "mainnet"
-      ? new MainnetAdapter(this.store, config.mainnetRpcUrls, config.mainnetRpcAuth)
+      ? new UniversalMainnetAdapter(this.store, config.mainnetRpcUrls, config.mainnetRpcAuth)
       : new DemoLedgerAdapter();
     this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter);
     this.policies = new PolicyService(this.store, this.audit, this.confirmations);
