@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { AppContext } from "../src/context.js";
 import { createMcpServer } from "../src/server.js";
-import { WIDGET_URI } from "../src/tools/register-tools.js";
+import { LEGACY_WIDGET_URIS, WIDGET_URI } from "../src/tools/register-tools.js";
 import type { AppConfig } from "../src/config.js";
 
 const config: AppConfig = {
@@ -86,6 +86,14 @@ describe("MCP tool registration", () => {
       }
     });
     expect(resource.contents[0]?.text).toContain("<!doctype html>");
+    for (const legacyUri of LEGACY_WIDGET_URIS) {
+      const legacyResource = await client.readResource({ uri: legacyUri });
+      expect(legacyResource.contents[0]).toMatchObject({
+        uri: legacyUri,
+        mimeType: RESOURCE_MIME_TYPE
+      });
+      expect(legacyResource.contents[0]?.text).toContain("<!doctype html>");
+    }
     const result = await client.callTool({ name: "get_wallet_summary", arguments: {} });
     expect((result.structuredContent as any).summary.balances[0].formatted).toBe("2543.68");
     await client.close(); await server.close();
