@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { createHash } from "node:crypto";
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { sha3_256 } from "@noble/hashes/sha3.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,9 +9,13 @@ import {
 } from "@aifinpay/shared";
 import { decryptVault, deriveAddresses, encryptVault, parseEncryptedVault, signAptosTransaction, signNearTransaction } from "./vault-crypto.js";
 
-// Public BIP-39 test vector. It must never receive real funds.
 const mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const secondMnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
+const bytesToBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
+const base64ToBytes = (value: string): Uint8Array => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+const bytesToHex = (bytes: Uint8Array): string => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+const hexToBytes = (value: string): Uint8Array => Uint8Array.from(value.replace(/^0x/, "").match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? []);
 
 describe("local Vault cryptography", () => {
   it("encrypts recovery material and decrypts it only with the password", async () => {
@@ -81,16 +85,16 @@ describe("local Vault cryptography", () => {
     const transaction = buildNearTransferTransaction(addresses.near, addresses.near, 2n, "receiver.near", blockHash, 1000n);
     const unsigned: UnsignedNearTransaction = {
       kind: "NEAR",
-      transactionBase64: Buffer.from(transaction).toString("base64"),
+      transactionBase64: bytesToBase64(transaction),
       transactionHash: encodeBase58(sha256(transaction)),
       nonce: "2",
       blockHash,
       feeReserveYocto: "10000000000000000000000"
     };
-    const serialized = Buffer.from(signNearTransaction(mnemonic, unsigned), "base64");
+    const serialized = base64ToBytes(signNearTransaction(mnemonic, unsigned));
     const parsed = parseNearSignedTransaction(serialized, transaction.length);
-    expect(Buffer.from(parsed.transaction)).toEqual(Buffer.from(transaction));
-    expect(ed25519.verify(parsed.signature, sha256(transaction), Buffer.from(addresses.near, "hex"))).toBe(true);
+    expect(parsed.transaction).toEqual(transaction);
+    expect(ed25519.verify(parsed.signature, sha256(transaction), hexToBytes(addresses.near))).toBe(true);
   });
 
   it("signs Aptos canonical bytes and returns a public key matching the Vault auth key", () => {
@@ -108,18 +112,18 @@ describe("local Vault cryptography", () => {
         arguments: [`0x${"e".repeat(64)}`, "1000"]
       }
     };
-    const message = Buffer.from("aptos canonical signing bytes");
+    const message = new TextEncoder().encode("aptos canonical signing bytes");
     const unsigned: UnsignedAptosTransaction = {
       kind: "APTOS",
       request,
-      signingMessageHex: `0x${message.toString("hex")}`,
+      signingMessageHex: `0x${bytesToHex(message)}`,
       maxFeeOctas: "200000"
     };
     const signed = JSON.parse(signAptosTransaction(mnemonic, unsigned)) as { request: AptosUnsignedRequest; publicKeyHex: string; signatureHex: string };
     expect(signed.request).toEqual(request);
-    const publicKey = Buffer.from(signed.publicKeyHex.slice(2), "hex");
-    const authKey = createHash("sha3-256").update(Buffer.concat([publicKey, Buffer.from([0])])).digest("hex");
+    const publicKey = hexToBytes(signed.publicKeyHex);
+    const authKey = bytesToHex(sha3_256(Uint8Array.from([...publicKey, 0])));
     expect(`0x${authKey}`).toBe(addresses.aptos);
-    expect(ed25519.verify(Buffer.from(signed.signatureHex.slice(2), "hex"), message, publicKey)).toBe(true);
+    expect(ed25519.verify(hexToBytes(signed.signatureHex), message, publicKey)).toBe(true);
   });
 });
