@@ -42,6 +42,7 @@ Expose port `8787` through a temporary HTTPS tunnel only for development. Produc
 ## Review checks
 
 - `/health` reports `walletMode: mainnet` and `blockchainAdapter: MAINNET`.
+- MCP Inspector lists 24 tools, explicit safety annotations and a non-null `outputSchema` for every tool.
 - The widget badge says `MAINNET`, not Amoy or Demo.
 - Balance data corresponds to the OAuth-linked address for the selected network.
 - Casper is first in the network registry and matches the public `AiFinPay/casper-contract` mainnet deployment.
