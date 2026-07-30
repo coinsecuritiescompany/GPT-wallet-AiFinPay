@@ -27,10 +27,18 @@ npm audit --audit-level=high --omit=dev
 - Polygon RPC fallback, POL balance and native USDC `balanceOf` reads;
 - mainnet send refusal;
 - ChatGPT widget rendering and local Vault flows.
+- bounded MCP Apps bridge initialization and compatibility fallback behavior;
+- widget size-change notifications so ChatGPT can resize the iframe;
+- custom overlay scrollbar visibility and scrolling independent of native mobile scrollbar support;
+- full current-network label at narrow widths.
 
 ## Manual release checks
 
 - Open the widget on desktop and mobile ChatGPT.
+- On a physical mobile device, verify the full current network name is visible on the dashboard.
+- Open the network selector and independently test finger scrolling, dragging/tapping the blue right-side track, and the ▲/▼ buttons.
+- Leave the service idle long enough to measure a real cold open, then repeat while warm; record both timings.
+- Simulate or interrupt the `ui/initialize` handshake and confirm the wallet shows a retryable error or uses the compatibility tool call instead of spinning forever.
 - Verify the service reports `walletMode: mainnet` and `blockchainAdapter: MAINNET`.
 - Pair a disposable Vault and confirm only public addresses reach the server.
 - Compare POL/USDC balances with an independent Polygon explorer.

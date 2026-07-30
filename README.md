@@ -116,8 +116,8 @@ npx @modelcontextprotocol/inspector@latest --server-url http://localhost:8787/mc
 
 ## Connect from ChatGPT
 
-1. Open **Settings → Security and login** in ChatGPT and turn on **Developer mode**.
-2. Open **ChatGPT Plugins**, select **+**, and create an `AiFinPay Wallet` connection to `https://aifinpay-wallet-chatgpt.onrender.com/mcp`.
+1. Open **Settings → Apps & Connectors → Advanced settings** in ChatGPT and turn on **Developer mode**. Some clients still label this area **Plugins**.
+2. Create a developer-mode app named `AiFinPay Wallet` and connect it to `https://aifinpay-wallet-chatgpt.onrender.com/mcp`.
 3. Review the discovered tools, start a new conversation, add the connection from the tools menu, and ask: `Open my AiFinPay wallet`.
 4. On first use only, choose **Connect**, create or restore the local Vault, and approve sharing its public addresses.
 5. Future `Open my AiFinPay wallet` requests go directly to the same user-specific Vault dashboard until the app is disconnected in ChatGPT.
@@ -185,6 +185,9 @@ GPT-5.6 is the conversational orchestration layer: it interprets wallet requests
 
 > [!NOTE]
 > The Devpost form still requires the repository owner to add the public YouTube URL and the `/feedback` Codex Session ID. These values are intentionally not invented or exposed here.
+
+> [!WARNING]
+> Build Week submissions closed on July 21, 2026 at 5:00 PM PT. Devpost instructed entrants not to change submitted materials during judging. The exact repository state at that deadline is preserved on [`build-week-submission-2026-07-21`](https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay/tree/build-week-submission-2026-07-21). Later commits are clearly identified as post-submission reliability and product fixes.
 
 ## Quality gates
 

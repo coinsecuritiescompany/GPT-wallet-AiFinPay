@@ -18,8 +18,12 @@
     "@aifinpay/shared": "*",
     "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "compression": "^1.8.1",
     "express": "^5.2.1",
     "viem": "^2.55.2",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/compression": "^1.8.1"
   }
 }

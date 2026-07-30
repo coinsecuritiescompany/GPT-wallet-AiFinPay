@@ -13,7 +13,11 @@ All notable public changes are documented here. The project follows the principl
 
 ### Changed
 
-- ChatGPT widget resource bumped to `wallet-v10` to invalidate the previous host cache after the Casper-first, Receive and swap release.
+- ChatGPT widget resource bumped to `wallet-v14` to invalidate previous host caches after the mobile stability release.
+- Mobile wallet layout gives the selected network a full-width row so long names remain visible.
+- The network scrollbar is an always-visible overlay inside the selector rather than a right-side grid column that a mobile host can clip.
+- Widget HTML and MCP JSON responses are compressed in production.
+- `open_wallet` is again the single primary model-visible entry point; temporary aliases remain app-only for cached conversations.
 - Production Docker images now prune all development-only packages after the verified build.
 
 ### Fixed
@@ -23,6 +27,8 @@ All notable public changes are documented here. The project follows the principl
 - Swap quotes now resolve ticker/network pairs against ChangeNOW's active registry; client-supplied names or images cannot alter the signed order.
 - Polygon swap funding no longer substitutes native POL for an unsupported token.
 - Vault unlock now verifies that every stored public address still matches the locally encrypted mnemonic.
+- A mobile MCP Apps handshake can no longer leave `Opening your wallet…` spinning forever: initialization and tool calls have bounded timeouts and fall back to ChatGPT's compatible tool API when available.
+- The widget reports intrinsic size changes to compatible hosts so expanded views and network sheets receive the correct iframe height.
 
 ## [0.3.0] - 2026-07-30
 

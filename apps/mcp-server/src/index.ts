@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
+import compression from "compression";
 import express, { type Request, type Response } from "express";
 import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
@@ -22,6 +23,9 @@ const resourceUrl = new URL(config.publicUrl);
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
+// Widget resources are single-file HTML bundles. Compressing JSON/HTML cuts
+// the hosted transfer from roughly 350 KB to roughly one third of that size.
+app.use(compression({ threshold: 1_024 }));
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 function rateLimit(name: string, max: number, windowMs: number) {
