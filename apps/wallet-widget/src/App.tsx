@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type SwapAsset, type TransactionRecord } from "@aifinpay/shared";
 import { QRCodeSVG } from "qrcode.react";
 import { bridge } from "./bridge/mcp-bridge.js";
@@ -48,7 +48,9 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
   const [networkOpen, setNetworkOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const networkScrollRef = useRef<HTMLDivElement>(null);
-  const [networkScroll, setNetworkScroll] = useState({ top: 0, max: 0 });
+  const networkTrackRef = useRef<HTMLDivElement>(null);
+  const networkScrollDragging = useRef(false);
+  const [networkScroll, setNetworkScroll] = useState({ top: 0, max: 0, viewport: 1, content: 1 });
   // The loaded summary is for one network at a time; keep the selector in sync with it.
   const summaryNetwork = (summary.selectedNetwork ?? "").toLowerCase();
   const [selectedNetwork, setSelectedNetwork] = useState<MainnetId>(() => {
@@ -94,7 +96,9 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
     if (!element) return;
     setNetworkScroll({
       top: Math.round(element.scrollTop),
-      max: Math.max(0, Math.round(element.scrollHeight - element.clientHeight))
+      max: Math.max(0, Math.round(element.scrollHeight - element.clientHeight)),
+      viewport: Math.max(1, Math.round(element.clientHeight)),
+      content: Math.max(1, Math.round(element.scrollHeight))
     });
   }, []);
   useEffect(() => {
@@ -113,13 +117,58 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
     const top = Math.max(0, Math.min(requestedTop, max));
     if (smooth && typeof element.scrollTo === "function") element.scrollTo({ top, behavior: "smooth" });
     else element.scrollTop = top;
-    setNetworkScroll({ top: Math.round(top), max: Math.round(max) });
+    setNetworkScroll({
+      top: Math.round(top),
+      max: Math.round(max),
+      viewport: Math.max(1, Math.round(element.clientHeight)),
+      content: Math.max(1, Math.round(element.scrollHeight))
+    });
   };
   const pageNetworks = (direction: -1 | 1) => {
     const element = networkScrollRef.current;
     if (!element) return;
     scrollNetworksTo(element.scrollTop + direction * Math.max(160, element.clientHeight * 0.72), true);
   };
+  const scrollNetworksFromPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const track = networkTrackRef.current;
+    if (!track || networkScroll.max <= 0) return;
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientY - rect.top) / Math.max(1, rect.height)));
+    scrollNetworksTo(ratio * networkScroll.max);
+  };
+  const startNetworkScrollDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    networkScrollDragging.current = true;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    scrollNetworksFromPointer(event);
+    event.preventDefault();
+  };
+  const moveNetworkScrollDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!networkScrollDragging.current) return;
+    scrollNetworksFromPointer(event);
+    event.preventDefault();
+  };
+  const stopNetworkScrollDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    networkScrollDragging.current = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+  const keyboardNetworkScroll = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const element = networkScrollRef.current;
+    if (!element) return;
+    const page = Math.max(160, element.clientHeight * 0.72);
+    const destinations: Record<string, number> = {
+      ArrowUp: element.scrollTop - 64,
+      ArrowDown: element.scrollTop + 64,
+      PageUp: element.scrollTop - page,
+      PageDown: element.scrollTop + page,
+      Home: 0,
+      End: networkScroll.max
+    };
+    if (!(event.key in destinations)) return;
+    event.preventDefault();
+    scrollNetworksTo(destinations[event.key]!, true);
+  };
+  const networkThumbSize = networkScroll.max > 0 ? Math.max(14, Math.min(100, networkScroll.viewport / networkScroll.content * 100)) : 100;
+  const networkThumbTop = networkScroll.max > 0 ? networkScroll.top / networkScroll.max * (100 - networkThumbSize) : 0;
   return <main className="card"><Header badge={isMainnet ? "MAINNET" : "BETA"} />
     {data.connection && <div className="connected-strip"><span>✓ Wallet connected</span><strong>{short(connectedAddress)}</strong></div>}
     <section className="wallet-top">
@@ -162,17 +211,23 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
           </div>
           <div className="network-scroll-controls" aria-label="Network list scroll controls">
             <button type="button" aria-label="Scroll networks up" disabled={networkScroll.top <= 0} onClick={() => pageNetworks(-1)}>▲</button>
-            <input
-              type="range"
+            <div
+              ref={networkTrackRef}
+              className="network-scroll-track"
+              role="scrollbar"
               aria-label="Scroll networks"
               aria-controls="network-sheet-scroll"
-              min="0"
-              max={Math.max(1, networkScroll.max)}
-              step="1"
-              value={Math.min(networkScroll.top, Math.max(1, networkScroll.max))}
-              disabled={networkScroll.max <= 0}
-              onChange={(event) => scrollNetworksTo(Number(event.currentTarget.value))}
-            />
+              aria-orientation="vertical"
+              aria-valuemin={0}
+              aria-valuemax={Math.max(0, networkScroll.max)}
+              aria-valuenow={Math.min(networkScroll.top, networkScroll.max)}
+              tabIndex={0}
+              onKeyDown={keyboardNetworkScroll}
+              onPointerDown={startNetworkScrollDrag}
+              onPointerMove={moveNetworkScrollDrag}
+              onPointerUp={stopNetworkScrollDrag}
+              onPointerCancel={stopNetworkScrollDrag}
+            ><span className="network-scroll-thumb" style={{ height: `${networkThumbSize}%`, top: `${networkThumbTop}%` }} /></div>
             <button type="button" aria-label="Scroll networks down" disabled={networkScroll.max <= 0 || networkScroll.top >= networkScroll.max - 1} onClick={() => pageNetworks(1)}>▼</button>
           </div>
         </div>
