@@ -83,14 +83,9 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
   };
   useEffect(() => {
     if (!networkOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setNetworkOpen(false); };
     window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
-    };
+    return () => window.removeEventListener("keydown", closeOnEscape);
   }, [networkOpen]);
   return <main className="card"><Header badge={isMainnet ? "MAINNET" : "BETA"} />
     {data.connection && <div className="connected-strip"><span>✓ Wallet connected</span><strong>{short(connectedAddress)}</strong></div>}
@@ -110,6 +105,7 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
       <button className="network" type="button" aria-haspopup="dialog" aria-expanded={networkOpen} aria-label={`Choose network. Current: ${networkLabel}`} onClick={() => setNetworkOpen(true)}><NetworkLogo id={selectedNetwork as NetworkLogoId} />{networkLabel}<span className="chevron">⌄</span></button>
     </section>
     <div className="address"><span>{connectedAddress ? short(connectedAddress) : summary.maskedAddress}</span><span>{isLiveBalance ? (usdc && native ? `${native.formatted} ${native.token} gas` : "Live balance") : switching ? "Loading…" : isMainnet ? `${network.nativeToken} balance pending` : "Demo/Testnet"}</span></div>
+    {network.family === "EVM" && <p className="address-family-note">This is your shared EVM account. Polygon, Arbitrum and the other EVM networks use the same public address, while balances and transactions stay network-specific.</p>}
     <nav className="actions">
       <button onClick={() => onNavigate(canSend ? "transfer-form" : "mainnet-signing-locked")}><b>↗</b>Send</button>
       <button onClick={() => onNavigate("receive")}><b>↙</b>Receive</button>
@@ -124,10 +120,12 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
       <section className="network-sheet" role="dialog" aria-modal="true" aria-labelledby="network-sheet-title" onClick={(event) => event.stopPropagation()}>
         <div className="network-sheet-handle" />
         <div className="network-sheet-head"><div><span className="eyebrow">13 MAINNETS</span><h2 id="network-sheet-title">Choose network</h2></div><button type="button" aria-label="Close network selector" onClick={() => setNetworkOpen(false)}>×</button></div>
-        <div className="network-options" role="listbox" aria-label="AiFinPay wallet networks">{networkOptions.map(([id, item]) => <button type="button" role="option" aria-selected={selectedNetwork === id} className={selectedNetwork === id ? "selected" : ""} key={id} onClick={() => void selectNetwork(id)}>
-          <NetworkLogo id={id as NetworkLogoId} /><span className="network-option-copy"><strong>{item.label}</strong><small>{item.family} · {item.nativeToken}{item.chainId ? ` · Chain ${item.chainId}` : ""}</small></span><span className={`network-availability ${item.enabledForSigning ? "live" : "ready"}`}>{item.enabledForSigning ? "SEND + BALANCE" : "LIVE BALANCE"}</span>{selectedNetwork === id && <b aria-hidden="true">✓</b>}
-        </button>)}</div>
-        <p>One Vault controls all 13 addresses. Every network returns live read-only balances from public RPC; your keys never leave your device.</p>
+        <div className="network-sheet-scroll" data-testid="network-sheet-scroll">
+          <div className="network-options" role="listbox" aria-label="AiFinPay wallet networks">{networkOptions.map(([id, item]) => <button type="button" role="option" aria-selected={selectedNetwork === id} className={selectedNetwork === id ? "selected" : ""} key={id} onClick={() => void selectNetwork(id)}>
+            <NetworkLogo id={id as NetworkLogoId} /><span className="network-option-copy"><strong>{item.label}</strong><small>{item.family} · {item.nativeToken}{item.chainId ? ` · Chain ${item.chainId}` : ""}</small></span><span className={`network-availability ${item.enabledForSigning ? "live" : "ready"}`}>{item.enabledForSigning ? "SEND + BALANCE" : "LIVE BALANCE"}</span>{selectedNetwork === id && <b aria-hidden="true">✓</b>}
+          </button>)}</div>
+          <p>One Vault controls five chain-family addresses across 13 networks. EVM networks intentionally share one account; balances remain network-specific. Your keys never leave your device.</p>
+        </div>
       </section>
     </div>}
   </main>;
@@ -186,6 +184,7 @@ function Receive({ data, onBack }: { data: WidgetData; onBack: () => void }) {
       <div className="receive-chain"><NetworkLogo id={selectedNetwork as NetworkLogoId} /><div><strong>{network.label}</strong><span>{network.family === "EVM" ? "EVM address" : `${network.nativeToken} address`}</span></div></div>
       {address ? <><div className="qr-shell"><QRCodeSVG value={address} size={196} level="M" marginSize={2} title={`${network.label} wallet address QR code`} /></div><code className="receive-address">{address}</code><button className="primary copy-address" onClick={() => void copy(selectedNetwork, address)}>{copied === selectedNetwork ? "Copied ✓" : "Copy wallet address"}</button></> : <div className="empty compact"><strong>Connect your Vault first</strong><span>Your public address will appear here after the wallet is connected.</span></div>}
     </section>
+    {network.family === "EVM" && <p className="evm-receive-note">EVM networks use the same account address. Always select the correct network when sending assets to this address.</p>}
     <p className="mainnet-warning">Mainnet addresses can hold assets with real financial value. Send a small test amount first.</p>
   </main>;
 }
