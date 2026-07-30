@@ -33,4 +33,9 @@ describe("deployment config", () => {
     const config = loadConfig({ AIFINPAY_WALLET_MODE: "demo" });
     expect(config.walletMode).toBe("demo");
   });
+
+  it("keeps the swap provider key server-side and optional", () => {
+    expect(loadConfig({}).changeNowApiKey).toBeUndefined();
+    expect(loadConfig({ CHANGENOW_API_KEY: "partner-secret" }).changeNowApiKey).toBe("partner-secret");
+  });
 });

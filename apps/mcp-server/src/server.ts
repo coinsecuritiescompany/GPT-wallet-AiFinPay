@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { MAINNET_NETWORKS } from "@aifinpay/shared";
 import type { AppContext } from "./context.js";
 import { registerTools, WIDGET_URI } from "./tools/register-tools.js";
 
@@ -35,15 +36,16 @@ export function appIconPng(): Buffer | undefined {
 
 export function createMcpServer(ctx: AppContext): McpServer {
   const appOrigin = ctx.config.widgetDomain.replace(/\/$/, "");
+  const explorerOrigins = [...new Set(Object.values(MAINNET_NETWORKS).map((network) => new URL(network.explorerBaseUrl).origin))];
   const server = new McpServer({
     name: "aifinpay-wallet",
     title: "AiFinPay Wallet",
-    version: "0.2.0",
-    description: "Non-custodial AiFinPay wallet interface for live Polygon mainnet balances, receiving, policies, and locally approved agent payments.",
+    version: "0.3.0",
+    description: "Non-custodial AiFinPay wallet for live balances and receiving across 13 mainnets, with per-network local signing, agent limits, and audit trails.",
     websiteUrl: appOrigin,
     icons: [{ src: `${appOrigin}/icon.png`, mimeType: "image/png", sizes: ["256x256"] }]
   }, {
-    instructions: "Never request or expose private keys, recovery phrases, or Vault passwords. User-specific tools require OAuth 2.1 with PKCE and receive public wallet addresses only. Open authenticated users directly in the wallet dashboard. Polygon mainnet balances are read from live RPC. Mainnet broadcasting remains locked until local Vault signing is enabled."
+    instructions: "Never request or expose private keys, recovery phrases, or Vault passwords. User-specific tools require OAuth 2.1 with PKCE and receive public wallet addresses only. Open authenticated users directly in the wallet dashboard. Balances are read from live mainnet RPCs. Transfers are available only on networks explicitly marked signing-enabled and require review plus local Vault signing."
   });
   registerAppResource(server, "aifinpay-wallet-widget", WIDGET_URI, {}, async () => ({
     contents: [{
@@ -53,12 +55,12 @@ export function createMcpServer(ctx: AppContext): McpServer {
       _meta: {
         ui: {
           prefersBorder: true,
-          csp: { connectDomains: [], resourceDomains: [] },
+          csp: { connectDomains: [], resourceDomains: [], redirectDomains: explorerOrigins },
           ...(ctx.config.widgetDomain.startsWith("https://") ? { domain: ctx.config.widgetDomain } : {})
         },
-        "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing the connected user's live Polygon mainnet balances and receive addresses.",
+        "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, plus locally approved transfers on enabled EVM networks.",
         "openai/widgetPrefersBorder": true,
-        "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: ["https://polygonscan.com", "https://amoy.polygonscan.com"] }
+        "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: [...explorerOrigins, "https://amoy.polygonscan.com"] }
       }
     }]
   }));

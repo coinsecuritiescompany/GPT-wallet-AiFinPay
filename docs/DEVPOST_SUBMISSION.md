@@ -14,11 +14,11 @@ A non-custodial wallet interface built for conversations and AI agents.
 
 ## Inspiration
 
-AI agents can call APIs and complete workflows, but payment authorization still relies on interfaces designed only for people or on dangerously broad signing credentials. We wanted a wallet that feels native to ChatGPT while keeping recovery and future signing authority with the user.
+AI agents can call APIs and complete workflows, but payment authorization still relies on interfaces designed only for people or on dangerously broad signing credentials. We wanted a wallet that feels native to ChatGPT while keeping recovery and signing authority with the user.
 
 ## What it does
 
-AiFinPay opens a wallet interface inside ChatGPT, creates or restores a local encrypted Vault, pairs public addresses, reads live POL and native USDC balances from Polygon mainnet and presents Receive, network and policy views. Mainnet sending is intentionally blocked until per-user authentication and reviewed local signing are complete.
+AiFinPay opens a wallet interface inside ChatGPT, creates or restores a local encrypted Vault, links public addresses through OAuth, reads live balances across 13 mainnets and presents Receive, network and policy views. On operator-enabled EVM networks, the user reviews and signs the exact transaction locally; the server rejects signed bytes that differ from the reviewed payment.
 
 ## How it works
 
@@ -30,9 +30,9 @@ GPT-5.6 is the conversational orchestration layer: it recognizes wallet intents,
 
 ## How Codex was used
 
-Codex audited the initial empty repository, researched Apps SDK requirements, created the TypeScript monorepo, implemented MCP tools and the React interface, added the local Vault and Polygon adapter, diagnosed mobile bundle size, split heavy cryptography from the widget, wrote and ran tests, deployed to Render and reconciled security/legal/submission documentation with actual behavior.
+Codex audited the initial empty repository, researched Apps SDK requirements, created the TypeScript monorepo, implemented MCP tools and the React interface, added the local Vault and 13-network adapters, diagnosed mobile bundle and scrolling issues, split heavy cryptography from the widget, hardened transfer validation, wrote and ran tests, deployed to Render and reconciled security/legal/submission documentation with actual behavior.
 
-Human decisions included selecting non-custodial recovery, choosing Polygon as the first live chain, keeping mainnet sending disabled until safe authentication/signing exists and separating the public reference repository from the future private production implementation.
+Human decisions included selecting non-custodial recovery, choosing Polygon as the first signing-enabled chain, requiring personal OAuth plus local review for every transfer, and keeping operator secrets and customer operations outside the public repository.
 
 ## Challenges
 
@@ -40,7 +40,7 @@ Human decisions included selecting non-custodial recovery, choosing Polygon as t
 - Keeping the inline mobile widget fast while supporting multi-chain derivation.
 - Replacing demo balances with honest live mainnet reads.
 - Designing tool annotations and state boundaries that accurately describe side effects.
-- Presenting a compelling working product without pretending unfinished signing is production-ready.
+- Binding raw signed bytes to the exact transaction the user reviewed.
 
 ## Accomplishments
 
@@ -49,12 +49,14 @@ Human decisions included selecting non-custodial recovery, choosing Polygon as t
 - Read-only balances across all 13 mainnet networks (native token everywhere, including Casper CSPR via a key-gated node; verified Circle USDC on 6 EVM chains).
 - 19 focused MCP tools and a versioned ChatGPT widget.
 - Deterministic policy/state-machine reference layer and tamper-evident audit chain.
+- OAuth 2.1 with PKCE and local EIP-1559 signing on explicitly enabled networks.
+- Signed-byte decoding, signer recovery and exact transaction-field validation before broadcast.
 - Mobile widget reduced by separating the Vault bundle.
 - Automated CI, security scan, tests, Docker/Render deployment and review documentation.
 
 ## What comes next
 
-Personal OAuth, durable user-scoped storage, indexed history, canonical transaction simulation, explicit user-presence approval, local signing, multi-RPC verification, independent security audits and jurisdiction-specific regulatory review.
+Durable token revocation, managed multi-instance storage, broader indexed history, full transaction simulation, confirmation monitoring, multi-RPC verification, independent security audits and jurisdiction-specific regulatory review.
 
 ## Testing links
 

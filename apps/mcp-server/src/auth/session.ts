@@ -12,7 +12,13 @@ export class SessionAuth {
     const addresses = authInfo?.extra?.addresses;
     if (typeof userId === "string" && addresses && typeof addresses === "object") {
       const candidate = addresses as Record<string, unknown>;
-      if (typeof candidate.evm === "string" && typeof candidate.solana === "string" && typeof candidate.near === "string" && typeof candidate.aptos === "string") {
+      if (
+        typeof candidate.evm === "string"
+        && typeof candidate.solana === "string"
+        && typeof candidate.near === "string"
+        && typeof candidate.aptos === "string"
+        && typeof candidate.casper === "string"
+      ) {
         return { userId, source: "oauth", addresses: candidate as unknown as PublicWalletAddresses };
       }
     }

@@ -9,7 +9,7 @@ Appropriate public content:
 - MCP tool contracts, input validation and non-sensitive output shapes;
 - ChatGPT widget and public Vault implementation;
 - reference policy engine and state machine;
-- read-only public-chain adapters;
+- public-chain read adapters and user-signed EVM broadcast adapters;
 - synthetic fixtures and deterministic tests;
 - threat model, security controls and public architecture;
 - setup, deployment and submission materials;
@@ -21,7 +21,7 @@ Private-only content:
 
 - production OAuth clients, credentials and account-linking internals;
 - production databases, migrations containing customer assumptions and live data;
-- signing orchestration, HSM/MPC policies, treasury and hot-wallet configuration;
+- custodial signing infrastructure, HSM/MPC policies, treasury and hot-wallet configuration;
 - proprietary fraud, sanctions, risk-scoring and merchant rules;
 - production RPC/API credentials and paid-provider contracts;
 - infrastructure state, deploy tokens, DNS/Cloudflare secrets and backups;

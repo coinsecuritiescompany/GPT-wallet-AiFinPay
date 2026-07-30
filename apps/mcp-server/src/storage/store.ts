@@ -4,10 +4,10 @@ import { DatabaseSync } from "node:sqlite";
 import type { AgentPolicy, AuditEvent, PaymentIntent } from "@aifinpay/shared";
 
 export type WalletPairingResult = "connected" | "already_connected" | "invalid";
-export interface StoredWalletAddresses { evm: string; solana: string; near: string; aptos: string }
+export interface StoredWalletAddresses { evm: string; solana: string; near: string; aptos: string; casper: string }
 
 function sameAddresses(left: Record<string, string>, right: StoredWalletAddresses): boolean {
-  return (["evm", "solana", "near", "aptos"] as const).every((key) => {
+  return (["evm", "solana", "near", "aptos", "casper"] as const).every((key) => {
     const a = left[key] ?? "";
     const b = right[key] ?? "";
     return key === "evm" ? a.toLowerCase() === b.toLowerCase() : a === b;
@@ -42,10 +42,27 @@ export class Store {
       CREATE TABLE IF NOT EXISTS wallet_connections (
         user_id TEXT PRIMARY KEY, addresses_json TEXT NOT NULL, connected_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+        code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL, consumed_at TEXT NOT NULL
+      );
     `);
   }
 
   close(): void { this.db.close(); }
+
+  /**
+   * Atomically records an OAuth authorization-code hash. The primary key makes
+   * a second exchange fail even after a process restart or across two service
+   * instances sharing the same persistent SQLite database.
+   */
+  consumeOAuthAuthorizationCode(codeHash: string, expiresAtUnixSeconds: number, now = new Date()): boolean {
+    const nowIso = now.toISOString();
+    this.db.prepare("DELETE FROM oauth_authorization_codes WHERE expires_at<=?").run(nowIso);
+    const result = this.db.prepare(
+      "INSERT OR IGNORE INTO oauth_authorization_codes (code_hash,expires_at,consumed_at) VALUES (?,?,?)"
+    ).run(codeHash, new Date(expiresAtUnixSeconds * 1000).toISOString(), nowIso);
+    return Number(result.changes) === 1;
+  }
 
   saveIntent(intent: PaymentIntent, requestHash: string): void {
     this.db.prepare(`INSERT INTO payment_intents (id,user_id,idempotency_key,request_hash,status,json)
@@ -66,6 +83,24 @@ export class Store {
   findIntentByHash(hash: string, userId: string): PaymentIntent | null {
     const rows = this.db.prepare("SELECT json FROM payment_intents WHERE user_id=?").all(userId) as Array<{ json: string }>;
     return rows.map((row) => JSON.parse(row.json) as PaymentIntent).find((intent) => intent.transactionHash === hash) ?? null;
+  }
+
+  sumSpentTodayRaw(userId: string, agentId: string, token: PaymentIntent["token"], network: PaymentIntent["network"], now = new Date()): string {
+    const start = new Date(now);
+    start.setUTCHours(0, 0, 0, 0);
+    const rows = this.db.prepare("SELECT json FROM payment_intents WHERE user_id=?").all(userId) as Array<{ json: string }>;
+    const total = rows
+      .map((row) => JSON.parse(row.json) as PaymentIntent)
+      .filter((intent) =>
+        intent.initiatedByType === "AGENT"
+        && intent.initiatedById === agentId
+        && intent.token === token
+        && intent.network === network
+        && ["SUBMITTED", "PENDING", "COMPLETED"].includes(intent.status)
+        && new Date(intent.submittedAt ?? intent.createdAt) >= start
+      )
+      .reduce((sum, intent) => sum + BigInt(intent.amountBaseUnits), 0n);
+    return total.toString();
   }
 
   savePolicy(policy: AgentPolicy): void {

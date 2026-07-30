@@ -4,16 +4,20 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { z } from "zod";
 import {
-  AppError, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkMeta, networkSchema, safeError, tokenSchema,
-  type NetworkId, type PaymentIntent
+  AppError, LIVE_NETWORKS, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkMeta, networkSchema, safeError, tokenSchema,
+  type LiveNetworkSpec, type NetworkId, type PaymentIntent, type SwapAsset, type WalletSummary
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
 
-export const WIDGET_URI = "ui://aifinpay/wallet-v8.html";
+// Treat the resource URI as a release cache key. ChatGPT can cache an earlier
+// widget body for an unchanged URI, so every shipped UI revision gets a bump.
+export const WIDGET_URI = "ui://aifinpay/wallet-v10.html";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true };
+const openRead = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
+const openWrite = { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false };
 function oauthMeta(render = false, scope: "wallet:read" | "wallet:write" = "wallet:read"): Record<string, unknown> {
   return {
     securitySchemes: [{ type: "oauth2", scopes: [scope] }],
@@ -45,10 +49,10 @@ function resolveUser(ctx: AppContext, extra: { authInfo?: AuthInfo }, requiredSc
 }
 
 // The connected Vault has an address on every network, so any of the 13
-// mainnets is selectable in mainnet mode. When the caller does not specify one,
-// default to Polygon (mainnet) or Polygon Amoy (demo ledger).
+// mainnets is selectable in mainnet mode. Casper is the product's first network;
+// demo mode retains Polygon Amoy for its deterministic test ledger.
 function resolveNetwork(ctx: AppContext, network?: NetworkId): NetworkId {
-  return network ?? (ctx.config.walletMode === "mainnet" ? "POLYGON" : "POLYGON_AMOY");
+  return network ?? (ctx.config.walletMode === "mainnet" ? "CASPER" : "POLYGON_AMOY");
 }
 
 function publicIntent(intent: PaymentIntent) {
@@ -62,6 +66,65 @@ function publicIntent(intent: PaymentIntent) {
 // When off (the production default), mainnet prepare/confirm fail closed.
 function signingEnabled(ctx: AppContext, network: NetworkId): boolean {
   return ctx.config.walletMode === "mainnet" && ctx.config.signingNetworks.includes(network);
+}
+
+function runtimeNetworks(ctx: AppContext) {
+  return Object.fromEntries(Object.entries(MAINNET_NETWORKS).map(([id, network]) => [
+    id,
+    { ...network, enabledForSigning: signingEnabled(ctx, id.toUpperCase() as NetworkId) }
+  ]));
+}
+
+/**
+ * Keep the wallet shell available when a balance RPC is temporarily down. The
+ * public address and network remain usable for Receive; balance tools still
+ * return their explicit error when called directly.
+ */
+async function walletState(ctx: AppContext, userId: string, network: NetworkId) {
+  const connection = ctx.store.getWalletConnection(userId);
+  try {
+    const summary = await ctx.adapter.getWalletSummary(userId, network);
+    summary.activeAgentPolicies = ctx.store.listPolicies(userId).filter((policy) => policy.enabled);
+    return { summary, connection };
+  } catch (error) {
+    const safe = safeError(error);
+    const spec = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
+    const address = spec && connection?.addresses[spec.addressField];
+    if (ctx.config.walletMode !== "mainnet" || safe.code !== "RPC_UNAVAILABLE" || !spec || !address) throw error;
+    const summary: WalletSummary = {
+      walletId: `${network.toLowerCase()}:${address.toLowerCase()}`,
+      address,
+      maskedAddress: `${address.slice(0, 8)}…${address.slice(-6)}`,
+      selectedNetwork: network,
+      balances: [],
+      latestTransactions: [],
+      activeAgentPolicies: ctx.store.listPolicies(userId).filter((policy) => policy.enabled),
+      mode: "MAINNET",
+      balanceError: safe
+    };
+    return { summary, connection };
+  }
+}
+
+const swapAssetSchema = z.object({
+  ticker: z.string().regex(/^[a-z0-9-]{1,30}$/),
+  name: z.string().min(1).max(100),
+  network: z.string().regex(/^[a-z0-9-]{1,30}$/),
+  image: z.string().url().optional()
+});
+
+// ChangeNOW network codes that map unambiguously to an address controlled by
+// this Vault. Assets on any other provider network stay hidden and fail closed.
+const swapAddressField: Record<string, "evm" | "solana" | "near" | "aptos" | "casper"> = {
+  cspr: "casper", matic: "evm", avaxc: "evm", arbitrum: "evm", bsc: "evm",
+  base: "evm", unichain: "evm", op: "evm", sol: "solana", near: "near", apt: "aptos"
+};
+
+function swapAddress(addresses: Record<string, string>, asset: SwapAsset): string {
+  const field = swapAddressField[asset.network];
+  const value = field ? addresses[field] : undefined;
+  if (!value) throw new AppError("NETWORK_UNSUPPORTED", `Swap address mapping is not available for ${asset.network}.`, 400);
+  return value;
 }
 
 // The device link that opens the intent in the Vault for local signing.
@@ -104,7 +167,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     title: "List supported AiFinPay mainnets",
     description: "Use this when the user asks which mainnet address networks the AiFinPay Vault derives. The result explicitly identifies whether signing is enabled.",
     inputSchema: {}, annotations: readOnly, _meta: { securitySchemes: [{ type: "noauth" }] }
-  }, async () => data("AiFinPay supports addresses on 13 mainnet networks. Signing is enabled gradually after contract and treasury verification.", { view: "networks", networks: MAINNET_NETWORKS }));
+  }, async () => data("AiFinPay supports addresses on 13 mainnet networks. The response marks the networks where local signing is enabled in this deployment.", { view: "networks", networks: runtimeNetworks(ctx) }));
 
   // Opening/viewing the wallet is a read operation — it must require only
   // wallet:read. Marking it write (readOnlyHint:false) makes ChatGPT demand the
@@ -116,9 +179,8 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
       const user = resolveUser(ctx, extra);
       const connection = ctx.store.getWalletConnection(user.userId);
       if (!connection) throw new AppError("AUTH_REQUIRED", "Connect AiFinPay Wallet once to continue.", 401);
-      const summary = await ctx.adapter.getWalletSummary(user.userId, "POLYGON");
-      summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((policy) => policy.enabled);
-      return rendered("AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS });
+      const state = await walletState(ctx, user.userId, resolveNetwork(ctx));
+      return rendered("AiFinPay wallet opened.", { view: "wallet", summary: { ...state.summary, address: undefined }, connection: state.connection, networks: runtimeNetworks(ctx) });
     } catch (error) { return failure(error, ctx); }
   };
 
@@ -157,10 +219,8 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     try {
       const user = resolveUser(ctx, extra);
       const selectedNetwork = resolveNetwork(ctx, network);
-      const summary = await ctx.adapter.getWalletSummary(user.userId, selectedNetwork);
-      summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((policy) => policy.enabled);
-      const connection = ctx.store.getWalletConnection(user.userId);
-      return data("AiFinPay wallet summary loaded.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS });
+      const state = await walletState(ctx, user.userId, selectedNetwork);
+      return data("AiFinPay wallet summary loaded.", { view: "wallet", summary: { ...state.summary, address: undefined }, connection: state.connection, networks: runtimeNetworks(ctx) });
     } catch (error) { return failure(error, ctx); }
   });
 
@@ -171,6 +231,61 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   }, async ({ token, network }, extra) => {
     try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
     catch (error) { return failure(error, ctx); }
+  });
+
+  registerAppTool(server, "list_swap_assets", {
+    title: "List available swap assets",
+    description: "Use this before quoting a swap. Returns only active ChangeNOW assets on networks whose payout addresses are controlled by the connected AiFinPay Vault.",
+    inputSchema: {}, annotations: openRead, _meta: oauthMeta()
+  }, async (_args, extra) => {
+    try {
+      resolveUser(ctx, extra);
+      const assets = (await ctx.swaps.listAssets()).filter((item) => Boolean(swapAddressField[item.network]));
+      return data(`${assets.length} swap assets are available.`, { view: "swap-form", assets });
+    } catch (error) { return failure(error, ctx); }
+  });
+
+  registerAppTool(server, "get_swap_quote", {
+    title: "Get a swap quote",
+    description: "Use this to preview an estimated non-custodial cross-chain swap. A quote does not create an order or move funds.",
+    inputSchema: { fromAsset: swapAssetSchema, toAsset: swapAssetSchema, fromAmount: decimalAmountSchema },
+    annotations: openRead, _meta: oauthMeta()
+  }, async ({ fromAsset, toAsset, fromAmount }, extra) => {
+    try {
+      const user = resolveUser(ctx, extra);
+      const connection = ctx.store.getWalletConnection(user.userId);
+      if (!connection) throw new AppError("AUTH_REQUIRED", "Connect AiFinPay Wallet before requesting a swap quote.", 401);
+      swapAddress(connection.addresses, fromAsset);
+      swapAddress(connection.addresses, toAsset);
+      const result = await ctx.swaps.quote(user.userId, fromAsset, toAsset, fromAmount);
+      return data(`Estimated output: ${result.quote.estimatedAmount} ${result.quote.toAsset.ticker.toUpperCase()}. No funds have moved.`, { view: "swap-quote", ...result });
+    } catch (error) { return failure(error, ctx); }
+  });
+
+  registerAppTool(server, "create_swap_order", {
+    title: "Create a confirmed swap order",
+    description: "Use only after the user explicitly confirms the exact input asset, amount, destination asset, and current quote. Creates a ChangeNOW deposit order addressed back to the connected Vault, but does not transfer funds automatically.",
+    inputSchema: { quoteToken: z.string().min(40).max(5000), confirmed: z.literal(true) },
+    annotations: openWrite, _meta: oauthMeta(false, "wallet:write")
+  }, async ({ quoteToken }, extra) => {
+    try {
+      const user = resolveUser(ctx, extra, "wallet:write");
+      const connection = ctx.store.getWalletConnection(user.userId);
+      if (!connection) throw new AppError("AUTH_REQUIRED", "Connect AiFinPay Wallet before creating a swap.", 401);
+      const result = await ctx.swaps.createOrder(user.userId, quoteToken, (asset) => swapAddress(connection.addresses, asset));
+      return data(`Swap order created. Send exactly ${result.order.fromAmount} ${result.order.fromAsset.ticker.toUpperCase()} to the displayed deposit address.`, { view: "swap-order", ...result });
+    } catch (error) { return failure(error, ctx); }
+  });
+
+  registerAppTool(server, "get_swap_status", {
+    title: "Get swap order status",
+    description: "Use this to check a previously created swap order using its private signed order reference.",
+    inputSchema: { orderReference: z.string().min(40).max(5000) }, annotations: openRead, _meta: oauthMeta()
+  }, async ({ orderReference }, extra) => {
+    try {
+      const user = resolveUser(ctx, extra);
+      return data("Swap status loaded.", { view: "swap-status", swapStatus: await ctx.swaps.status(user.userId, orderReference), orderReference });
+    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "prepare_transfer", {
@@ -300,9 +415,10 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   }, async (args, extra) => {
     try {
       const user = resolveUser(ctx, extra); const balance = await ctx.adapter.getBalance(user.userId, args.token, args.network);
+      const spentTodayRaw = ctx.store.sumSpentTodayRaw(user.userId, args.initiatedByAgentId, args.token, args.network);
       const decision = evaluatePolicy({ agentId: args.initiatedByAgentId, amount: args.amount, token: args.token, network: args.network,
         recipient: args.recipient, ...(args.merchantId ? { merchantId: args.merchantId } : {}), ...(args.merchantCategory ? { merchantCategory: args.merchantCategory } : {}),
-        availableBalanceRaw: balance.raw, spentTodayRaw: "0", riskLevel: args.riskLevel, duplicate: false, now: new Date() }, ctx.store.listPolicies(user.userId));
+        availableBalanceRaw: balance.raw, spentTodayRaw, riskLevel: args.riskLevel, duplicate: false, now: new Date() }, ctx.store.listPolicies(user.userId));
       return data(`Policy decision: ${decision.decision}.`, { view: decision.decision === "BLOCKED" ? "blocked" : "agent-approval", decision });
     } catch (error) { return failure(error, ctx); }
   });
@@ -318,7 +434,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     description: "Use this after wallet data is requested to render the interactive AiFinPay wallet widget inside ChatGPT.",
     inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: oauthMeta(true)
   }, async ({ network }, extra) => {
-    try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); const summary = await ctx.adapter.getWalletSummary(user.userId, selectedNetwork); summary.activeAgentPolicies = ctx.store.listPolicies(user.userId).filter((p) => p.enabled); const connection = ctx.store.getWalletConnection(user.userId); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Live read-only balances across all 13 mainnet networks." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...summary, address: undefined }, connection, networks: MAINNET_NETWORKS }); }
+    try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); const state = await walletState(ctx, user.userId, selectedNetwork); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Live read-only balances across all 13 mainnet networks." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...state.summary, address: undefined }, connection: state.connection, networks: runtimeNetworks(ctx) }); }
     catch (error) { return failure(error, ctx); }
   });
 
@@ -336,7 +452,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     description: "Use this after a transfer completes to render its transaction and audit receipt.",
     inputSchema: { transferIntentId: z.string().min(8) }, annotations: readOnly, _meta: oauthMeta(true)
   }, async ({ transferIntentId }, extra) => {
-    try { const user = resolveUser(ctx, extra); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transaction receipt opened.", { view: "receipt", intent: publicIntent(intent), explorerUrl: intent.transactionHash ? `https://amoy.polygonscan.com/tx/${intent.transactionHash}` : null }); }
+    try { const user = resolveUser(ctx, extra); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transaction receipt opened.", { view: "receipt", intent: publicIntent(intent), explorerUrl: intent.transactionHash ? `${networkMeta(intent.network).explorerBaseUrl}/tx/${intent.transactionHash}` : null }); }
     catch (error) { return failure(error, ctx); }
   });
 }

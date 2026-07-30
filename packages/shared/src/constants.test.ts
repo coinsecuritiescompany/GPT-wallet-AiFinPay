@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAINNET_NETWORKS } from "./constants.js";
+import { MAINNET_NETWORKS, paymentAssetSpec } from "./constants.js";
 
 describe("AiFinPay mainnet deployment registry", () => {
   it("contains exactly nine EVM and four native deployments", () => {
@@ -7,6 +7,10 @@ describe("AiFinPay mainnet deployment registry", () => {
     expect(networks).toHaveLength(13);
     expect(networks.filter((network) => network.family === "EVM")).toHaveLength(9);
     expect(networks.filter((network) => network.family !== "EVM")).toHaveLength(4);
+  });
+
+  it("places Casper first in the product network registry", () => {
+    expect(Object.keys(MAINNET_NETWORKS)[0]).toBe("casper");
   });
 
   it("keeps every declared deployment locked for signing pending verification", () => {
@@ -34,5 +38,15 @@ describe("AiFinPay mainnet deployment registry", () => {
       rpcUrl: "https://rpc.botchain.ai",
       explorerBaseUrl: "https://scan.botchain.ai"
     });
+  });
+
+  it("resolves chain-specific assets instead of treating every network like Polygon", () => {
+    expect(paymentAssetSpec("BASE", "POL")).toMatchObject({ symbol: "ETH", decimals: 18, address: null });
+    expect(paymentAssetSpec("BNB", "USDC")).toMatchObject({
+      symbol: "USDC",
+      decimals: 18,
+      address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+    });
+    expect(paymentAssetSpec("SOLANA", "USDC")).toBeNull();
   });
 });

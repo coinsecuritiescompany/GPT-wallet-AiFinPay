@@ -40,7 +40,8 @@ const secretPatterns = [
   ["private-key block", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
   ["OpenAI-style API key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/],
   ["GitHub token", /\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{20,}\b/],
-  ["AWS access key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/]
+  ["AWS access key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/],
+  ["ChangeNOW API key", /\bCHANGENOW_API_KEY\s*[=:]\s*["']?[a-f0-9]{64}\b/i]
 ];
 
 for (const file of files) {

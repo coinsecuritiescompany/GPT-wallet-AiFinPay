@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { assertTransition, evaluatePolicy, type ExecutionResult, type WalletAdapter } from "@aifinpay/aifinpay-adapter";
 import {
-  AppError, DEMO_WALLET_ID, TOKENS, formatBaseUnits, networkMeta, parseBaseUnits,
+  AppError, formatBaseUnits, networkMeta, parseBaseUnits, paymentAssetSpec,
   type NetworkId, type PaymentIntent, type RiskLevel, type TokenSymbol
 } from "@aifinpay/shared";
 import type { AuditService } from "../audit/audit-service.js";
@@ -43,17 +43,21 @@ export class PaymentService {
       return response;
     }
 
-    const token = TOKENS[input.token];
-    const amountBaseUnits = parseBaseUnits(input.amount, token.decimals);
+    const asset = paymentAssetSpec(input.network, input.token);
+    if (!asset) throw new AppError("TOKEN_UNSUPPORTED", `${input.token} is not available on ${input.network}.`);
+    const amountBaseUnits = parseBaseUnits(input.amount, asset.decimals);
     const balance = await this.adapter.getBalance(userId, input.token, input.network);
     const policies = this.store.listPolicies(userId);
     const riskLevel: RiskLevel = input.memo?.toLowerCase().includes("bypass") ? "HIGH" : "LOW";
+    const spentTodayRaw = input.initiatedByAgentId
+      ? this.store.sumSpentTodayRaw(userId, input.initiatedByAgentId, input.token, input.network)
+      : "0";
     const policy = evaluatePolicy({
       ...(input.initiatedByAgentId ? { agentId: input.initiatedByAgentId } : {}),
       amount: input.amount, token: input.token, network: input.network, recipient: input.recipient,
       ...(input.merchantId ? { merchantId: input.merchantId } : {}),
       ...(input.merchantCategory ? { merchantCategory: input.merchantCategory } : {}),
-      availableBalanceRaw: balance.raw, spentTodayRaw: "0", riskLevel, duplicate: false, now: new Date()
+      availableBalanceRaw: balance.raw, spentTodayRaw, riskLevel, duplicate: false, now: new Date()
     }, policies);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 10 * 60_000).toISOString();
@@ -61,16 +65,17 @@ export class PaymentService {
     const auditReceiptId = `receipt_${this.digest(`receipt:${id}`).slice(0, 20)}`;
     const status = policy.decision === "BLOCKED" ? "BLOCKED" : policy.decision === "AUTO_APPROVED" ? "AUTO_APPROVED" : "REQUIRES_CONFIRMATION";
     const intent: PaymentIntent = {
-      id, ownerUserId: userId, walletId: DEMO_WALLET_ID,
+      id, ownerUserId: userId, walletId: `wallet_${this.digest(userId).slice(0, 20)}`,
       initiatedByType: input.initiatedByAgentId ? "AGENT" : "USER",
       initiatedById: input.initiatedByAgentId ?? userId,
       recipient: input.recipient.toLowerCase(),
       ...(input.merchantId ? { merchantId: input.merchantId } : {}),
       ...(input.merchantCategory ? { merchantCategory: input.merchantCategory } : {}),
       ...(input.purpose || input.memo ? { purpose: input.purpose ?? input.memo } : {}),
-      token: input.token, tokenAddress: token.address, amount: formatBaseUnits(amountBaseUnits, token.decimals),
+      token: input.token, tokenAddress: asset.address, amount: formatBaseUnits(amountBaseUnits, asset.decimals),
       amountBaseUnits: amountBaseUnits.toString(), network: input.network, chainId: networkMeta(input.network).chainId,
-      estimatedFee: "0.0012 POL", status, policyDecision: policy.decision, policyReasonCodes: policy.reasonCodes,
+      estimatedFee: `Calculated at signing in ${asset.symbol === "USDC" ? paymentAssetSpec(input.network, "POL")?.symbol ?? "native token" : asset.symbol}`,
+      status, policyDecision: policy.decision, policyReasonCodes: policy.reasonCodes,
       riskLevel, createdAt: now.toISOString(), expiresAt, idempotencyKey: input.idempotencyKey, auditReceiptId
     };
     this.store.saveIntent(intent, requestHash);

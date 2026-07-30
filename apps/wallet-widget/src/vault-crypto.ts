@@ -15,6 +15,38 @@ const bytesToHex = (bytes: Uint8Array) => Array.from(bytes, (value) => value.toS
 const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 
+export function parseEncryptedVault(value: unknown): EncryptedVault | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const vault = value as Partial<EncryptedVault>;
+  const addresses = vault.addresses as Partial<VaultAddresses> | undefined;
+  try {
+    if (
+      vault.version !== 1
+      || vault.cipher !== "AES-GCM"
+      || vault.kdf !== "PBKDF2-SHA256"
+      || !Number.isInteger(vault.iterations)
+      || (vault.iterations ?? 0) < 310_000
+      || (vault.iterations ?? 0) > 2_000_000
+      || typeof vault.salt !== "string"
+      || base64ToBytes(vault.salt).length !== 16
+      || typeof vault.iv !== "string"
+      || base64ToBytes(vault.iv).length !== 12
+      || typeof vault.ciphertext !== "string"
+      || base64ToBytes(vault.ciphertext).length < 32
+      || typeof vault.createdAt !== "string"
+      || !addresses
+      || !/^0x[a-fA-F0-9]{40}$/.test(addresses.evm ?? "")
+      || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addresses.solana ?? "")
+      || !/^[a-f0-9]{64}$/.test(addresses.near ?? "")
+      || !/^0x[a-f0-9]{64}$/.test(addresses.aptos ?? "")
+      || !/^01[a-f0-9]{64}$/.test(addresses.casper ?? "")
+    ) return null;
+    return vault as EncryptedVault;
+  } catch {
+    return null;
+  }
+}
+
 function slip10(seed: Uint8Array, path: number[]): Uint8Array {
   let digest = hmac(sha512, new TextEncoder().encode("ed25519 seed"), seed);
   let key = digest.slice(0, 32);
@@ -86,5 +118,14 @@ export async function decryptVault(vault: EncryptedVault, password: string): Pro
   const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
   const key = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: base64ToBytes(vault.salt), iterations: vault.iterations }, material, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
   const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(vault.iv) }, key, base64ToBytes(vault.ciphertext));
-  return (JSON.parse(new TextDecoder().decode(decrypted)) as { mnemonic: string }).mnemonic;
+  const mnemonic = (JSON.parse(new TextDecoder().decode(decrypted)) as { mnemonic?: unknown }).mnemonic;
+  if (typeof mnemonic !== "string") throw new Error("The encrypted vault payload is invalid.");
+  const expected = deriveAddresses(mnemonic);
+  const matches = (Object.keys(expected) as Array<keyof VaultAddresses>).every((field) =>
+    field === "evm"
+      ? expected[field].toLowerCase() === vault.addresses[field].toLowerCase()
+      : expected[field] === vault.addresses[field]
+  );
+  if (!matches) throw new Error("The encrypted vault addresses were modified or damaged.");
+  return mnemonic;
 }

@@ -18,9 +18,9 @@ const vault: EncryptedVault = {
   cipher: "AES-GCM",
   kdf: "PBKDF2-SHA256",
   iterations: 310_000,
-  salt: "public-test-salt",
-  iv: "public-test-iv",
-  ciphertext: "encrypted-test-material",
+  salt: "MDEyMzQ1Njc4OWFiY2RlZg==",
+  iv: "MDEyMzQ1Njc4OWFi",
+  ciphertext: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
   addresses: {
     evm: "0x1111111111111111111111111111111111111111",
     solana: "5L7xB9arfakeaddress111111111111111",
@@ -59,10 +59,28 @@ describe("Vault pairing UI", () => {
     expect(JSON.stringify(body)).not.toContain(vault.salt);
   });
 
-  it("removes the encrypted Vault from this device on explicit request", () => {
+  it("shows random recovery words only after wallet creation", () => {
+    render(<VaultApp />);
+    expect(screen.queryByText("Polygon")).not.toBeInTheDocument();
+    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create wallet" }));
+    expect(screen.getByText("Your recovery phrase")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(12);
+  });
+
+  it("generates a 15-word recovery phrase when selected", () => {
+    render(<VaultApp />);
+    fireEvent.click(screen.getByRole("button", { name: "15 words" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create wallet" }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(15);
+  });
+
+  it("requires a second explicit tap before removing the encrypted Vault", () => {
     localStorage.setItem("aifinpay.vault.v1", JSON.stringify(vault));
     render(<VaultApp />);
     fireEvent.click(screen.getByRole("button", { name: "Remove vault from this device" }));
+    expect(localStorage.getItem("aifinpay.vault.v1")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Tap again to permanently remove" }));
     expect(localStorage.getItem("aifinpay.vault.v1")).toBeNull();
     expect(screen.getByText("Your wallet for ChatGPT")).toBeInTheDocument();
   });

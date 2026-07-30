@@ -1,15 +1,33 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { AppContext } from "../src/context.js";
 import { createMcpServer } from "../src/server.js";
+import { WIDGET_URI } from "../src/tools/register-tools.js";
 import type { AppConfig } from "../src/config.js";
 
-const config: AppConfig = { port: 0, demoMode: true, databaseUrl: ":memory:", sessionSecret: "test-session-secret-at-least-thirty-two-chars", publicUrl: "http://localhost/mcp", widgetDomain: "http://localhost", logLevel: "silent", walletMode: "demo", polygonRpcUrls: ["https://polygon.example"] };
+const config: AppConfig = {
+  port: 0,
+  demoMode: true,
+  databaseUrl: ":memory:",
+  sessionSecret: "test-session-secret-at-least-thirty-two-chars",
+  publicUrl: "http://localhost/mcp",
+  widgetDomain: "http://localhost",
+  logLevel: "silent",
+  walletMode: "demo",
+  polygonRpcUrls: ["https://polygon.example"],
+  mainnetRpcUrls: {},
+  mainnetRpcAuth: {},
+  signingNetworks: []
+};
 
 describe("MCP tool registration", () => {
   const contexts: AppContext[] = [];
-  afterEach(() => contexts.splice(0).forEach((ctx) => ctx.close()));
+  afterEach(() => {
+    contexts.splice(0).forEach((ctx) => ctx.close());
+    vi.unstubAllGlobals();
+  });
 
   it("registers all required tools and serves wallet summary", async () => {
     const ctx = new AppContext(config); contexts.push(ctx); const server = createMcpServer(ctx);
@@ -23,8 +41,8 @@ describe("MCP tool registration", () => {
     });
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "open_wallet", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", "confirm_transfer", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
-    expect(names).toHaveLength(20);
+    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "open_wallet", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", "confirm_transfer", "list_swap_assets", "get_swap_quote", "create_swap_order", "get_swap_status", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
+    expect(names).toHaveLength(24);
     for (const tool of tools.tools) {
       expect(tool.annotations).toMatchObject({
         readOnlyHint: expect.any(Boolean),
@@ -43,9 +61,25 @@ describe("MCP tool registration", () => {
       expect(openTool(name)?.annotations).toMatchObject({ readOnlyHint: true });
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
     }
+    for (const name of ["open_wallet", "create_wallet_pairing", "render_wallet", "create_agent_policy"]) {
+      expect(openTool(name)?._meta?.ui).toEqual({ resourceUri: WIDGET_URI });
+      expect(openTool(name)?._meta?.["openai/outputTemplate"]).toBe(WIDGET_URI);
+    }
     for (const name of ["prepare_transfer", "confirm_transfer", "create_agent_policy", "update_agent_policy", "revoke_agent_policy"]) {
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:write"] }]);
     }
+    expect(openTool("create_swap_order")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:write"] }]);
+    expect(openTool("create_swap_order")?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, openWorldHint: true });
+    const resource = await client.readResource({ uri: WIDGET_URI });
+    expect(resource.contents[0]).toMatchObject({
+      uri: WIDGET_URI,
+      mimeType: RESOURCE_MIME_TYPE,
+      _meta: {
+        ui: { prefersBorder: true },
+        "openai/widgetPrefersBorder": true
+      }
+    });
+    expect(resource.contents[0]?.text).toContain("<!doctype html>");
     const result = await client.callTool({ name: "get_wallet_summary", arguments: {} });
     expect((result.structuredContent as any).summary.balances[0].formatted).toBe("2543.68");
     await client.close(); await server.close();
@@ -54,7 +88,7 @@ describe("MCP tool registration", () => {
   it("opens the connected wallet directly instead of creating another pairing", async () => {
     const ctx = new AppContext(config); contexts.push(ctx);
     ctx.store.createWalletPairing("pairing-hash", "demo-user-001", new Date(Date.now() + 60_000).toISOString());
-    expect(ctx.store.completeWalletPairing("pairing-hash", { evm: "0x1111111111111111111111111111111111111111", solana: "solana-address", near: "near-address", aptos: "aptos-address" })).toBe("connected");
+    expect(ctx.store.completeWalletPairing("pairing-hash", { evm: "0x1111111111111111111111111111111111111111", solana: "solana-address", near: "near-address", aptos: "aptos-address", casper: "casper-address" })).toBe("connected");
     const server = createMcpServer(ctx);
     const client = new Client({ name: "test-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -77,6 +111,33 @@ describe("MCP tool registration", () => {
       expect.stringContaining("/.well-known/oauth-protected-resource/mcp")
     ]);
     expect(result.structuredContent).toMatchObject({ view: "error", error: { code: "AUTH_REQUIRED" } });
+    await client.close(); await server.close();
+  });
+
+  it("opens Casper first and keeps Receive available when its keyed RPC is not configured", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("RPC unavailable")));
+    const ctx = new AppContext({ ...config, walletMode: "mainnet" }); contexts.push(ctx);
+    ctx.store.upsertWalletConnection("demo-user-001", {
+      evm: "0x1111111111111111111111111111111111111111",
+      solana: "5L7xB9arfakeaddress111111111111111",
+      near: "a".repeat(64),
+      aptos: `0x${"b".repeat(64)}`,
+      casper: `01${"c".repeat(64)}`
+    });
+    const server = createMcpServer(ctx);
+    const client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const result = await client.callTool({ name: "open_wallet", arguments: {} });
+    expect(result.structuredContent).toMatchObject({
+      view: "wallet",
+      summary: {
+        selectedNetwork: "CASPER",
+        balances: [],
+        balanceError: { code: "RPC_UNAVAILABLE" }
+      },
+      connection: { addresses: { casper: `01${"c".repeat(64)}` } }
+    });
     await client.close(); await server.close();
   });
 });

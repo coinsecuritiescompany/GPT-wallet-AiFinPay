@@ -34,7 +34,7 @@ Expose port `8787` through a temporary HTTPS tunnel only for development. Produc
 - `What is my POL balance on Polygon?`
 - `Show my receive addresses.`
 - `Which mainnet networks does my Vault support?`
-- `Prepare a 1 USDC mainnet transfer.` — expected: safe signing-disabled response.
+- `Prepare a 1 USDC transfer on Polygon.` — expected: a canonical preview and local Vault signing link when the wallet is funded.
 
 ## Review checks
 
@@ -42,7 +42,7 @@ Expose port `8787` through a temporary HTTPS tunnel only for development. Produc
 - The widget badge says `MAINNET`, not Amoy or Demo.
 - Balance data corresponds to the OAuth-linked public Polygon address.
 - Recovery words never appear in ChatGPT tool input/output.
-- Send presents the security gate and never broadcasts.
+- Send is available only on runtime signing-enabled EVM networks and always requires a separate local Vault review/signing step.
 - Privacy, terms and support URLs are public.
 
 Official references: [Connect from ChatGPT](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt), [Prepare an app](https://developers.openai.com/apps-sdk/deploy/submission), [Security and privacy](https://developers.openai.com/apps-sdk/guides/security-privacy).

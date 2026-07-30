@@ -1,6 +1,6 @@
 {
   "name": "gpt-wallet-aifinpay",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Non-custodial AiFinPay wallet interface and programmable approval layer for ChatGPT.",
   "license": "MIT",

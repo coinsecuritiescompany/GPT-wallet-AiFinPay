@@ -34,4 +34,23 @@ describe("SigningRequestService", () => {
     expect(service.verify("")).toBeNull();
     expect(service.verify("no-dot")).toBeNull();
   });
+
+  it("binds the exact reviewed transaction into a separate submission token", () => {
+    const transaction = {
+      to: "0x2222222222222222222222222222222222222222",
+      value: "0x1",
+      data: "0x",
+      nonce: 3,
+      gas: "0x5208",
+      maxFeePerGas: "0x3b9aca00",
+      maxPriorityFeePerGas: "0x0",
+      chainId: 137
+    };
+    const token = service.issueSubmission({ intentId: "pi_abc", userId: "user-1", expiresAt: future, transaction });
+    expect(service.verifySubmission(token)).toEqual({ intentId: "pi_abc", userId: "user-1", expiresAt: future, transaction });
+    const [payload, signature] = token.split(".");
+    const changed = JSON.parse(Buffer.from(payload!, "base64url").toString()) as any;
+    changed.transaction.value = "0x2";
+    expect(service.verifySubmission(`${Buffer.from(JSON.stringify(changed)).toString("base64url")}.${signature}`)).toBeNull();
+  });
 });

@@ -1,6 +1,6 @@
 # OpenAI implementation notes
 
-Checked on July 18, 2026 against current Apps SDK submission guidance.
+Checked on July 30, 2026 against current Apps SDK submission guidance.
 
 ## Archetype
 
@@ -10,7 +10,7 @@ Checked on July 18, 2026 against current Apps SDK submission guidance.
 
 - Remote universal MCP endpoint over HTTPS.
 - `RESOURCE_MIME_TYPE` for the MCP App resource.
-- Versioned widget URI: `ui://aifinpay/wallet-v8.html`.
+- Versioned widget URI: `ui://aifinpay/wallet-v10.html`.
 - OAuth 2.1 authorization-code flow with PKCE, protected-resource metadata, dynamic client registration and per-tool `wallet:read` security metadata.
 - Standard `_meta.ui.resourceUri`, exact CSP metadata and ChatGPT compatibility aliases.
 - One job per tool with model-selection descriptions.
@@ -23,7 +23,7 @@ Checked on July 18, 2026 against current Apps SDK submission guidance.
 
 Implemented: stable public MCP server, branded widget, public logo, narrow CSP, tool annotations, test prompts, legal URLs and organization-owned repository.
 
-Still required from the owner/reviewer flow: verified OpenAI organization/business identity, submission permissions, tool scan, final screenshots/localization, YouTube demo and the Devpost Codex Session ID.
+Still required from the owner/reviewer flow: verified OpenAI organization/business identity, submission permissions, tool scan, final screenshots/localization and reviewer test credentials/instructions where applicable.
 
 Every current tool omits `outputSchema`. This is not a runtime blocker but should be addressed before final public plugin review.
 

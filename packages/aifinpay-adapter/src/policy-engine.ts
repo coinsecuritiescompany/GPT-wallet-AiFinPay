@@ -1,4 +1,4 @@
-import { parseBaseUnits, TOKENS, type AgentPolicy, type NetworkId, type PolicyDecision, type PolicyReasonCode, type TokenSymbol } from "@aifinpay/shared";
+import { paymentAssetSpec, parseBaseUnits, type AgentPolicy, type NetworkId, type PolicyDecision, type PolicyReasonCode, type TokenSymbol } from "@aifinpay/shared";
 
 export interface PolicyContext {
   agentId?: string;
@@ -27,7 +27,9 @@ function blocked(code: PolicyReasonCode, explanation: string, policy?: AgentPoli
 }
 
 export function evaluatePolicy(context: PolicyContext, policies: AgentPolicy[]): PolicyResult {
-  const decimals = TOKENS[context.token].decimals;
+  const asset = paymentAssetSpec(context.network, context.token);
+  if (!asset) return blocked("TOKEN_NOT_ALLOWED", `${context.token} is not available on ${context.network}.`);
+  const decimals = asset.decimals;
   const amount = parseBaseUnits(context.amount, decimals);
   if (context.duplicate) return blocked("DUPLICATE_REQUEST", "This payment request was already prepared.");
   if (context.riskLevel === "HIGH") return blocked("HIGH_RISK_REQUEST", "The request was flagged as high risk.");
@@ -62,4 +64,3 @@ export function evaluatePolicy(context: PolicyContext, policies: AgentPolicy[]):
   }
   return { decision: "AUTO_APPROVED", reasonCodes: ["ALLOWED_WITHIN_POLICY"], explanation: "The request is within the active agent policy.", policyId: policy.policyId };
 }
-

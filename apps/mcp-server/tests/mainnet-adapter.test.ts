@@ -133,7 +133,9 @@ describe("MainnetAdapter", () => {
         eth_getTransactionCount: "0x5",
         eth_maxPriorityFeePerGas: "0x77359400", // 2 gwei
         eth_getBlockByNumber: { baseFeePerGas: "0x3b9aca00" }, // 1 gwei base fee
-        eth_estimateGas: "0x186a0" // 100000
+        eth_estimateGas: "0x186a0", // 100000
+        eth_getBalance: "0x8ac7230489e80000", // 10 POL
+        eth_call: "0xf4240" // 1 USDC
       } as Record<string, unknown>)[request.method];
       return { ok: true, json: async () => ({ jsonrpc: "2.0", id: 1, result }) } as Response;
     });
@@ -160,7 +162,7 @@ describe("MainnetAdapter", () => {
     const recipient = "0x2222222222222222222222222222222222222222";
     vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const request = JSON.parse(String(init?.body)) as { method: string };
-      const result = ({ eth_getTransactionCount: "0x0", eth_maxPriorityFeePerGas: "0x0", eth_getBlockByNumber: { baseFeePerGas: "0x0" }, eth_estimateGas: "0x5208" } as Record<string, unknown>)[request.method];
+      const result = ({ eth_getTransactionCount: "0x0", eth_maxPriorityFeePerGas: "0x0", eth_getBlockByNumber: { baseFeePerGas: "0x0" }, eth_estimateGas: "0x5208", eth_getBalance: "0x8ac7230489e80000" } as Record<string, unknown>)[request.method];
       return { ok: true, json: async () => ({ jsonrpc: "2.0", id: 1, result }) } as Response;
     }));
     const adapter = new MainnetAdapter(store, { POLYGON: ["https://polygon.example"] });

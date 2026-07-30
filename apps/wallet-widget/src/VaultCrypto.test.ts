@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { decryptVault, deriveAddresses, encryptVault } from "./vault-crypto.js";
+import { decryptVault, deriveAddresses, encryptVault, parseEncryptedVault } from "./vault-crypto.js";
 
 // Public BIP-39 test vector. It must never receive real funds.
 const mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -31,5 +31,20 @@ describe("local Vault cryptography", () => {
     expect(first.addresses.near).toMatch(/^[a-f0-9]{64}$/);
     expect(first.addresses.aptos).toMatch(/^0x[a-f0-9]{64}$/);
     expect(first.addresses.casper).toMatch(/^01[a-f0-9]{64}$/); // ed25519 account public key
+  });
+
+  it("strictly validates an encrypted Vault before attempting decryption", async () => {
+    const vault = await encryptVault(mnemonic, "correct horse battery staple");
+    expect(parseEncryptedVault(JSON.parse(JSON.stringify(vault)))).toEqual(vault);
+    expect(parseEncryptedVault({ ...vault, iterations: 1 })).toBeNull();
+    expect(parseEncryptedVault({ ...vault, iv: "not-base64" })).toBeNull();
+    expect(parseEncryptedVault({ ...vault, addresses: { ...vault.addresses, casper: "" } })).toBeNull();
+  });
+
+  it("rejects a syntactically valid public address that does not belong to the encrypted recovery phrase", async () => {
+    const vault = await encryptVault(mnemonic, "correct horse battery staple");
+    const modified = { ...vault, addresses: { ...vault.addresses, evm: `0x${"22".repeat(20)}` } };
+    expect(parseEncryptedVault(modified)).not.toBeNull();
+    await expect(decryptVault(modified, "correct horse battery staple")).rejects.toThrow(/modified or damaged/);
   });
 });

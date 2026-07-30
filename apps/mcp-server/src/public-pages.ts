@@ -29,17 +29,17 @@ function page(title: string, description: string, content: string): string {
     footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid #173128; color: #7d9b90; font-size: 13px; }
   </style>
 </head>
-<body><main>${content}<footer>AiFinPay Wallet for ChatGPT · Polygon mainnet read-only beta · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a></footer></main></body>
+<body><main>${content}<footer>AiFinPay Wallet for ChatGPT · Non-custodial mainnet beta · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/support">Support</a></footer></main></body>
 </html>`;
 }
 
 export function landingPage(mcpUrl: string): string {
-  return page("AiFinPay Wallet for ChatGPT", "Non-custodial Polygon mainnet wallet interface for users and AI agents.", `
+  return page("AiFinPay Wallet for ChatGPT", "Non-custodial multichain wallet interface for users and AI agents.", `
     <img class="app-logo" src="/icon.png" alt="AiFinPay logo" width="72" height="72">
-    <span class="badge">MCP App · Polygon mainnet beta</span>
+    <span class="badge">MCP App · 13 mainnets</span>
     <h1>Wallet controls, inside the conversation.</h1>
     <p>AiFinPay gives ChatGPT focused tools for balances, transfer previews, explicit approvals, agent spending limits, receipts and a tamper-evident audit trail.</p>
-    <div class="notice"><strong>Live mainnet data.</strong> Balances are read from Polygon RPC using the connected public address. Mainnet broadcasting remains locked until personal authentication and local Vault signing are enabled.</div>
+    <div class="notice"><strong>Real mainnet data.</strong> The wallet reads public balances across 13 networks. Transfers are offered only on networks explicitly marked as signing-enabled and always require review plus local Vault signing.</div>
     <div class="actions">
       <a class="button" href="/preview">Open widget preview</a>
       <a class="button secondary" href="${REPOSITORY_URL}">View source</a>
@@ -54,17 +54,17 @@ export function landingPage(mcpUrl: string): string {
 
 export function privacyPage(): string {
   return page("Privacy · AiFinPay Wallet", "Privacy notice for the AiFinPay Wallet mainnet read-only beta.", `
-    <span class="badge">Effective July 18, 2026</span>
+    <span class="badge">Effective July 30, 2026</span>
     <h1>Privacy notice</h1>
     <p>This notice applies to the public AiFinPay Wallet for ChatGPT beta. It is non-custodial and is not a custody or exchange service.</p>
     <h2>Data processed</h2>
-    <p>The beta processes public wallet addresses and publicly available Polygon balance data, plus OAuth authorization and audit metadata needed to operate the requested flow.</p>
+    <p>The beta processes public wallet addresses and publicly available blockchain balance and transaction data, plus OAuth authorization, payment-intent, policy and audit metadata needed to operate the requested flow. A user-requested swap sends the selected public payout/refund addresses, asset pair and amount to ChangeNOW.</p>
     <h2>Data we do not request</h2>
     <p>MCP tools never request private keys, recovery words or Vault passwords. The separate Vault page can generate or accept recovery words locally in the browser; those words and the password are not intentionally transmitted to AiFinPay or ChatGPT.</p>
     <h2>Purpose and storage</h2>
-    <p>Data is used only to operate, secure and debug the beta. OAuth access and refresh tokens contain public addresses only and are integrity-protected; recovery material and passwords are excluded. Runtime audit records on the preview service may reset when the deployment restarts. Server logs are designed to exclude authorization codes and tokens.</p>
+    <p>Data is used only to operate, secure and debug the beta. OAuth access and refresh tokens contain public addresses only and are integrity-protected; recovery material and passwords are excluded. Production metadata is stored on the service's persistent encrypted infrastructure volume. Server logs are designed to exclude authorization codes and tokens.</p>
     <h2>Sharing and sale</h2>
-    <p>AiFinPay does not sell personal data. Infrastructure and RPC providers may process limited technical data to host the service and read public blockchain state. This deployment does not submit mainnet transactions.</p>
+    <p>AiFinPay does not sell personal data. Hosting, indexing, RPC and optional swap providers may process limited technical or transaction data to provide their respective services. On an enabled network, the broadcast service receives only the raw transaction that the user signed locally.</p>
     <h2>Your choices</h2>
     <p>Disconnect the app in ChatGPT to remove its authorization. To request deletion of runtime metadata or report a privacy issue, open a private-data-free support ticket and ask for a secure follow-up channel.</p>
     <p><a class="button secondary" href="${SUPPORT_URL}">Contact support</a></p>
@@ -72,16 +72,16 @@ export function privacyPage(): string {
 }
 
 export function termsPage(): string {
-  return page("Terms · AiFinPay Wallet", "Public beta terms for the AiFinPay Wallet read-only mainnet interface.", `
-    <span class="badge">Effective July 18, 2026</span>
+  return page("Terms · AiFinPay Wallet", "Public beta terms for the AiFinPay Wallet non-custodial mainnet interface.", `
+    <span class="badge">Effective July 30, 2026</span>
     <h1>Public beta terms</h1>
     <p>This experimental service is provided for evaluation and controlled testing. It can change or become unavailable without notice.</p>
     <h2>No custody or financial service</h2>
-    <p>The intended flow keeps recovery material on the user's device. This beta does not provide custody, exchange, brokerage, money transmission, investment advice, banking or securities services. Mainnet signing and broadcasting are disabled.</p>
+    <p>The intended flow keeps recovery material on the user's device. AiFinPay does not itself provide custody, exchange, brokerage, investment advice, banking or securities services. When enabled, swaps are routed to ChangeNOW under its availability, eligibility, pricing and terms. On enabled networks, the user signs each transaction locally and the service relays only the resulting raw signed transaction.</p>
     <h2>User responsibility</h2>
-    <p>Protect recovery material, verify public addresses and never fund a wallet whose recovery phrase has been disclosed. Do not use the beta for unlawful activity or attempt to bypass security controls.</p>
+    <p>Protect recovery material, verify the network, asset, amount, recipient and maximum fee before signing, and start with a small test transfer. Blockchain transactions are generally irreversible. Never fund a wallet whose recovery phrase has been disclosed. Do not use the beta for unlawful activity or attempt to bypass security controls.</p>
     <h2>No warranty</h2>
-    <p>The service and source are provided as is, without warranties. Public-chain and RPC information may be delayed, incomplete or unavailable.</p>
+    <p>The service and source are provided as is, without warranties. Public-chain and RPC information may be delayed, incomplete or unavailable. Swap quotes are estimates and provider execution is not guaranteed.</p>
     <h2>Open-source license</h2>
     <p>Repository source is governed by the MIT License. The software license is not a regulatory authorization or financial-services license.</p>
     <p><a class="button secondary" href="${REPOSITORY_URL}/blob/main/TERMS.md">Read repository terms</a></p>
@@ -100,6 +100,6 @@ export function supportPage(): string {
       <a class="button secondary" href="/health">Check service health</a>
     </div>
     <h2>Known beta limitations</h2>
-    <p>Polygon balances are live and read-only. OAuth 2.1 with PKCE is enabled for persistent ChatGPT linking and carries public addresses only. Indexed transaction history, local mainnet signing and real-chain submission are not yet enabled.</p>
+    <p>Balances and receiving are enabled across 13 mainnets. OAuth 2.1 with PKCE carries public addresses only. Local EVM signing is enabled per network; the deployment labels unsupported networks honestly. Transaction history is currently indexed for Polygon and can be incomplete when external indexers are unavailable.</p>
   `);
 }

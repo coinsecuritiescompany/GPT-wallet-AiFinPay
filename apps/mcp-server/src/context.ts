@@ -10,6 +10,7 @@ import { SigningRequestService } from "./services/signing-request-service.js";
 import { PaymentService } from "./services/payment-service.js";
 import { PolicyService } from "./services/policy-service.js";
 import { MainnetAdapter } from "./services/mainnet-adapter.js";
+import { SwapService } from "./services/swap-service.js";
 import { Store } from "./storage/store.js";
 
 export class AppContext {
@@ -22,11 +23,17 @@ export class AppContext {
   readonly adapter: WalletAdapter;
   readonly payments: PaymentService;
   readonly policies: PolicyService;
+  readonly swaps: SwapService;
 
   constructor(readonly config: AppConfig) {
     this.store = new Store(config.databaseUrl);
     this.auth = new SessionAuth(config.demoMode);
-    this.oauth = new AiFinPayOAuthProvider(config.sessionSecret, new URL(config.widgetDomain), new URL(config.publicUrl));
+    this.oauth = new AiFinPayOAuthProvider(
+      config.sessionSecret,
+      new URL(config.widgetDomain),
+      new URL(config.publicUrl),
+      (codeHash, expiresAt) => this.store.consumeOAuthAuthorizationCode(codeHash, expiresAt)
+    );
     this.audit = new AuditService(this.store);
     this.confirmations = new ConfirmationService(config.sessionSecret);
     this.signing = new SigningRequestService(config.sessionSecret);
@@ -35,6 +42,7 @@ export class AppContext {
       : new DemoLedgerAdapter();
     this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter);
     this.policies = new PolicyService(this.store, this.audit, this.confirmations);
+    this.swaps = new SwapService(config.changeNowApiKey, config.sessionSecret);
     if (config.walletMode === "demo" && config.demoMode && this.store.listPolicies(DEMO_USER_ID).length === 0) this.store.savePolicy(DEMO_POLICY);
   }
 

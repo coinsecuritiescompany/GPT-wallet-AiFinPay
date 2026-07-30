@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "AiFinPay Wallet",
     "subtitle": "Wallet controls in ChatGPT",
-    "description": "AiFinPay Wallet lets users create or connect a local non-custodial Vault, view live Polygon POL and USDC balances, receive public addresses, inspect agent policies, and review wallet safety controls through ChatGPT.",
+    "description": "AiFinPay Wallet lets users connect a local non-custodial Vault, view balances and QR receive addresses across 13 mainnets, request cross-chain swap quotes, manage agent policies, and locally review and sign transfers on enabled networks through ChatGPT.",
     "category": "FINANCE"
   },
   "tools": {
@@ -16,10 +16,18 @@
         "destructive_justification": "Does not delete, overwrite, revoke, send, or complete an irreversible action."
       }
     },
-    "create_wallet_pairing": {
-      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+    "open_wallet": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
       "justifications": {
-        "read_only_justification": "Opens the OAuth-linked wallet dashboard and triggers one-time account authorization when required.",
+        "read_only_justification": "Retrieves the authenticated wallet dashboard and starts authorization only when no wallet connection exists.",
+        "open_world_justification": "Does not publish content, submit a transaction, or change a third-party system.",
+        "destructive_justification": "Does not delete data, expose recovery material, sign transactions, or move funds."
+      }
+    },
+    "create_wallet_pairing": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Compatibility alias that retrieves the wallet dashboard and starts authorization only when no connection exists.",
         "open_world_justification": "Authorization shares validated public wallet addresses with this app only and does not publish content or submit transactions.",
         "destructive_justification": "Does not delete data, expose recovery material, sign transactions or move funds."
       }
@@ -35,7 +43,7 @@
     "get_wallet_summary": {
       "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
       "justifications": {
-        "read_only_justification": "Reads public Polygon balances and private reference metadata without modification.",
+        "read_only_justification": "Reads public balances on the selected supported mainnet and private wallet metadata without modification.",
         "open_world_justification": "Only reads external public-chain state and does not submit a transaction.",
         "destructive_justification": "Does not delete, overwrite, revoke, or transfer assets."
       }
@@ -48,20 +56,52 @@
         "destructive_justification": "Cannot move funds or modify stored wallet data."
       }
     },
+    "list_swap_assets": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Reads the provider's active asset list and filters it to networks mapped to the connected Vault.",
+        "open_world_justification": "Only reads provider metadata and does not create an order or modify an external system.",
+        "destructive_justification": "Cannot transfer funds, create an order, or modify wallet state."
+      }
+    },
+    "get_swap_quote": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Retrieves an estimated provider quote and returns a short-lived user-bound quote token without creating an order.",
+        "open_world_justification": "Only reads a quote and does not submit an external order or transaction.",
+        "destructive_justification": "Does not move funds or irreversibly modify wallet or provider state."
+      }
+    },
+    "create_swap_order": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": true, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Creates a provider deposit order after explicit confirmation of the exact quoted swap.",
+        "open_world_justification": "Creates an order in the external ChangeNOW service using Vault-derived payout and refund addresses.",
+        "destructive_justification": "Creating the order does not transfer funds; funding requires a separate user-signed wallet transaction."
+      }
+    },
+    "get_swap_status": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Reads the status of an existing user-bound swap order without changing it.",
+        "open_world_justification": "Only retrieves provider status and does not create or update an external order.",
+        "destructive_justification": "Does not transfer funds, cancel the order, or modify wallet state."
+      }
+    },
     "prepare_transfer": {
       "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
       "justifications": {
-        "read_only_justification": "Writes a private non-broadcast demo intent when demo mode is enabled.",
-        "open_world_justification": "Never broadcasts a transaction or changes a third-party system.",
+        "read_only_justification": "Validates funds and policy, then writes an expiring private transfer intent.",
+        "open_world_justification": "Preparation does not broadcast a transaction or change a third-party system.",
         "destructive_justification": "Preparation is non-broadcast and does not irreversibly move funds."
       }
     },
     "confirm_transfer": {
       "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": true },
       "justifications": {
-        "read_only_justification": "Completes an eligible private demo intent and records a receipt.",
-        "open_world_justification": "Mainnet broadcasting is disabled and demo completion remains inside the app.",
-        "destructive_justification": "Irreversibly completes the selected demo intent after explicit confirmation."
+        "read_only_justification": "Records explicit approval for an eligible private intent and returns the separate local Vault signing URL.",
+        "open_world_justification": "The tool itself does not broadcast; broadcast can occur only after a separate human-controlled Vault review and local signature.",
+        "destructive_justification": "Approval advances the selected intent to its signing state and is protected by explicit confirmation."
       }
     },
     "cancel_transfer": {
@@ -166,16 +206,16 @@
       "description": "Connect a local non-custodial Vault.",
       "user_prompt": "Connect a new AiFinPay wallet.",
       "file_attachment_urls": null,
-      "tools_triggered": "create_wallet_pairing",
+      "tools_triggered": "open_wallet",
       "expected_output": "Prompts for one-time OAuth authorization when needed, then opens the wallet dashboard directly without exposing recovery words or private keys.",
       "expected_output_url": null
     },
     {
-      "description": "Open the connected wallet with live Polygon balances.",
+      "description": "Open the connected wallet with live mainnet balances.",
       "user_prompt": "Open my AiFinPay wallet and show my mainnet balances.",
       "file_attachment_urls": null,
       "tools_triggered": "render_wallet",
-      "expected_output": "Renders the connected wallet with live read-only Polygon POL and USDC balances.",
+      "expected_output": "Renders the connected wallet with live balances on the selected network and a selector for all 13 supported mainnets.",
       "expected_output_url": null
     },
     {
@@ -187,19 +227,19 @@
       "expected_output_url": null
     },
     {
-      "description": "List supported address networks and signing status.",
-      "user_prompt": "Which mainnet networks does my AiFinPay Vault support?",
+      "description": "Request a cross-chain swap quote without moving funds.",
+      "user_prompt": "Show me a quote to swap 10 CSPR on Casper to POL on Polygon.",
       "file_attachment_urls": null,
-      "tools_triggered": "list_supported_mainnets",
-      "expected_output": "Lists supported address networks and clearly states that transaction signing is not enabled.",
+      "tools_triggered": "get_swap_quote",
+      "expected_output": "Returns an estimated provider quote bound to the authenticated wallet and clearly states that no order was created and no funds moved.",
       "expected_output_url": null
     },
     {
-      "description": "Refuse a mainnet transfer until safe signing is implemented.",
-      "user_prompt": "Prepare a 1 USDC mainnet transfer to 0x2222222222222222222222222222222222222222.",
+      "description": "Prepare a mainnet transfer without broadcasting it.",
+      "user_prompt": "Prepare a 1 USDC transfer on Polygon to 0x2222222222222222222222222222222222222222.",
       "file_attachment_urls": null,
       "tools_triggered": "prepare_transfer",
-      "expected_output": "Returns a clear safety error explaining that mainnet signing and broadcasting are disabled.",
+      "expected_output": "Returns an expiring canonical transfer preview. No transaction is signed or broadcast until the connected user separately reviews and signs it in the local Vault.",
       "expected_output_url": null
     }
   ],

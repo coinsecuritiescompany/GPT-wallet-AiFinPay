@@ -27,7 +27,8 @@ describe("AiFinPay OAuth provider", () => {
       evm: "0x1111111111111111111111111111111111111111",
       solana: "5L7xB9arfakeaddress111111111111111",
       near: "a".repeat(64),
-      aptos: `0x${"b".repeat(64)}`
+      aptos: `0x${"b".repeat(64)}`,
+      casper: `01${"c".repeat(64)}`
     });
     const code = new URL(callback).searchParams.get("code")!;
     expect(await provider.challengeForAuthorizationCode(client, code)).toBe("test-pkce-challenge");
@@ -40,7 +41,8 @@ describe("AiFinPay OAuth provider", () => {
       evm: "0x1111111111111111111111111111111111111111",
       solana: "5L7xB9arfakeaddress111111111111111",
       near: "a".repeat(64),
-      aptos: `0x${"b".repeat(64)}`
+      aptos: `0x${"b".repeat(64)}`,
+      casper: `01${"c".repeat(64)}`
     });
     expect(JSON.stringify(auth.extra)).not.toContain("mnemonic");
     expect(JSON.stringify(auth.extra)).not.toContain("password");
