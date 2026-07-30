@@ -6,7 +6,7 @@ Public MCP endpoint: `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
 
 ## Current hosted-service reality
 
-The connected service was inspected on July 30, 2026:
+The connected service was inspected on July 31, 2026:
 
 - Render service ID: `srv-d9dj0bjrjlhs73anpb1g`;
 - branch: `main`;
@@ -14,9 +14,12 @@ The connected service was inspected on July 30, 2026:
 - runtime plan: Free;
 - auto-deploy: disabled;
 - one instance;
-- health check: `/health`.
+- health check: `/health`;
+- the service details returned by Render do not show the persistent disk declared in `render.yaml`.
 
-Warm `/health` requests observed from the audit environment still took about 4–7 seconds to first byte, and a full MCP initialize/list/read sequence took materially longer. The v14 server compresses the single-file widget response, but application code cannot remove Render Free scheduling/network latency. Before advertising a fast production wallet, move to an always-on paid instance close to the target users (preferably Frankfurt for the current European audience) and measure p50/p95 latency from ChatGPT again. Changing region normally requires a replacement service and a controlled endpoint migration.
+The repository Blueprint is the intended production topology, but the connected service does not automatically inherit it. Before advertising an always-on production wallet, move the public endpoint to a paid instance, attach and verify the `/var/data` disk, test backup/restore, and preferably use Frankfurt for the current European audience.
+
+Warm `/health` requests observed from the audit environment still took about 4–7 seconds to first byte, and a full MCP initialize/list/read sequence took materially longer. The server compresses the single-file widget response, but application code cannot remove Render Free scheduling/network latency. Measure p50/p95 latency from ChatGPT again after the infrastructure migration.
 
 ## Render Blueprint
 
@@ -24,7 +27,19 @@ Use the README button or:
 
 `https://render.com/deploy?repo=https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay`
 
-The Blueprint describes the intended paid service, automatic deploys, persistent disk and Polygon EVM signing. The currently connected service does not automatically inherit those settings merely because `render.yaml` exists: it is Free, auto-deploy is disabled and its actual disk/backup state must be checked in Render. Render supplies the public hostname, which the server uses for MCP, widget, Vault and legal URLs. Add `CHANGENOW_API_KEY` as a secret to enable live swap quotes and orders.
+The Blueprint describes:
+
+- Starter plan;
+- automatic deploys;
+- persistent disk mounted at `/var/data`;
+- mainnet wallet mode;
+- direct local signing on Polygon, Avalanche, Arbitrum, BNB Chain, Base, Unichain and Optimism;
+- BOT Chain and XRPL EVM send-locked pending live fee/broadcast proof;
+- Solana, NEAR, Aptos and Casper receive-only until chain-specific signers are implemented.
+
+Direct wallet transfers are separate from AIFP contract settlement. Enabling Optimism direct ETH/USDC transfers does not enable the legacy Optimism splitter, whose stablecoin constants are unsafe according to the private network source of truth.
+
+Render supplies the public hostname, which the server uses for MCP, widget, Vault and legal URLs. Add `CHANGENOW_API_KEY` as a secret to enable live swap quotes and orders.
 
 Verify after every deploy:
 
@@ -39,6 +54,26 @@ swapProvider: configured
 Also test `/`, `/preview`, `/privacy`, `/terms`, `/support` and `/mcp`.
 
 For each release, record cold and warm time-to-first-byte for `/health`, MCP initialization, `tools/list`, the open-wallet tool and the widget resource. A successful HTTP 200 with multi-second latency is not sufficient for the ChatGPT mobile experience.
+
+## Direct-transfer release gate
+
+`AIFINPAY_SIGNING_NETWORKS` is a comma-separated allowlist. The production Blueprint uses:
+
+```text
+POLYGON,AVALANCHE,ARBITRUM,BNB,BASE,UNICHAIN,OPTIMISM
+```
+
+The direct EVM path builds a chain-specific transaction, checks the native gas balance, uses the network-specific USDC address/decimals, signs locally in the Vault, validates the exact reviewed transaction bytes and only then broadcasts.
+
+Before adding another network to this allowlist, add deterministic tests and capture one funded dust transaction with:
+
+1. exact release commit;
+2. sender and recipient;
+3. chain ID;
+4. native and token decimals;
+5. fee fields;
+6. transaction hash and successful receipt;
+7. duplicate, expiry, malformed-signature and insufficient-gas rejection tests.
 
 ## Swap secret
 
@@ -55,7 +90,7 @@ Rotate the key immediately if it appears in chat, source control, screenshots, l
 
 ## Persistent runtime state
 
-The checked-in Blueprint uses an always-on service plus `/var/data/aifinpay-runtime.sqlite` on a persistent Render disk. Apply the Blueprint to the existing service before advertising the product; changing this file alone does not migrate a running Render service. Configure external backups and test restoration before treating policies, intents or the audit chain as records of consequence.
+The checked-in Blueprint uses `/var/data/aifinpay-runtime.sqlite` on a persistent Render disk. Apply that topology to the actual public service before treating wallet connections, policies, payment intents or the audit chain as durable records. Configure external backups and test restoration.
 
 ## Container
 
@@ -64,7 +99,7 @@ docker build -t aifinpay-wallet .
 docker run --rm -p 8787:8787 \
   -e AIFINPAY_WALLET_MODE=mainnet \
   -e AIFINPAY_DEMO_MODE=false \
-  -e AIFINPAY_SIGNING_NETWORKS=POLYGON \
+  -e AIFINPAY_SIGNING_NETWORKS=POLYGON,AVALANCHE,ARBITRUM,BNB,BASE,UNICHAIN,OPTIMISM \
   -e DATABASE_URL=/var/data/aifinpay-runtime.sqlite \
   -e POLYGON_RPC_URLS="https://polygon.drpc.org,https://polygon.publicnode.com" \
   -e CHANGENOW_API_KEY="replace-with-a-server-side-partner-key" \
@@ -76,6 +111,10 @@ docker run --rm -p 8787:8787 \
 
 Never expose `AIFINPAY_DEMO_MODE=true` as a shared service: it intentionally uses one test identity. Production-like deployments must use `false`, which requires OAuth 2.1 with PKCE.
 
-## Release gate
+## Release statement
 
-Keep `AIFINPAY_SIGNING_NETWORKS=POLYGON` until every additional network has its own signed end-to-end test. Do not run advertising that implies audited security, custody, guaranteed execution or regulatory authorization. Complete the operational, security and legal controls in [Security model](SECURITY_MODEL.md) and [Compliance posture](COMPLIANCE.md) first.
+The truthful current statement is:
+
+> AiFinPay Wallet supports non-custodial receive and live balances across 13 mainnets, with locally signed direct transfers on seven EVM networks. Solana, NEAR, Aptos and Casper remain receive-only until their chain-specific signers pass production tests. AIFP settlement readiness is tracked separately.
+
+Do not claim full 13-network sending or complete AIFP paid end-to-end settlement yet. The full audit is in [PRODUCTION_AUDIT_2026-07-31.md](PRODUCTION_AUDIT_2026-07-31.md).
