@@ -4,13 +4,15 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { z } from "zod";
 import {
   AppError, decimalAmountSchema, idempotencyKeySchema, safeError, solanaAddressSchema,
-  type PaymentIntent
+  type NetworkId, type PaymentIntent
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
 import { WIDGET_URI } from "./register-tools.js";
 
 const outputSchema = z.object({ view: z.string().min(1) }).passthrough();
 const annotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
+const nearAddressSchema = z.string().transform((value) => value.toLowerCase()).pipe(z.string().regex(/^[a-z0-9._-]{2,64}$/, "Expected a valid NEAR account ID"));
+const aptosAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{1,64}$/, "Expected a valid Aptos address");
 
 function data(message: string, structuredContent: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text: message }], structuredContent };
@@ -47,12 +49,23 @@ function signUrl(ctx: AppContext, userId: string, intent: PaymentIntent): string
   return url.href;
 }
 
-export function registerSolanaTools(server: McpServer, ctx: AppContext): void {
-  registerAppTool(server, "prepare_solana_transfer", {
-    title: "Prepare native SOL transfer",
-    description: "Use this only when the user asks to send native SOL on Solana mainnet. It validates a Solana recipient, checks live SOL balance and fee, then returns a local Vault review-and-sign link. It never handles seed phrases or server-side signing.",
+function registerNativeTransfer(
+  server: McpServer,
+  ctx: AppContext,
+  settings: {
+    name: string;
+    title: string;
+    description: string;
+    recipientSchema: z.ZodType<string>;
+    network: Extract<NetworkId, "SOLANA" | "NEAR" | "APTOS">;
+    symbol: string;
+  }
+): void {
+  registerAppTool(server, settings.name, {
+    title: settings.title,
+    description: settings.description,
     inputSchema: {
-      recipient: solanaAddressSchema,
+      recipient: settings.recipientSchema,
       amount: decimalAmountSchema,
       memo: z.string().max(280).optional(),
       idempotencyKey: idempotencyKeySchema
@@ -66,15 +79,15 @@ export function registerSolanaTools(server: McpServer, ctx: AppContext): void {
     }
   }, async ({ recipient, amount, memo, idempotencyKey }, extra) => {
     try {
-      if (ctx.config.walletMode !== "mainnet" || !ctx.config.signingNetworks.includes("SOLANA")) {
-        throw new AppError("SIGNING_FAILED", "Native SOL sending is not enabled in this deployment.", 501);
+      if (ctx.config.walletMode !== "mainnet" || !ctx.config.signingNetworks.includes(settings.network)) {
+        throw new AppError("SIGNING_FAILED", `Native ${settings.symbol} sending is not enabled in this deployment.`, 501);
       }
       const user = resolveUser(ctx, extra.authInfo);
       const result = await ctx.payments.prepare(user.userId, {
         recipient,
         amount,
         token: "POL",
-        network: "SOLANA",
+        network: settings.network,
         ...(memo ? { memo } : {}),
         idempotencyKey
       });
@@ -85,7 +98,7 @@ export function registerSolanaTools(server: McpServer, ctx: AppContext): void {
           policyExplanation: result.policyExplanation
         });
       }
-      return data("Native SOL transfer prepared. Open the AiFinPay Vault on this device to review and sign the exact Solana transaction.", {
+      return data(`Native ${settings.symbol} transfer prepared. Open the AiFinPay Vault on this device to review and sign the exact transaction.`, {
         view: "transfer-preview",
         intent: publicIntent(result.intent),
         signUrl: signUrl(ctx, user.userId, result.intent),
@@ -95,5 +108,32 @@ export function registerSolanaTools(server: McpServer, ctx: AppContext): void {
     } catch (error) {
       return failure(error, ctx);
     }
+  });
+}
+
+export function registerSolanaTools(server: McpServer, ctx: AppContext): void {
+  registerNativeTransfer(server, ctx, {
+    name: "prepare_solana_transfer",
+    title: "Prepare native SOL transfer",
+    description: "Use only when the user asks to send native SOL on Solana mainnet. It checks the live balance and fee, then requires local Ed25519 signing in the Vault.",
+    recipientSchema: solanaAddressSchema,
+    network: "SOLANA",
+    symbol: "SOL"
+  });
+  registerNativeTransfer(server, ctx, {
+    name: "prepare_near_transfer",
+    title: "Prepare native NEAR transfer",
+    description: "Use only when the user asks to send native NEAR on NEAR mainnet. It reads the access-key nonce and block hash, builds one Borsh Transfer action, and requires local Ed25519 signing in the Vault.",
+    recipientSchema: nearAddressSchema,
+    network: "NEAR",
+    symbol: "NEAR"
+  });
+  registerNativeTransfer(server, ctx, {
+    name: "prepare_aptos_transfer",
+    title: "Prepare native APT transfer",
+    description: "Use only when the user asks to send native APT on Aptos mainnet. It builds an aptos_account::transfer request, obtains canonical signing bytes from the fullnode, and requires local Ed25519 signing in the Vault.",
+    recipientSchema: aptosAddressSchema,
+    network: "APTOS",
+    symbol: "APT"
   });
 }
