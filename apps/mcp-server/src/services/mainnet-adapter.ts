@@ -1,8 +1,9 @@
 import type { ExecutionResult, WalletAdapter } from "@aifinpay/aifinpay-adapter";
 import {
-  AppError, LIVE_NETWORKS, formatBaseUnits,
+  AppError, LIVE_NETWORKS, buildSolanaTransferMessage, formatBaseUnits, solanaTransactionSignature,
   type AddressFamily, type Balance, type LiveNetworkSpec, type NetworkId,
-  type PaymentIntent, type TransactionRecord, type UnsignedEvmTransaction, type WalletSummary
+  type PaymentIntent, type TransactionRecord, type UnsignedEvmTransaction,
+  type UnsignedSolanaTransaction, type UnsignedWalletTransaction, type WalletSummary
 } from "@aifinpay/shared";
 import type { Store } from "../storage/store.js";
 
@@ -15,6 +16,7 @@ const CACHE_TTL_MS = 15_000;
 const RPC_TIMEOUT_MS = 4_000;
 
 const toHexQuantity = (value: bigint): string => `0x${value.toString(16)}`;
+const toBase64 = (value: Uint8Array): string => Buffer.from(value).toString("base64");
 
 function specFor(network: NetworkId): LiveNetworkSpec {
   const spec = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
@@ -36,11 +38,10 @@ function assertAddress(family: AddressFamily, address: string | undefined): stri
 
 /**
  * Mainnet adapter. Loads live public-chain balances for the connected AiFinPay
- * Vault across all 13 mainnet networks (9 EVM chains + Solana, NEAR, Aptos,
- * Casper). Custodial `execute` stays permanently locked — the server never holds
- * a key. EVM sending is non-custodial: `buildTransferTransaction` prepares the
- * unsigned tx, the Vault signs it on the device, and `broadcastRawTransaction`
- * publishes the finished raw tx. Both are gated per-network by config.
+ * Vault across all 13 mainnet networks. Custodial `execute` stays permanently
+ * locked — the server never holds a key. EVM and native Solana sending are
+ * non-custodial: the server prepares exact bytes, the Vault signs on the device,
+ * and the server validates and broadcasts the finished payload.
  */
 export class MainnetAdapter implements WalletAdapter {
   readonly kind = "MAINNET" as const;
@@ -296,17 +297,16 @@ export class MainnetAdapter implements WalletAdapter {
     throw new AppError("SIGNING_FAILED", "Server-side signing is disabled by design. AiFinPay is non-custodial — the Vault signs on your device.", 501);
   }
 
-  /**
-   * Build the exact EIP-1559 fields for a native or USDC transfer so the Vault
-   * can sign them locally. Nonce, gas and fees are read live from the network;
-   * the private key is never involved here — only public reads plus the intent's
-   * recipient/amount. The Vault re-derives the sender from its own key, so the
-   * returned tx has no `from` field to trust.
-   */
-  async buildTransferTransaction(userId: string, intent: PaymentIntent): Promise<UnsignedEvmTransaction> {
-    const network = intent.network;
-    const spec = specFor(network);
+  /** Build exact chain-specific bytes for local Vault signing. */
+  async buildTransferTransaction(userId: string, intent: PaymentIntent): Promise<UnsignedWalletTransaction> {
+    const spec = specFor(intent.network);
+    if (spec.family === "SOLANA") return this.buildSolanaTransferTransaction(userId, intent);
     if (spec.family !== "EVM") throw new AppError("SIGNING_FAILED", `Local signing is not available on ${spec.label} yet.`, 501);
+    return this.buildEvmTransferTransaction(userId, intent, spec);
+  }
+
+  private async buildEvmTransferTransaction(userId: string, intent: PaymentIntent, spec: LiveNetworkSpec): Promise<UnsignedEvmTransaction> {
+    const network = intent.network;
     const from = this.addressFor(userId, "evm");
     const amount = BigInt(intent.amountBaseUnits);
     if (amount <= 0n) throw new AppError("INVALID_AMOUNT", "Transfer amount must be greater than zero.");
@@ -328,19 +328,18 @@ export class MainnetAdapter implements WalletAdapter {
 
     const [nonceHex, priorityHex, latestBlock, nativeBalanceHex] = await Promise.all([
       this.rpc<string>(network, "eth_getTransactionCount", [from, "pending"]),
-      this.rpc<string>(network, "eth_maxPriorityFeePerGas", []).catch(() => "0x3b9aca00"), // 1 gwei fallback
+      this.rpc<string>(network, "eth_maxPriorityFeePerGas", []).catch(() => "0x3b9aca00"),
       this.rpc<{ baseFeePerGas?: string }>(network, "eth_getBlockByNumber", ["latest", false]),
       this.rpc<string>(network, "eth_getBalance", [from, "pending"])
     ]);
     const baseFee = BigInt(latestBlock.baseFeePerGas ?? "0x0");
     const priorityFee = BigInt(priorityHex);
-    // Head-room for one base-fee step up between build and inclusion.
     const maxFee = baseFee * 2n + priorityFee;
 
     const estimatedGas = await this.rpc<string>(network, "eth_estimateGas", [{ from, to, value: toHexQuantity(value), data }])
       .then((hex) => BigInt(hex))
       .catch(() => (intent.token === "USDC" ? 90_000n : 21_000n));
-    const gasWithBuffer = estimatedGas + estimatedGas / 5n; // +20%
+    const gasWithBuffer = estimatedGas + estimatedGas / 5n;
     const maximumGasCost = gasWithBuffer * maxFee;
     if (BigInt(nativeBalanceHex) < value + maximumGasCost) {
       throw new AppError("INSUFFICIENT_FUNDS", `Insufficient ${spec.native.symbol} for the transfer amount and maximum network fee.`);
@@ -350,6 +349,7 @@ export class MainnetAdapter implements WalletAdapter {
     }
 
     return {
+      kind: "EVM",
       to,
       value: toHexQuantity(value),
       data,
@@ -361,9 +361,64 @@ export class MainnetAdapter implements WalletAdapter {
     };
   }
 
+  private async buildSolanaTransferTransaction(userId: string, intent: PaymentIntent): Promise<UnsignedSolanaTransaction> {
+    if (intent.network !== "SOLANA") throw new AppError("NETWORK_UNSUPPORTED", "Expected Solana mainnet.");
+    if (intent.token === "USDC") throw new AppError("TOKEN_UNSUPPORTED", "SPL USDC sending is not enabled yet; send native SOL only.");
+    const sender = this.addressFor(userId, "solana");
+    const recipient = assertAddress("solana", intent.recipient);
+    const lamports = BigInt(intent.amountBaseUnits);
+    if (lamports <= 0n) throw new AppError("INVALID_AMOUNT", "Transfer amount must be greater than zero.");
+    if (sender === recipient) throw new AppError("INVALID_ADDRESS", "Sender and recipient must differ.");
+
+    const latest = await this.rpc<{ value: { blockhash: string; lastValidBlockHeight: number } }>(
+      "SOLANA", "getLatestBlockhash", [{ commitment: "confirmed" }]
+    );
+    let message: Uint8Array;
+    try {
+      message = buildSolanaTransferMessage(sender, recipient, lamports, latest.value.blockhash);
+    } catch {
+      throw new AppError("INVALID_ADDRESS", "Expected a valid Solana recipient address.");
+    }
+    const messageBase64 = toBase64(message);
+    const [feeResult, balanceResult] = await Promise.all([
+      this.rpc<{ value: number | null }>("SOLANA", "getFeeForMessage", [messageBase64, { commitment: "confirmed" }]),
+      this.rpc<{ value: number }>("SOLANA", "getBalance", [sender, { commitment: "confirmed" }])
+    ]);
+    const fee = BigInt(feeResult.value ?? 5_000);
+    if (BigInt(balanceResult.value ?? 0) < lamports + fee) {
+      throw new AppError("INSUFFICIENT_FUNDS", "Insufficient SOL for the transfer amount and network fee.");
+    }
+    return {
+      kind: "SOLANA",
+      messageBase64,
+      recentBlockhash: latest.value.blockhash,
+      lastValidBlockHeight: latest.value.lastValidBlockHeight,
+      feeLamports: fee.toString()
+    };
+  }
+
   /** Broadcast a Vault-signed raw transaction and report the resulting hash. */
   async broadcastRawTransaction(network: NetworkId, rawTransaction: string): Promise<ExecutionResult> {
     const spec = specFor(network);
+    if (spec.family === "SOLANA") {
+      let localSignature: string;
+      try {
+        localSignature = solanaTransactionSignature(Buffer.from(rawTransaction, "base64"));
+      } catch {
+        throw new AppError("SIGNING_FAILED", "Signed Solana transaction is malformed.");
+      }
+      const signature = await this.rpc<string>(network, "sendTransaction", [rawTransaction, {
+        encoding: "base64", skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3
+      }]);
+      if (signature !== localSignature) throw new AppError("SIGNING_FAILED", "Solana RPC returned an unexpected transaction signature.");
+      return {
+        status: "PENDING",
+        transactionHash: signature,
+        explorerUrl: `${spec.explorerBaseUrl}/tx/${signature}`,
+        receiptId: `${network.toLowerCase()}:${signature}`,
+        confirmations: 0
+      };
+    }
     if (spec.family !== "EVM") throw new AppError("SIGNING_FAILED", `Broadcasting is not available on ${spec.label} yet.`, 501);
     if (!/^0x[0-9a-fA-F]+$/.test(rawTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is malformed.");
     const hash = await this.rpc<string>(network, "eth_sendRawTransaction", [rawTransaction]);
@@ -378,6 +433,22 @@ export class MainnetAdapter implements WalletAdapter {
 
   async getTransactionStatus(transactionHash: string, network: NetworkId = "POLYGON"): Promise<ExecutionResult | null> {
     const spec = specFor(network);
+    if (spec.family === "SOLANA") {
+      const result = await this.rpc<{ value: Array<{ confirmationStatus?: string; err: unknown } | null> }>(
+        network, "getSignatureStatuses", [[transactionHash], { searchTransactionHistory: true }]
+      );
+      const status = result.value[0];
+      if (!status) return null;
+      const failed = status.err !== null;
+      const confirmed = status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized";
+      return {
+        status: failed ? "FAILED" : confirmed ? "CONFIRMED" : "PENDING",
+        transactionHash,
+        explorerUrl: `${spec.explorerBaseUrl}/tx/${transactionHash}`,
+        receiptId: `${network.toLowerCase()}:${transactionHash}`,
+        confirmations: confirmed ? 1 : 0
+      };
+    }
     if (spec.family !== "EVM") return null;
     const receipt = await this.rpc<{ status: string; blockNumber: string } | null>(network, "eth_getTransactionReceipt", [transactionHash]);
     if (!receipt) return null;

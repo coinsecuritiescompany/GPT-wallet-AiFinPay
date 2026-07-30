@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { assertTransition, evaluatePolicy, type ExecutionResult, type WalletAdapter } from "@aifinpay/aifinpay-adapter";
 import {
-  AppError, formatBaseUnits, networkMeta, parseBaseUnits, paymentAssetSpec,
-  type NetworkId, type PaymentIntent, type RiskLevel, type TokenSymbol
+  AppError, LIVE_NETWORKS, formatBaseUnits, networkMeta, parseBaseUnits, paymentAssetSpec,
+  type LiveNetworkSpec, type NetworkId, type PaymentIntent, type RiskLevel, type TokenSymbol
 } from "@aifinpay/shared";
 import type { AuditService } from "../audit/audit-service.js";
 import type { Store } from "../storage/store.js";
@@ -19,6 +19,24 @@ export interface PrepareTransferInput {
   merchantCategory?: string;
   purpose?: string;
   idempotencyKey: string;
+}
+
+function validatedRecipient(network: NetworkId, value: string): string {
+  if (network === "POLYGON_AMOY") {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(value)) throw new AppError("INVALID_ADDRESS", "Expected a valid EVM recipient address.");
+    return value.toLowerCase();
+  }
+  const spec = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
+  if (!spec) throw new AppError("NETWORK_UNSUPPORTED", `${network} is not supported.`);
+  if (spec.family === "EVM") {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(value)) throw new AppError("INVALID_ADDRESS", "Expected a valid EVM recipient address.");
+    return value.toLowerCase();
+  }
+  if (spec.family === "SOLANA") {
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) throw new AppError("INVALID_ADDRESS", "Expected a valid Solana recipient address.");
+    return value;
+  }
+  throw new AppError("SIGNING_FAILED", `Direct sending on ${spec.label} is not implemented yet.`, 501);
 }
 
 export class PaymentService {
@@ -43,6 +61,7 @@ export class PaymentService {
       return response;
     }
 
+    const recipient = validatedRecipient(input.network, input.recipient);
     const asset = paymentAssetSpec(input.network, input.token);
     if (!asset) throw new AppError("TOKEN_UNSUPPORTED", `${input.token} is not available on ${input.network}.`);
     const amountBaseUnits = parseBaseUnits(input.amount, asset.decimals);
@@ -54,7 +73,7 @@ export class PaymentService {
       : "0";
     const policy = evaluatePolicy({
       ...(input.initiatedByAgentId ? { agentId: input.initiatedByAgentId } : {}),
-      amount: input.amount, token: input.token, network: input.network, recipient: input.recipient,
+      amount: input.amount, token: input.token, network: input.network, recipient,
       ...(input.merchantId ? { merchantId: input.merchantId } : {}),
       ...(input.merchantCategory ? { merchantCategory: input.merchantCategory } : {}),
       availableBalanceRaw: balance.raw, spentTodayRaw, riskLevel, duplicate: false, now: new Date()
@@ -68,7 +87,7 @@ export class PaymentService {
       id, ownerUserId: userId, walletId: `wallet_${this.digest(userId).slice(0, 20)}`,
       initiatedByType: input.initiatedByAgentId ? "AGENT" : "USER",
       initiatedById: input.initiatedByAgentId ?? userId,
-      recipient: input.recipient.toLowerCase(),
+      recipient,
       ...(input.merchantId ? { merchantId: input.merchantId } : {}),
       ...(input.merchantCategory ? { merchantCategory: input.merchantCategory } : {}),
       ...(input.purpose || input.memo ? { purpose: input.purpose ?? input.memo } : {}),
@@ -113,11 +132,6 @@ export class PaymentService {
     return { intent, explorerUrl: execution.explorerUrl };
   }
 
-  /**
-   * Validate that an intent can still be signed and broadcast by the Vault:
-   * owned by the user, not blocked, not already sent, and not expired. Returns
-   * the intent so the caller can build the unsigned transaction from it.
-   */
   intentForSigning(userId: string, intentId: string): PaymentIntent {
     const intent = this.requireIntent(intentId, userId);
     if (intent.status === "BLOCKED") throw new AppError("POLICY_BLOCKED", "This payment was blocked by policy and cannot be signed.");
@@ -131,11 +145,6 @@ export class PaymentService {
     return intent;
   }
 
-  /**
-   * Record the result of a Vault-signed broadcast. The transaction has already
-   * been sent on-chain by the time this runs, so it always records the hash and
-   * walks the intent forward through the legal transitions to its final state.
-   */
   finalizeVaultBroadcast(userId: string, intentId: string, execution: ExecutionResult): { intent: PaymentIntent; explorerUrl: string } {
     const intent = this.requireIntent(intentId, userId);
     const forward: PaymentIntent["status"][] =

@@ -1,4 +1,8 @@
-import { AppError, type UnsignedEvmTransaction } from "@aifinpay/shared";
+import { createPublicKey, verify as verifySignature } from "node:crypto";
+import {
+  AppError, decodeBase58, parseSolanaSignedTransaction,
+  type UnsignedEvmTransaction, type UnsignedSolanaTransaction
+} from "@aifinpay/shared";
 import { parseTransaction, recoverTransactionAddress } from "viem";
 
 /**
@@ -35,5 +39,40 @@ export async function validateSignedEvmTransaction(
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError("SIGNING_FAILED", "The signed transaction is invalid or cannot be verified.");
+  }
+}
+
+/**
+ * Validate one native Solana transfer. The message bytes must be byte-for-byte
+ * identical to the server-built request and the Ed25519 signature must belong
+ * to the connected Vault's Solana public key.
+ */
+export function validateSignedSolanaTransaction(
+  connectedAddress: string,
+  rawTransactionBase64: string,
+  expected: UnsignedSolanaTransaction
+): void {
+  try {
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(rawTransactionBase64)) throw new Error("Malformed base64.");
+    const serialized = Buffer.from(rawTransactionBase64, "base64");
+    const { signature, message } = parseSolanaSignedTransaction(serialized);
+    const expectedMessage = Buffer.from(expected.messageBase64, "base64");
+    if (!Buffer.from(message).equals(expectedMessage)) {
+      throw new AppError("SIGNING_FAILED", "The signed Solana transaction does not match the payment you reviewed.");
+    }
+    const publicKeyBytes = decodeBase58(connectedAddress);
+    if (publicKeyBytes.length !== 32) throw new Error("Invalid Solana public key.");
+    // RFC 8410 SubjectPublicKeyInfo prefix for an Ed25519 raw public key.
+    const key = createPublicKey({
+      key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(publicKeyBytes)]),
+      format: "der",
+      type: "spki"
+    });
+    if (!verifySignature(null, Buffer.from(message), key, Buffer.from(signature))) {
+      throw new AppError("SIGNING_FAILED", "The Solana transaction was not signed by the connected wallet.");
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError("SIGNING_FAILED", "The signed Solana transaction is invalid or cannot be verified.");
   }
 }

@@ -5,6 +5,7 @@ import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MAINNET_NETWORKS } from "@aifinpay/shared";
 import type { AppContext } from "./context.js";
+import { registerSolanaTools } from "./tools/register-solana-tools.js";
 import { LEGACY_WIDGET_URIS, registerTools, WIDGET_URI } from "./tools/register-tools.js";
 
 export function widgetHtml(): string {
@@ -59,7 +60,7 @@ export function createMcpServer(ctx: AppContext): McpServer {
             csp: { connectDomains: [], resourceDomains: [], redirectDomains: explorerOrigins },
             ...(ctx.config.widgetDomain.startsWith("https://") ? { domain: ctx.config.widgetDomain } : {})
           },
-          "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, plus locally approved transfers on enabled EVM networks.",
+          "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, plus locally approved transfers on enabled EVM networks and native Solana.",
           "openai/widgetPrefersBorder": true,
           "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: [...explorerOrigins, "https://amoy.polygonscan.com"] }
         }
@@ -67,5 +68,6 @@ export function createMcpServer(ctx: AppContext): McpServer {
     }));
   }
   registerTools(server, ctx);
+  registerSolanaTools(server, ctx);
   return server;
 }

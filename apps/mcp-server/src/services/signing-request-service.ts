@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { UnsignedEvmTransaction } from "@aifinpay/shared";
+import type { UnsignedWalletTransaction } from "@aifinpay/shared";
 
 export interface SigningRequestClaims {
   intentId: string;
@@ -8,7 +8,7 @@ export interface SigningRequestClaims {
 }
 
 export interface SigningSubmissionClaims extends SigningRequestClaims {
-  transaction: UnsignedEvmTransaction;
+  transaction: UnsignedWalletTransaction;
 }
 
 /**

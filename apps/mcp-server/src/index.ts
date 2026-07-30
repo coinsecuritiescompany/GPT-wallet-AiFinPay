@@ -11,7 +11,7 @@ import { AppContext } from "./context.js";
 import type { PublicWalletAddresses } from "./auth/oauth-provider.js";
 import { landingPage, privacyPage, supportPage, termsPage } from "./public-pages.js";
 import { appIconPng, createMcpServer, vaultHtml, widgetHtml } from "./server.js";
-import { validateSignedEvmTransaction } from "./services/signed-transaction-validator.js";
+import { validateSignedEvmTransaction, validateSignedSolanaTransaction } from "./services/signed-transaction-validator.js";
 import { WIDGET_URI } from "./tools/register-tools.js";
 
 const config = loadConfig();
@@ -105,6 +105,7 @@ app.get("/health", (_req, res) => {
     uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
     demoMode: config.demoMode,
     walletMode: config.walletMode,
+    signingNetworks: config.signingNetworks,
     authentication: "oauth-2.1-pkce",
     tokenData: "public-addresses-only",
     database: "ok",
@@ -149,11 +150,9 @@ app.post("/api/vault/pair", rateLimit("vault-pair", 30, 10 * 60_000), express.js
 });
 
 // --- Non-custodial signing handoff -----------------------------------------
-// The Vault (separate origin, holds the on-device key) calls these two routes.
-// The server never receives a private key: it hands out an unsigned transaction
-// built from the stored intent, and later broadcasts the raw signed tx the
-// Vault returns. Both are gated on the intent's network being switched on via
-// AIFINPAY_SIGNING_NETWORKS, so with signing off they can never move funds.
+// The Vault holds the on-device key. The server hands out exact unsigned bytes,
+// validates the returned signature against the connected public address and only
+// then broadcasts. A disabled network can never move funds through these routes.
 function signingEnabledFor(network: string): boolean {
   return config.walletMode === "mainnet" && (config.signingNetworks as string[]).includes(network);
 }
@@ -192,12 +191,25 @@ app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000)
     const signedTransaction = typeof req.body?.signedTransaction === "string" ? req.body.signedTransaction : "";
     const claims = context.signing.verifySubmission(token);
     if (!claims) { res.status(410).set("cache-control", "no-store").json({ error: "SIGN_REQUEST_EXPIRED_OR_INVALID" }); return; }
-    if (!/^0x[0-9a-fA-F]{2,}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is missing or malformed.");
     const intent = context.payments.intentForSigning(claims.userId, claims.intentId);
     if (!signingEnabledFor(intent.network)) throw new AppError("SIGNING_FAILED", `Signing on ${intent.network} is not enabled.`, 403);
-    const connectedAddress = context.store.getWalletConnection(claims.userId)?.addresses.evm;
-    if (!connectedAddress) throw new AppError("WALLET_NOT_FOUND", "Connect your wallet before signing.", 404);
-    await validateSignedEvmTransaction(connectedAddress, signedTransaction, claims.transaction);
+    const connection = context.store.getWalletConnection(claims.userId);
+    if (!connection) throw new AppError("WALLET_NOT_FOUND", "Connect your wallet before signing.", 404);
+
+    if (claims.transaction.kind === "SOLANA") {
+      if (intent.network !== "SOLANA") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed Solana transaction is missing or malformed.");
+      const connectedAddress = connection.addresses.solana;
+      if (!connectedAddress) throw new AppError("WALLET_NOT_FOUND", "Connect your Solana wallet before signing.", 404);
+      validateSignedSolanaTransaction(connectedAddress, signedTransaction, claims.transaction);
+    } else {
+      if (intent.network === "SOLANA") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (!/^0x[0-9a-fA-F]{2,}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is missing or malformed.");
+      const connectedAddress = connection.addresses.evm;
+      if (!connectedAddress) throw new AppError("WALLET_NOT_FOUND", "Connect your EVM wallet before signing.", 404);
+      await validateSignedEvmTransaction(connectedAddress, signedTransaction, claims.transaction);
+    }
+
     if (!context.adapter.broadcastRawTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot broadcast transactions.", 501);
     const execution = await context.adapter.broadcastRawTransaction(intent.network, signedTransaction);
     const result = context.payments.finalizeVaultBroadcast(claims.userId, claims.intentId, execution);
@@ -234,6 +246,7 @@ httpServer.listen(config.port, () => console.log(JSON.stringify({
   mcp: config.publicUrl,
   preview: `${config.widgetDomain}/preview`,
   demoMode: config.demoMode,
+  signingNetworks: config.signingNetworks,
   authentication: "oauth-2.1-pkce"
 })));
 

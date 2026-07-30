@@ -145,13 +145,11 @@ export interface SwapOrder {
   createdAt: string;
 }
 
-// Non-custodial signing handoff. The server builds these EIP-1559 fields from
-// the stored intent — nonce, gas and fees are fetched live from the network RPC;
-// the browser Vault signs them locally with the on-device key and the server
-// broadcasts the resulting raw transaction. The private key never leaves the
-// device. `to`/`value`/`data`/`gas`/`maxFeePerGas`/`maxPriorityFeePerGas` are
-// 0x-prefixed hex quantities; `nonce` and `chainId` are plain integers.
+// Non-custodial EVM signing handoff. The server builds these fields from the
+// stored intent; the browser Vault signs them locally and the server validates
+// every reviewed field before broadcasting the raw transaction.
 export interface UnsignedEvmTransaction {
+  kind?: "EVM";
   to: string;
   value: string;
   data: string;
@@ -162,10 +160,23 @@ export interface UnsignedEvmTransaction {
   chainId: number;
 }
 
+// Minimal native SOL transfer. `messageBase64` is the exact legacy Solana
+// message produced by the server. The Vault signs those bytes with the
+// BIP-44/SLIP-0010 Solana key and returns one serialized signed transaction.
+export interface UnsignedSolanaTransaction {
+  kind: "SOLANA";
+  messageBase64: string;
+  recentBlockhash: string;
+  lastValidBlockHeight: number;
+  feeLamports: string;
+}
+
+export type UnsignedWalletTransaction = UnsignedEvmTransaction | UnsignedSolanaTransaction;
+
 export interface VaultSignRequest {
   intentId: string;
   submissionToken: string;
-  transaction: UnsignedEvmTransaction;
+  transaction: UnsignedWalletTransaction;
   display: {
     recipient: string;
     amount: string;
