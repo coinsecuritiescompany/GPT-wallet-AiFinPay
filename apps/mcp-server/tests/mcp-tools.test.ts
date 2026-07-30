@@ -22,6 +22,8 @@ const config: AppConfig = {
   signingNetworks: []
 };
 
+const nativeTools = ["prepare_solana_transfer", "prepare_near_transfer", "prepare_aptos_transfer"];
+
 describe("MCP tool registration", () => {
   const contexts: AppContext[] = [];
   afterEach(() => {
@@ -41,8 +43,8 @@ describe("MCP tool registration", () => {
     });
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "open_wallet", "open_wallet_current", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", "prepare_solana_transfer", "confirm_transfer", "list_swap_assets", "get_swap_quote", "create_swap_order", "get_swap_status", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
-    expect(names).toHaveLength(26);
+    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "open_wallet", "open_wallet_current", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", ...nativeTools, "confirm_transfer", "list_swap_assets", "get_swap_quote", "create_swap_order", "get_swap_status", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
+    expect(names).toHaveLength(28);
     for (const tool of tools.tools) {
       expect(tool.annotations).toMatchObject({
         readOnlyHint: expect.any(Boolean),
@@ -59,19 +61,17 @@ describe("MCP tool registration", () => {
       expect(tools.tools.find((tool) => tool.name === name)?.annotations).toMatchObject({ destructiveHint: true, openWorldHint: false });
     }
     expect(tools.tools.find((tool) => tool.name === "render_wallet")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
-    // Opening/viewing the wallet must never require the wallet:write tier — a
-    // write requirement here causes ChatGPT's "needs more access" reconnect loop.
     const openTool = (name: string) => tools.tools.find((tool) => tool.name === name);
     for (const name of ["open_wallet", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "render_wallet", "list_transactions", "list_agent_policies", "get_audit_log"]) {
       expect(openTool(name)?.annotations).toMatchObject({ readOnlyHint: true });
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
     }
-    for (const name of ["open_wallet", "create_wallet_pairing", "render_wallet", "create_agent_policy", "prepare_solana_transfer"]) {
+    for (const name of ["open_wallet", "create_wallet_pairing", "render_wallet", "create_agent_policy", ...nativeTools]) {
       expect(openTool(name)?._meta?.ui).toMatchObject({ resourceUri: WIDGET_URI });
       expect(openTool(name)?._meta?.["openai/outputTemplate"]).toBe(WIDGET_URI);
     }
     expect(openTool("create_wallet_pairing")?._meta?.ui).toEqual({ resourceUri: WIDGET_URI, visibility: ["app"] });
-    for (const name of ["prepare_transfer", "prepare_solana_transfer", "confirm_transfer", "create_agent_policy", "update_agent_policy", "revoke_agent_policy"]) {
+    for (const name of ["prepare_transfer", ...nativeTools, "confirm_transfer", "create_agent_policy", "update_agent_policy", "revoke_agent_policy"]) {
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:write"] }]);
     }
     expect(openTool("create_swap_order")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:write"] }]);
@@ -88,10 +88,7 @@ describe("MCP tool registration", () => {
     expect(resource.contents[0]?.text).toContain("<!doctype html>");
     for (const legacyUri of LEGACY_WIDGET_URIS) {
       const legacyResource = await client.readResource({ uri: legacyUri });
-      expect(legacyResource.contents[0]).toMatchObject({
-        uri: legacyUri,
-        mimeType: RESOURCE_MIME_TYPE
-      });
+      expect(legacyResource.contents[0]).toMatchObject({ uri: legacyUri, mimeType: RESOURCE_MIME_TYPE });
       expect(legacyResource.contents[0]?.text).toContain("<!doctype html>");
     }
     const result = await client.callTool({ name: "get_wallet_summary", arguments: {} });
@@ -121,9 +118,7 @@ describe("MCP tool registration", () => {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const result = await client.callTool({ name: "render_wallet", arguments: {} });
     expect(result.isError).toBe(true);
-    expect(result._meta?.["mcp/www_authenticate"]).toEqual([
-      expect.stringContaining("/.well-known/oauth-protected-resource/mcp")
-    ]);
+    expect(result._meta?.["mcp/www_authenticate"]).toEqual([expect.stringContaining("/.well-known/oauth-protected-resource/mcp")]);
     expect(result.structuredContent).toMatchObject({ view: "error", error: { code: "AUTH_REQUIRED" } });
     await client.close(); await server.close();
   });
@@ -145,11 +140,7 @@ describe("MCP tool registration", () => {
     const result = await client.callTool({ name: "open_wallet", arguments: {} });
     expect(result.structuredContent).toMatchObject({
       view: "wallet",
-      summary: {
-        selectedNetwork: "CASPER",
-        balances: [],
-        balanceError: { code: "RPC_UNAVAILABLE" }
-      },
+      summary: { selectedNetwork: "CASPER", balances: [], balanceError: { code: "RPC_UNAVAILABLE" } },
       connection: { addresses: { casper: `01${"c".repeat(64)}` } }
     });
     await client.close(); await server.close();
