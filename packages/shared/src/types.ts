@@ -18,7 +18,6 @@ export type PolicyReasonCode =
 export type PaymentIntentStatus = "DRAFT" | "REQUIRES_CONFIRMATION" | "AUTO_APPROVED" | "BLOCKED" |
   "CONFIRMED" | "SIGNING" | "SUBMITTED" | "PENDING" | "COMPLETED" | "FAILED" | "CANCELLED" | "EXPIRED";
 
-// `token` is the display symbol of the actual asset read on-chain (e.g. "USDC", "AVAX", "SOL").
 export interface Balance { token: string; raw: string; formatted: string; decimals: number }
 
 export interface TransactionRecord {
@@ -145,9 +144,6 @@ export interface SwapOrder {
   createdAt: string;
 }
 
-// Non-custodial EVM signing handoff. The server builds these fields from the
-// stored intent; the browser Vault signs them locally and the server validates
-// every reviewed field before broadcasting the raw transaction.
 export interface UnsignedEvmTransaction {
   kind?: "EVM";
   to: string;
@@ -160,9 +156,6 @@ export interface UnsignedEvmTransaction {
   chainId: number;
 }
 
-// Minimal native SOL transfer. `messageBase64` is the exact legacy Solana
-// message produced by the server. The Vault signs those bytes with the
-// BIP-44/SLIP-0010 Solana key and returns one serialized signed transaction.
 export interface UnsignedSolanaTransaction {
   kind: "SOLANA";
   messageBase64: string;
@@ -171,7 +164,43 @@ export interface UnsignedSolanaTransaction {
   feeLamports: string;
 }
 
-export type UnsignedWalletTransaction = UnsignedEvmTransaction | UnsignedSolanaTransaction;
+export interface UnsignedNearTransaction {
+  kind: "NEAR";
+  transactionBase64: string;
+  transactionHash: string;
+  nonce: string;
+  blockHash: string;
+  feeReserveYocto: string;
+}
+
+export interface AptosEntryFunctionPayload {
+  type: "entry_function_payload";
+  function: "0x1::aptos_account::transfer";
+  type_arguments: [];
+  arguments: [string, string];
+}
+
+export interface AptosUnsignedRequest {
+  sender: string;
+  sequence_number: string;
+  max_gas_amount: string;
+  gas_unit_price: string;
+  expiration_timestamp_secs: string;
+  payload: AptosEntryFunctionPayload;
+}
+
+export interface UnsignedAptosTransaction {
+  kind: "APTOS";
+  request: AptosUnsignedRequest;
+  signingMessageHex: string;
+  maxFeeOctas: string;
+}
+
+export type UnsignedWalletTransaction =
+  | UnsignedEvmTransaction
+  | UnsignedSolanaTransaction
+  | UnsignedNearTransaction
+  | UnsignedAptosTransaction;
 
 export interface VaultSignRequest {
   intentId: string;
