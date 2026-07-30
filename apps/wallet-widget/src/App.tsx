@@ -184,7 +184,7 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
                   : <><h1 className="balance-pending">—</h1><span className="subtle">{network.nativeToken} balance unavailable — retry shortly</span></>)
             : <><h1 className="balance-pending">—</h1><span className="subtle">{summary.balanceError?.message ?? `${network.nativeToken} balance unavailable — retry shortly`}</span></>}
       </div>
-      <button className="network" type="button" aria-haspopup="dialog" aria-expanded={networkOpen} aria-label={`Choose network. Current: ${networkLabel}`} onClick={() => setNetworkOpen(true)}><NetworkLogo id={selectedNetwork as NetworkLogoId} />{networkLabel}<span className="chevron">⌄</span></button>
+      <button className="network" type="button" aria-haspopup="dialog" aria-expanded={networkOpen} aria-label={`Choose network. Current: ${networkLabel}`} onClick={() => setNetworkOpen(true)}><NetworkLogo id={selectedNetwork as NetworkLogoId} /><span className="network-current-label">{networkLabel}</span><span className="chevron">⌄</span></button>
     </section>
     <div className="address"><span>{connectedAddress ? short(connectedAddress) : summary.maskedAddress}</span><span>{isLiveBalance ? (usdc && native ? `${native.formatted} ${native.token} gas` : "Live balance") : switching ? "Loading…" : isMainnet ? `${network.nativeToken} balance pending` : "Demo/Testnet"}</span></div>
     {network.family === "EVM" && <p className="address-family-note">This is your shared EVM account. Polygon, Arbitrum and the other EVM networks use the same public address, while balances and transactions stay network-specific.</p>}

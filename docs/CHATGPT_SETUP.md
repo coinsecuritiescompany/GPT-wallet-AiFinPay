@@ -2,19 +2,19 @@
 
 ## Hosted reviewer flow
 
-1. In ChatGPT, open **Settings → Security and login** and turn on **Developer mode**. Availability can depend on the reviewer account or workspace policy.
-2. Open **ChatGPT Plugins**, select **+**, enter `AiFinPay Wallet` as the user-facing name, and use this public streamable-HTTP MCP endpoint under **Connection**:
+1. In ChatGPT, open **Settings → Apps & Connectors → Advanced settings** and turn on **Developer mode**. Some mobile or older clients still label this surface **Plugins**. Availability can depend on the reviewer account or workspace policy.
+2. Create a developer-mode app, enter `AiFinPay Wallet` as the user-facing name, and use this public streamable-HTTP MCP endpoint under **Connection**:
 
    `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
 
 3. Create the connection and review the discovered tools and metadata.
-4. Start a **new conversation**, add the AiFinPay MCP connection from the tools menu, and ask: `Open my AiFinPay wallet.` The current descriptor routes this through `open_wallet_current`.
+4. Start a **new conversation**, add the AiFinPay MCP connection from the tools menu, and ask: `Open my AiFinPay wallet.` The primary descriptor routes this through `open_wallet`.
 5. On first use, ChatGPT shows its native OAuth **Connect** action. Continue to the Vault authorization page.
 6. Create a disposable Vault or restore a disposable test phrase locally. Do not record the phrase in a screenshot or demo video.
 7. Approve sharing the five public chain-family addresses and return to ChatGPT. Passwords, recovery words and keys remain local.
 8. Verify that the wallet opens immediately with Casper selected first, then switch networks and open **Receive** to verify the QR code and full public address.
 
-After tool, schema, metadata, authentication or widget URI changes: redeploy, open the connection in **ChatGPT Plugins**, select **Refresh**, confirm the discovered metadata changed, and rerun the tests in a new conversation.
+After tool, schema, metadata, authentication or widget URI changes: redeploy, open the app/connection settings, select **Refresh**, confirm the discovered metadata changed, and rerun the tests in a new conversation.
 
 Each newly created Vault gets a fresh random recovery phrase and a new set of public addresses. The same connected ChatGPT user intentionally keeps the same Vault across conversations, so funds remain recoverable. Polygon, Arbitrum and the other EVM networks intentionally share one EVM account address; their balances, chain IDs, smart-contract deployments and transactions remain network-specific.
 
@@ -42,7 +42,7 @@ Expose port `8787` through a temporary HTTPS tunnel only for development. Produc
 ## Review checks
 
 - `/health` reports `walletMode: mainnet` and `blockchainAdapter: MAINNET`.
-- MCP Inspector lists 25 tools, including `open_wallet_current`, with explicit safety annotations and a non-null `outputSchema` for every tool.
+- MCP Inspector lists 25 tools. `open_wallet` is the primary model-visible entry point; compatibility aliases are app-only. Every tool has explicit safety annotations and a non-null `outputSchema`.
 - The widget badge says `MAINNET`, not Amoy or Demo.
 - Balance data corresponds to the OAuth-linked address for the selected network.
 - Casper is first in the network registry and matches the public `AiFinPay/casper-contract` mainnet deployment.

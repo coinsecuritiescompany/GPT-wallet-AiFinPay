@@ -10,8 +10,9 @@ Checked on July 30, 2026 against current Apps SDK submission guidance.
 
 - Remote universal MCP endpoint over HTTPS.
 - `RESOURCE_MIME_TYPE` for the MCP App resource.
-- Versioned widget URI: `ui://aifinpay/wallet-v13.html`, with compatibility aliases for previously registered resource URIs.
-- Fresh `open_wallet_current` tool descriptor for mobile clients that cached an older `open_wallet` UI resource.
+- Versioned widget URI: `ui://aifinpay/wallet-v14.html`, with compatibility aliases for previously registered resource URIs.
+- Stable model-visible `open_wallet` tool; the temporary `open_wallet_current` descriptor remains app-only for v13 compatibility.
+- Bounded MCP Apps bridge initialization with a ChatGPT compatibility fallback, so a mobile handshake failure cannot leave the wallet on an infinite spinner.
 - OAuth 2.1 authorization-code flow with PKCE, protected-resource metadata, dynamic client registration and per-tool `wallet:read` security metadata.
 - Standard `_meta.ui.resourceUri`, exact CSP metadata and ChatGPT compatibility aliases.
 - One job per tool with model-selection descriptions.

@@ -4,13 +4,27 @@ Verified public reference deployment: `https://aifinpay-wallet-chatgpt.onrender.
 
 Public MCP endpoint: `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
 
+## Current hosted-service reality
+
+The connected service was inspected on July 30, 2026:
+
+- Render service ID: `srv-d9dj0bjrjlhs73anpb1g`;
+- branch: `main`;
+- region: Oregon;
+- runtime plan: Free;
+- auto-deploy: disabled;
+- one instance;
+- health check: `/health`.
+
+Warm `/health` requests observed from the audit environment still took about 4–7 seconds to first byte, and a full MCP initialize/list/read sequence took materially longer. The v14 server compresses the single-file widget response, but application code cannot remove Render Free scheduling/network latency. Before advertising a fast production wallet, move to an always-on paid instance close to the target users (preferably Frankfurt for the current European audience) and measure p50/p95 latency from ChatGPT again. Changing region normally requires a replacement service and a controlled endpoint migration.
+
 ## Render Blueprint
 
 Use the README button or:
 
 `https://render.com/deploy?repo=https://github.com/coinsecuritiescompany/GPT-wallet-AiFinPay`
 
-The Blueprint builds the Docker image, configures `/health`, enables automatic deploys, provisions a persistent disk and enables Polygon for EVM signing. Render supplies the public hostname, which the server uses for MCP, widget, Vault and legal URLs. Add `CHANGENOW_API_KEY` as a secret to enable live swap quotes and orders.
+The Blueprint describes the intended paid service, automatic deploys, persistent disk and Polygon EVM signing. The currently connected service does not automatically inherit those settings merely because `render.yaml` exists: it is Free, auto-deploy is disabled and its actual disk/backup state must be checked in Render. Render supplies the public hostname, which the server uses for MCP, widget, Vault and legal URLs. Add `CHANGENOW_API_KEY` as a secret to enable live swap quotes and orders.
 
 Verify after every deploy:
 
@@ -23,6 +37,8 @@ swapProvider: configured
 ```
 
 Also test `/`, `/preview`, `/privacy`, `/terms`, `/support` and `/mcp`.
+
+For each release, record cold and warm time-to-first-byte for `/health`, MCP initialization, `tools/list`, the open-wallet tool and the widget resource. A successful HTTP 200 with multi-second latency is not sufficient for the ChatGPT mobile experience.
 
 ## Swap secret
 

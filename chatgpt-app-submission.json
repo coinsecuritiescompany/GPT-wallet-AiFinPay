@@ -24,6 +24,14 @@
         "destructive_justification": "Does not delete data, expose recovery material, sign transactions, or move funds."
       }
     },
+    "open_wallet_current": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "App-only compatibility alias that retrieves the same read-only wallet dashboard as open_wallet.",
+        "open_world_justification": "Does not publish content, submit a transaction, or change a third-party system.",
+        "destructive_justification": "Does not delete data, expose recovery material, sign transactions, or move funds."
+      }
+    },
     "create_wallet_pairing": {
       "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
       "justifications": {

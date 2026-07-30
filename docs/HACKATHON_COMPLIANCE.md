@@ -2,6 +2,14 @@
 
 Checked against the official OpenAI Build Week rules and FAQ on July 30, 2026.
 
+## Submission freeze and evidence
+
+Submissions closed on July 21, 2026 at 5:00 PM PT. Devpost's post-deadline update says submitted descriptions, video links and repositories must not be changed during judging. This repository already received post-deadline product fixes. To keep the evidence auditable:
+
+- `build-week-submission-2026-07-21` points to commit `f965e7c280172057b9a40d25a1ed5dd968c4a54d`, the last repository commit before the deadline;
+- `main` contains later, clearly dated product/reliability work;
+- judges can compare the preserved branch with `main` rather than treating post-deadline fixes as part of the original submission.
+
 ## Required project and repository items
 
 - [x] Working project built with Codex and designed for GPT-5.6 orchestration.
@@ -42,5 +50,6 @@ Checked against the official OpenAI Build Week rules and FAQ on July 30, 2026.
 - [Official rules](https://openai.devpost.com/rules)
 - [Build Week FAQ](https://openai.devpost.com/details/faqs)
 - [Judging criteria](https://openai.devpost.com/)
+- [Submissions closed / no post-deadline edits](https://openai.devpost.com/updates/45418-submissions-are-closed)
 
 The official rules and Hackathon Website remain the source of truth.
