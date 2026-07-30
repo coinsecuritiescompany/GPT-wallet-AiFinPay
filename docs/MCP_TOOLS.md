@@ -48,8 +48,8 @@ MCP tools do not receive recovery words, private keys or signed transaction byte
 - `render_transfer_preview(transferIntentId)`
 - `render_transaction_receipt(transferIntentId)`
 
-Render tools attach `ui://aifinpay/wallet-v10.html`. The widget communicates through the standard MCP Apps bridge and keeps data-fetching responsibilities on the server.
+Render tools attach `ui://aifinpay/wallet-v11.html`. The widget communicates through the standard MCP Apps bridge and keeps data-fetching responsibilities on the server.
 
 ## Submission note
 
-All tools currently omit `outputSchema`. This is not required for runtime, but adding precise per-tool output schemas is recommended before public plugin review so models can use results more reliably.
+All tools declare and validate a shared structured-content output envelope with a required `view` discriminator. View-specific fields pass through that envelope and remain available to the model and widget.
