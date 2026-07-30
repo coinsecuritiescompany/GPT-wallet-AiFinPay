@@ -6,7 +6,7 @@ import type { AuthorizationParams, OAuthServerProvider } from "@modelcontextprot
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 
-export interface PublicWalletAddresses {
+export interface PublicWalletAddresses extends Record<string, string> {
   evm: string;
   solana: string;
   near: string;
@@ -137,9 +137,6 @@ export class AiFinPayOAuthProvider implements OAuthServerProvider {
   approveAuthorization(requestToken: string, addresses: PublicWalletAddresses): string {
     const request = this.verify<AuthorizationRequest>("authorize", requestToken);
     const normalized = canonicalAddresses(addresses);
-    // Keep the established wallet identity stable when a new address family is
-    // added. Existing users were identified by these original four addresses;
-    // Casper is carried in tokens and storage without changing that user id.
     const identityAddresses = {
       evm: normalized.evm,
       solana: normalized.solana,
