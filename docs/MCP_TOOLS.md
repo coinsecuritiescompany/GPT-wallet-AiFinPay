@@ -1,10 +1,12 @@
 # MCP tools
 
-The server exposes 24 focused tools. User IDs and wallet IDs are resolved server-side and are never accepted from the model. Every tool declares explicit read-only, destructive, open-world and idempotency annotations.
+The server exposes 25 focused tools. User IDs and wallet IDs are resolved server-side and are never accepted from the model. Every tool declares explicit read-only, destructive, open-world and idempotency annotations.
 
 ## Wallet connection and networks
 
 - `list_supported_mainnets()` — lists 13 derived-address networks and the runtime signing status of each.
+- `open_wallet_current()` — preferred current open-wallet action. Its fresh tool name and current versioned resource avoid stale ChatGPT descriptors after mobile UI releases.
+- `open_wallet()` — stable compatibility open-wallet action.
 - `create_wallet_pairing()` — compatibility name for the open-wallet action; OAuth links a first-time user and returning users receive the dashboard directly.
 - `get_wallet_connection()` — returns the authenticated wallet status and public addresses only.
 
@@ -48,7 +50,7 @@ MCP tools do not receive recovery words, private keys or signed transaction byte
 - `render_transfer_preview(transferIntentId)`
 - `render_transaction_receipt(transferIntentId)`
 
-Render tools attach `ui://aifinpay/wallet-v11.html`. The widget communicates through the standard MCP Apps bridge and keeps data-fetching responsibilities on the server.
+Render tools and the current open-wallet action attach `ui://aifinpay/wallet-v13.html`. Legacy resource URIs through `wallet-v12.html` continue to resolve to the current HTML for existing conversations. The widget communicates through the standard MCP Apps bridge and keeps data-fetching responsibilities on the server.
 
 ## Submission note
 
