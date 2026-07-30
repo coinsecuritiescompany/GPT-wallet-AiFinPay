@@ -49,6 +49,11 @@ describe("MCP tool registration", () => {
         destructiveHint: expect.any(Boolean),
         openWorldHint: expect.any(Boolean)
       });
+      expect(tool.outputSchema).toMatchObject({
+        type: "object",
+        properties: { view: { type: "string" } },
+        required: ["view"]
+      });
     }
     for (const name of ["confirm_transfer", "cancel_transfer", "revoke_agent_policy"]) {
       expect(tools.tools.find((tool) => tool.name === name)?.annotations).toMatchObject({ destructiveHint: true, openWorldHint: false });
@@ -62,9 +67,10 @@ describe("MCP tool registration", () => {
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
     }
     for (const name of ["open_wallet", "create_wallet_pairing", "render_wallet", "create_agent_policy"]) {
-      expect(openTool(name)?._meta?.ui).toEqual({ resourceUri: WIDGET_URI });
+      expect(openTool(name)?._meta?.ui).toMatchObject({ resourceUri: WIDGET_URI });
       expect(openTool(name)?._meta?.["openai/outputTemplate"]).toBe(WIDGET_URI);
     }
+    expect(openTool("create_wallet_pairing")?._meta?.ui).toEqual({ resourceUri: WIDGET_URI, visibility: ["app"] });
     for (const name of ["prepare_transfer", "confirm_transfer", "create_agent_policy", "update_agent_policy", "revoke_agent_policy"]) {
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:write"] }]);
     }

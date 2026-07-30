@@ -10,7 +10,7 @@ Checked on July 30, 2026 against current Apps SDK submission guidance.
 
 - Remote universal MCP endpoint over HTTPS.
 - `RESOURCE_MIME_TYPE` for the MCP App resource.
-- Versioned widget URI: `ui://aifinpay/wallet-v10.html`.
+- Versioned widget URI: `ui://aifinpay/wallet-v11.html`.
 - OAuth 2.1 authorization-code flow with PKCE, protected-resource metadata, dynamic client registration and per-tool `wallet:read` security metadata.
 - Standard `_meta.ui.resourceUri`, exact CSP metadata and ChatGPT compatibility aliases.
 - One job per tool with model-selection descriptions.
@@ -25,7 +25,7 @@ Implemented: stable public MCP server, branded widget, public logo, narrow CSP, 
 
 Still required from the owner/reviewer flow: verified OpenAI organization/business identity, submission permissions, tool scan, final screenshots/localization and reviewer test credentials/instructions where applicable.
 
-Every current tool omits `outputSchema`. This is not a runtime blocker but should be addressed before final public plugin review.
+Every tool declares a machine-checkable structured-content output envelope with a required `view` discriminator. MCP validates non-error results before returning them to ChatGPT.
 
 ## Official references
 

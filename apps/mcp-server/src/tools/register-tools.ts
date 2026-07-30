@@ -11,13 +11,17 @@ import type { AppContext } from "../context.js";
 
 // Treat the resource URI as a release cache key. ChatGPT can cache an earlier
 // widget body for an unchanged URI, so every shipped UI revision gets a bump.
-export const WIDGET_URI = "ui://aifinpay/wallet-v10.html";
+export const WIDGET_URI = "ui://aifinpay/wallet-v11.html";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true };
 const openRead = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const openWrite = { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false };
+// Every tool returns a discriminated structured-content envelope. Individual
+// views add their own typed fields; passthrough keeps those fields visible while
+// giving MCP hosts a truthful, machine-checkable output contract.
+const toolOutputSchema = z.object({ view: z.string().min(1) }).passthrough();
 function oauthMeta(render = false, scope: "wallet:read" | "wallet:write" = "wallet:read"): Record<string, unknown> {
   return {
     securitySchemes: [{ type: "oauth2", scopes: [scope] }],
@@ -166,7 +170,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "list_supported_mainnets", {
     title: "List supported AiFinPay mainnets",
     description: "Use this when the user asks which mainnet address networks the AiFinPay Vault derives. The result explicitly identifies whether signing is enabled.",
-    inputSchema: {}, annotations: readOnly, _meta: { securitySchemes: [{ type: "noauth" }] }
+    inputSchema: {}, outputSchema: toolOutputSchema, annotations: readOnly, _meta: { securitySchemes: [{ type: "noauth" }] }
   }, async () => data("AiFinPay supports addresses on 13 mainnet networks. The response marks the networks where local signing is enabled in this deployment.", { view: "networks", networks: runtimeNetworks(ctx) }));
 
   // Opening/viewing the wallet is a read operation — it must require only
@@ -190,19 +194,20 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "open_wallet", {
     title: "Open AiFinPay Wallet",
     description: "Use this when the user asks to open, view, or connect their AiFinPay Wallet. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
-    inputSchema: {}, annotations: readOnly, _meta: oauthMeta(true)
+    inputSchema: {}, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta(true)
   }, openWallet);
 
   registerAppTool(server, "create_wallet_pairing", {
     title: "Open AiFinPay Wallet (deprecated — use open_wallet)",
     description: "Deprecated alias of open_wallet, kept for backward compatibility. Prefer open_wallet. Opening and viewing the wallet is read-only; returning users go straight to the dashboard without re-authorizing.",
-    inputSchema: {}, annotations: readOnly, _meta: oauthMeta(true)
+    inputSchema: {}, outputSchema: toolOutputSchema, annotations: readOnly,
+    _meta: { ...oauthMeta(true), ui: { resourceUri: WIDGET_URI, visibility: ["app"] } }
   }, openWallet);
 
   registerAppTool(server, "get_wallet_connection", {
     title: "Get wallet connection status",
     description: "Use this to check whether the user's non-custodial AiFinPay Vault is connected. Only public blockchain addresses are returned.",
-    inputSchema: {}, annotations: readOnly, _meta: oauthMeta()
+    inputSchema: {}, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async (_args, extra) => {
     try {
       const user = resolveUser(ctx, extra);
@@ -214,7 +219,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "get_wallet_summary", {
     title: "Get AiFinPay wallet summary",
     description: "Use this when the user wants to view their AiFinPay wallet balance, network, recent transaction activity, and active agent limits.",
-    inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: oauthMeta()
+    inputSchema: { network: networkSchema.optional() }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async ({ network }, extra) => {
     try {
       const user = resolveUser(ctx, extra);
@@ -227,7 +232,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "get_token_balance", {
     title: "Get token balance",
     description: "Use this when the user asks for the balance of a supported token in their AiFinPay wallet.",
-    inputSchema: { token: tokenSchema, network: networkSchema }, annotations: readOnly, _meta: oauthMeta()
+    inputSchema: { token: tokenSchema, network: networkSchema }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async ({ token, network }, extra) => {
     try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
     catch (error) { return failure(error, ctx); }
@@ -236,7 +241,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "list_swap_assets", {
     title: "List available swap assets",
     description: "Use this before quoting a swap. Returns only active ChangeNOW assets on networks whose payout addresses are controlled by the connected AiFinPay Vault.",
-    inputSchema: {}, annotations: openRead, _meta: oauthMeta()
+    inputSchema: {}, outputSchema: toolOutputSchema, annotations: openRead, _meta: oauthMeta()
   }, async (_args, extra) => {
     try {
       resolveUser(ctx, extra);
@@ -248,7 +253,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "get_swap_quote", {
     title: "Get a swap quote",
     description: "Use this to preview an estimated non-custodial cross-chain swap. A quote does not create an order or move funds.",
-    inputSchema: { fromAsset: swapAssetSchema, toAsset: swapAssetSchema, fromAmount: decimalAmountSchema },
+    inputSchema: { fromAsset: swapAssetSchema, toAsset: swapAssetSchema, fromAmount: decimalAmountSchema }, outputSchema: toolOutputSchema,
     annotations: openRead, _meta: oauthMeta()
   }, async ({ fromAsset, toAsset, fromAmount }, extra) => {
     try {
@@ -265,7 +270,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "create_swap_order", {
     title: "Create a confirmed swap order",
     description: "Use only after the user explicitly confirms the exact input asset, amount, destination asset, and current quote. Creates a ChangeNOW deposit order addressed back to the connected Vault, but does not transfer funds automatically.",
-    inputSchema: { quoteToken: z.string().min(40).max(5000), confirmed: z.literal(true) },
+    inputSchema: { quoteToken: z.string().min(40).max(5000), confirmed: z.literal(true) }, outputSchema: toolOutputSchema,
     annotations: openWrite, _meta: oauthMeta(false, "wallet:write")
   }, async ({ quoteToken }, extra) => {
     try {
@@ -280,7 +285,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "get_swap_status", {
     title: "Get swap order status",
     description: "Use this to check a previously created swap order using its private signed order reference.",
-    inputSchema: { orderReference: z.string().min(40).max(5000) }, annotations: openRead, _meta: oauthMeta()
+    inputSchema: { orderReference: z.string().min(40).max(5000) }, outputSchema: toolOutputSchema, annotations: openRead, _meta: oauthMeta()
   }, async ({ orderReference }, extra) => {
     try {
       const user = resolveUser(ctx, extra);
@@ -291,7 +296,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "prepare_transfer", {
     title: "Prepare wallet transfer",
     description: "Use this when the user requests a transfer preview. In demo mode it writes a private demo intent and never broadcasts. In mainnet mode, where sending is enabled for the network, it prepares the intent and returns a device link the user opens to review and sign the payment in their Vault; where sending is not enabled it returns a safety error.",
-    inputSchema: prepareSchema, annotations: write, _meta: oauthMeta(false, "wallet:write")
+    inputSchema: prepareSchema, outputSchema: toolOutputSchema, annotations: write, _meta: oauthMeta(false, "wallet:write")
   }, async (args, extra) => {
     try {
       if (ctx.config.walletMode === "mainnet" && !signingEnabled(ctx, args.network)) {
@@ -317,7 +322,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "confirm_transfer", {
     title: "Confirm prepared transfer",
     description: "Use this only after explicit confirmation of a prepared transfer. In demo mode it irreversibly completes the private demo intent. In mainnet mode the payment is signed on the user's device in their Vault, so this reports the transaction if it has already broadcast, or returns the device signing link to complete it.",
-    inputSchema: { transferIntentId: z.string().min(8), confirmationToken: z.string().min(20), idempotencyKey: idempotencyKeySchema }, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
+    inputSchema: { transferIntentId: z.string().min(8), confirmationToken: z.string().min(20), idempotencyKey: idempotencyKeySchema }, outputSchema: toolOutputSchema, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
   }, async ({ transferIntentId, confirmationToken }, extra) => {
     try {
       const user = resolveUser(ctx, extra, "wallet:write");
@@ -338,7 +343,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "cancel_transfer", {
     title: "Cancel prepared transfer",
     description: "Use this when the user wants to cancel a transfer that has not completed.",
-    inputSchema: { transferIntentId: z.string().min(8) }, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
+    inputSchema: { transferIntentId: z.string().min(8) }, outputSchema: toolOutputSchema, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
   }, async ({ transferIntentId }, extra) => {
     try { const user = resolveUser(ctx, extra, "wallet:write"); return data("Transfer cancelled.", { view: "cancelled", intent: publicIntent(ctx.payments.cancel(user.userId, transferIntentId)) }); }
     catch (error) { return failure(error, ctx); }
@@ -347,7 +352,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "get_transaction_status", {
     title: "Get transaction status",
     description: "Use this when the user wants the current state of a prepared intent or submitted AiFinPay transaction.",
-    inputSchema: { transactionHash: z.string().optional(), transferIntentId: z.string().optional() }, annotations: readOnly, _meta: oauthMeta()
+    inputSchema: { transactionHash: z.string().optional(), transferIntentId: z.string().optional() }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async ({ transactionHash, transferIntentId }, extra) => {
     try {
       const user = resolveUser(ctx, extra);
@@ -360,7 +365,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "list_transactions", {
     title: "List AiFinPay transactions",
     description: "Use this when the user wants recent AiFinPay transaction history or audit receipt identifiers.",
-    inputSchema: { network: networkSchema.optional(), token: tokenSchema.optional(), initiatedBy: z.enum(["USER", "AGENT"]).optional(), limit: z.number().int().min(1).max(50).default(20), cursor: z.string().optional() }, annotations: readOnly, _meta: oauthMeta()
+    inputSchema: { network: networkSchema.optional(), token: tokenSchema.optional(), initiatedBy: z.enum(["USER", "AGENT"]).optional(), limit: z.number().int().min(1).max(50).default(20), cursor: z.string().optional() }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async ({ network, token, initiatedBy, limit }, extra) => {
     try {
       const user = resolveUser(ctx, extra); let transactions = await ctx.adapter.listTransactions(user.userId);
@@ -374,7 +379,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "create_agent_policy", {
     title: "Create agent spending policy",
     description: "Use this when the user wants to preview or explicitly confirm a new spending policy for a named AI agent. Omit confirmation fields to receive a preview.",
-    inputSchema: { ...policyDraftSchema, confirmationToken: z.string().optional(), confirmationExpiresAt: z.string().datetime().optional(), idempotencyKey: idempotencyKeySchema }, annotations: write,
+    inputSchema: { ...policyDraftSchema, confirmationToken: z.string().optional(), confirmationExpiresAt: z.string().datetime().optional(), idempotencyKey: idempotencyKeySchema }, outputSchema: toolOutputSchema, annotations: write,
     _meta: oauthMeta(true, "wallet:write")
   }, async (args, extra) => {
     try {
@@ -393,25 +398,25 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "list_agent_policies", {
     title: "List agent spending policies",
     description: "Use this when the user wants to review active or revoked AiFinPay agent spending limits.",
-    inputSchema: {}, annotations: readOnly, _meta: oauthMeta()
+    inputSchema: {}, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async (_args, extra) => { try { const user = resolveUser(ctx, extra); return data("Agent policies loaded.", { view: "policies", policies: ctx.store.listPolicies(user.userId) }); } catch (error) { return failure(error, ctx); } });
 
   registerAppTool(server, "update_agent_policy", {
     title: "Update agent policy status",
     description: "Use this only after the user explicitly confirms enabling or disabling an existing agent spending policy.",
-    inputSchema: { policyId: z.string().min(8), enabled: z.boolean(), confirmation: z.literal(true) }, annotations: write, _meta: oauthMeta(false, "wallet:write")
+    inputSchema: { policyId: z.string().min(8), enabled: z.boolean(), confirmation: z.literal(true) }, outputSchema: toolOutputSchema, annotations: write, _meta: oauthMeta(false, "wallet:write")
   }, async ({ policyId, enabled }, extra) => { try { const user = resolveUser(ctx, extra, "wallet:write"); return data("Agent policy updated.", { view: "policy", policy: ctx.policies.update(user.userId, policyId, enabled) }); } catch (error) { return failure(error, ctx); } });
 
   registerAppTool(server, "revoke_agent_policy", {
     title: "Revoke agent policy",
     description: "Use this only after the user explicitly confirms revoking an existing agent spending policy.",
-    inputSchema: { policyId: z.string().min(8), confirmation: z.literal(true) }, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
+    inputSchema: { policyId: z.string().min(8), confirmation: z.literal(true) }, outputSchema: toolOutputSchema, annotations: destructive, _meta: oauthMeta(false, "wallet:write")
   }, async ({ policyId }, extra) => { try { const user = resolveUser(ctx, extra, "wallet:write"); return data("Agent policy revoked.", { view: "policy", policy: ctx.policies.revoke(user.userId, policyId) }); } catch (error) { return failure(error, ctx); } });
 
   registerAppTool(server, "evaluate_payment_request", {
     title: "Evaluate agent payment request",
     description: "Use this when an agent requests a payment and AiFinPay must authoritatively decide whether it is auto-approved, needs human approval, or is blocked.",
-    inputSchema: { ...prepareSchema, initiatedByAgentId: z.string().min(2).max(80), riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW") }, annotations: readOnly, _meta: oauthMeta()
+    inputSchema: { ...prepareSchema, initiatedByAgentId: z.string().min(2).max(80), riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW") }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async (args, extra) => {
     try {
       const user = resolveUser(ctx, extra); const balance = await ctx.adapter.getBalance(user.userId, args.token, args.network);
@@ -426,13 +431,13 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "get_audit_log", {
     title: "Get AiFinPay audit log",
     description: "Use this when the user wants the tamper-evident audit trail for wallet, transfer, or policy actions.",
-    inputSchema: { limit: z.number().int().min(1).max(100).default(30) }, annotations: readOnly, _meta: oauthMeta()
+    inputSchema: { limit: z.number().int().min(1).max(100).default(30) }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async ({ limit }, extra) => { try { const user = resolveUser(ctx, extra); const events = ctx.store.listAudit(user.userId, limit); return data("Audit log loaded.", { view: "audit", events, chainValid: ctx.audit.verify(events) }); } catch (error) { return failure(error, ctx); } });
 
   registerAppTool(server, "render_wallet", {
     title: "Render AiFinPay wallet",
     description: "Use this after wallet data is requested to render the interactive AiFinPay wallet widget inside ChatGPT.",
-    inputSchema: { network: networkSchema.optional() }, annotations: readOnly, _meta: oauthMeta(true)
+    inputSchema: { network: networkSchema.optional() }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta(true)
   }, async ({ network }, extra) => {
     try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); const state = await walletState(ctx, user.userId, selectedNetwork); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Live read-only balances across all 13 mainnet networks." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...state.summary, address: undefined }, connection: state.connection, networks: runtimeNetworks(ctx) }); }
     catch (error) { return failure(error, ctx); }
@@ -441,7 +446,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "render_transfer_preview", {
     title: "Render transfer preview",
     description: "Use this after prepare_transfer succeeds to render the explicit confirmation UI for that prepared intent.",
-    inputSchema: { transferIntentId: z.string().min(8) }, annotations: readOnly, _meta: oauthMeta(true)
+    inputSchema: { transferIntentId: z.string().min(8) }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta(true)
   }, async ({ transferIntentId }, extra) => {
     try { const user = resolveUser(ctx, extra); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transfer preview opened.", { view: intent.status === "BLOCKED" ? "blocked" : "transfer-preview", intent: publicIntent(intent), confirmationToken: ctx.payments.confirmationForIntent(intent, user.userId) }); }
     catch (error) { return failure(error, ctx); }
@@ -450,7 +455,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   registerAppTool(server, "render_transaction_receipt", {
     title: "Render transaction receipt",
     description: "Use this after a transfer completes to render its transaction and audit receipt.",
-    inputSchema: { transferIntentId: z.string().min(8) }, annotations: readOnly, _meta: oauthMeta(true)
+    inputSchema: { transferIntentId: z.string().min(8) }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta(true)
   }, async ({ transferIntentId }, extra) => {
     try { const user = resolveUser(ctx, extra); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transaction receipt opened.", { view: "receipt", intent: publicIntent(intent), explorerUrl: intent.transactionHash ? `${networkMeta(intent.network).explorerBaseUrl}/tx/${intent.transactionHash}` : null }); }
     catch (error) { return failure(error, ctx); }

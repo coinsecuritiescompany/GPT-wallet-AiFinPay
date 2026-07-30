@@ -4,6 +4,7 @@ import { decryptVault, deriveAddresses, encryptVault, parseEncryptedVault } from
 
 // Public BIP-39 test vector. It must never receive real funds.
 const mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const secondMnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 
 describe("local Vault cryptography", () => {
   it("encrypts recovery material and decrypts it only with the password", async () => {
@@ -31,6 +32,16 @@ describe("local Vault cryptography", () => {
     expect(first.addresses.near).toMatch(/^[a-f0-9]{64}$/);
     expect(first.addresses.aptos).toMatch(/^0x[a-f0-9]{64}$/);
     expect(first.addresses.casper).toMatch(/^01[a-f0-9]{64}$/); // ed25519 account public key
+  });
+
+  it("creates a different complete address set for a different recovery phrase", () => {
+    const first = deriveAddresses(mnemonic);
+    const second = deriveAddresses(secondMnemonic);
+    expect(second.evm).not.toBe(first.evm);
+    expect(second.solana).not.toBe(first.solana);
+    expect(second.near).not.toBe(first.near);
+    expect(second.aptos).not.toBe(first.aptos);
+    expect(second.casper).not.toBe(first.casper);
   });
 
   it("strictly validates an encrypted Vault before attempting decryption", async () => {
