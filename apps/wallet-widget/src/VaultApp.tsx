@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { generateMnemonic, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import type { VaultSignRequest } from "@aifinpay/shared";
-import { decryptVault, encryptVault, normalizeVaultPassword, parseEncryptedVault, signEvmTransaction, type EncryptedVault } from "./vault-crypto.js";
+import { decryptVault, encryptVault, normalizeVaultPassword, parseEncryptedVault, signEvmTransaction, signSolanaTransaction, type EncryptedVault } from "./vault-crypto.js";
 
 const STORAGE_KEY = "aifinpay.vault.v1";
 type Step = "welcome" | "phrase" | "verify" | "password" | "restore" | "unlock" | "ready" | "sign" | "signed";
@@ -115,7 +115,9 @@ export function VaultApp() {
     if (!signRequest || !signToken || !mnemonicRef.current) return;
     setBusy(true); setError("");
     try {
-      const signed = await signEvmTransaction(mnemonicRef.current, signRequest.transaction);
+      const signed = signRequest.transaction.kind === "SOLANA"
+        ? signSolanaTransaction(mnemonicRef.current, signRequest.transaction)
+        : await signEvmTransaction(mnemonicRef.current, signRequest.transaction);
       const response = await fetch("/api/vault/submit-signed", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: signRequest.submissionToken, signedTransaction: signed }) });
       const result = await response.json() as { transactionHash?: string; explorerUrl?: string; message?: string };
       if (!response.ok || !result.transactionHash) throw new Error(result.message ?? "The transaction could not be broadcast.");
