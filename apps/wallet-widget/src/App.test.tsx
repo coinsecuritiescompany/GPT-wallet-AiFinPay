@@ -93,8 +93,8 @@ describe("AiFinPay wallet widget", () => {
     });
     scrollArea.scrollTop = 240;
     fireEvent.scroll(scrollArea);
-    expect(screen.getByRole("slider", { name: "Scroll networks" })).toHaveValue("240");
-    fireEvent.change(screen.getByRole("slider", { name: "Scroll networks" }), { target: { value: "600" } });
+    expect(screen.getByRole("scrollbar", { name: "Scroll networks" })).toHaveAttribute("aria-valuenow", "240");
+    fireEvent.keyDown(screen.getByRole("scrollbar", { name: "Scroll networks" }), { key: "End" });
     expect(scrollArea.scrollTop).toBe(600);
     fireEvent.click(screen.getByRole("option", { name: /Solana/ }));
     expect(call).toHaveBeenCalledWith("get_wallet_summary", { network: "SOLANA" });

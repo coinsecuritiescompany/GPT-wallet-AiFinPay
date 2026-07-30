@@ -8,7 +8,7 @@
    `https://aifinpay-wallet-chatgpt.onrender.com/mcp`
 
 3. Create the connection and review the discovered tools and metadata.
-4. Start a **new conversation**, add the AiFinPay MCP connection from the tools menu, and ask: `Open my AiFinPay wallet.`
+4. Start a **new conversation**, add the AiFinPay MCP connection from the tools menu, and ask: `Open my AiFinPay wallet.` The current descriptor routes this through `open_wallet_current`.
 5. On first use, ChatGPT shows its native OAuth **Connect** action. Continue to the Vault authorization page.
 6. Create a disposable Vault or restore a disposable test phrase locally. Do not record the phrase in a screenshot or demo video.
 7. Approve sharing the five public chain-family addresses and return to ChatGPT. Passwords, recovery words and keys remain local.
@@ -42,7 +42,7 @@ Expose port `8787` through a temporary HTTPS tunnel only for development. Produc
 ## Review checks
 
 - `/health` reports `walletMode: mainnet` and `blockchainAdapter: MAINNET`.
-- MCP Inspector lists 24 tools, explicit safety annotations and a non-null `outputSchema` for every tool.
+- MCP Inspector lists 25 tools, including `open_wallet_current`, with explicit safety annotations and a non-null `outputSchema` for every tool.
 - The widget badge says `MAINNET`, not Amoy or Demo.
 - Balance data corresponds to the OAuth-linked address for the selected network.
 - Casper is first in the network registry and matches the public `AiFinPay/casper-contract` mainnet deployment.
