@@ -6,7 +6,11 @@ import { sha3_256 } from "@noble/hashes/sha3.js";
 import { sha512 } from "@noble/hashes/sha2.js";
 import bs58 from "bs58";
 import { privateKeyToAccount } from "viem/accounts";
-import type { UnsignedEvmTransaction } from "@aifinpay/shared";
+import {
+  serializeSolanaSignedTransaction,
+  type UnsignedEvmTransaction,
+  type UnsignedSolanaTransaction
+} from "@aifinpay/shared";
 
 export interface VaultAddresses { evm: string; solana: string; near: string; aptos: string; casper: string }
 export interface EncryptedVault { version: 1; cipher: "AES-GCM"; kdf: "PBKDF2-SHA256"; iterations: number; salt: string; iv: string; ciphertext: string; addresses: VaultAddresses; createdAt: string }
@@ -102,6 +106,15 @@ export async function signEvmTransaction(mnemonic: string, unsigned: UnsignedEvm
     chainId: unsigned.chainId,
     type: "eip1559"
   });
+}
+
+/** Sign the exact server-built Solana message and return one base64 wire transaction. */
+export function signSolanaTransaction(mnemonic: string, unsigned: UnsignedSolanaTransaction): string {
+  const seed = mnemonicToSeedSync(mnemonic);
+  const solanaSeed = slip10(seed, [44, 501, 0, 0]);
+  const message = base64ToBytes(unsigned.messageBase64);
+  const signature = ed25519.sign(message, solanaSeed);
+  return bytesToBase64(serializeSolanaSignedTransaction(message, signature));
 }
 
 export async function encryptVault(mnemonic: string, password: string): Promise<EncryptedVault> {
