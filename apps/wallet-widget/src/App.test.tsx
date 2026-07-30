@@ -79,6 +79,8 @@ describe("AiFinPay wallet widget", () => {
     const selector = screen.getByRole("button", { name: "Choose network. Current: Polygon Mainnet" });
     fireEvent.click(selector);
     expect(screen.getByRole("dialog", { name: "Choose network" })).toBeInTheDocument();
+    expect(screen.getByTestId("network-sheet-scroll")).toHaveClass("network-sheet-scroll");
+    expect(document.body.style.overflow).toBe("");
     expect(screen.getAllByRole("option")).toHaveLength(13);
     expect(screen.getAllByRole("option")[0]).toHaveTextContent("Casper");
     expect(screen.getByTestId("network-logo-botchain")).toBeInTheDocument();
@@ -90,6 +92,25 @@ describe("AiFinPay wallet widget", () => {
     expect(screen.getByTestId("network-logo-solana")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("Live Solana balance")).toBeInTheDocument());
     expect(screen.getByText("SOL")).toBeInTheDocument();
+    call.mockRestore();
+  });
+
+  it("switches EVM networks while intentionally keeping the same EVM account", async () => {
+    const connection = { addresses: { evm: "0x1111111111111111111111111111111111111111", solana: "5L7xB9arfakeaddress111111111111111", near: "a".repeat(64), aptos: `0x${"b".repeat(64)}`, casper: `01${"c".repeat(64)}` }, connectedAt: "2026-07-18T10:00:00.000Z" };
+    const polygonSummary = { ...browserDemoData.summary!, mode: "MAINNET" as const, selectedNetwork: "POLYGON" as const, balances: [{ token: "POL", raw: "0", formatted: "0", decimals: 18 }], latestTransactions: [] };
+    const arbitrumSummary = { ...polygonSummary, selectedNetwork: "ARBITRUM" as const, balances: [{ token: "ETH", raw: "0", formatted: "0", decimals: 18 }] };
+    const call = vi.spyOn(bridge, "callTool").mockImplementation(async () => {
+      const next = { view: "wallet" as const, summary: arbitrumSummary, connection };
+      (bridge as unknown as { emit: (d: unknown) => void }).emit(next);
+      return next;
+    });
+    render(<App initialData={{ view: "wallet", summary: polygonSummary, connection }} />);
+    expect(screen.getByText(/shared EVM account/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Choose network. Current: Polygon Mainnet" }));
+    fireEvent.click(screen.getByRole("option", { name: /Arbitrum One/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Choose network. Current: Arbitrum One" })).toBeInTheDocument());
+    expect(call).toHaveBeenCalledWith("get_wallet_summary", { network: "ARBITRUM" });
+    expect(screen.getByText(/shared EVM account/)).toBeInTheDocument();
     call.mockRestore();
   });
 
