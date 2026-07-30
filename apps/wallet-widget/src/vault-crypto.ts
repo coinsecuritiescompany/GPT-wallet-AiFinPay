@@ -14,6 +14,7 @@ export interface EncryptedVault { version: 1; cipher: "AES-GCM"; kdf: "PBKDF2-SH
 const bytesToHex = (bytes: Uint8Array) => Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+export const normalizeVaultPassword = (password: string) => password.normalize("NFKC");
 
 export function parseEncryptedVault(value: unknown): EncryptedVault | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -107,14 +108,14 @@ export async function encryptVault(mnemonic: string, password: string): Promise<
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const iterations = 310_000;
-  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(normalizeVaultPassword(password)), "PBKDF2", false, ["deriveKey"]);
   const key = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
   const plaintext = new TextEncoder().encode(JSON.stringify({ mnemonic, createdAt: new Date().toISOString() }));
   const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext));
   return { version: 1, cipher: "AES-GCM", kdf: "PBKDF2-SHA256", iterations, salt: bytesToBase64(salt), iv: bytesToBase64(iv), ciphertext: bytesToBase64(ciphertext), addresses: deriveAddresses(mnemonic), createdAt: new Date().toISOString() };
 }
 
-export async function decryptVault(vault: EncryptedVault, password: string): Promise<string> {
+async function decryptVaultWithPassword(vault: EncryptedVault, password: string): Promise<string> {
   const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
   const key = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: base64ToBytes(vault.salt), iterations: vault.iterations }, material, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
   const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(vault.iv) }, key, base64ToBytes(vault.ciphertext));
@@ -128,4 +129,21 @@ export async function decryptVault(vault: EncryptedVault, password: string): Pro
   );
   if (!matches) throw new Error("The encrypted vault addresses were modified or damaged.");
   return mnemonic;
+}
+
+export async function decryptVault(vault: EncryptedVault, password: string): Promise<string> {
+  // Try the exact input first so vaults created by older releases remain
+  // unlockable. Then try the Unicode-normalized form used by new vaults. This
+  // avoids Android keyboard/IME composition differences changing the PBKDF2 key.
+  const normalized = normalizeVaultPassword(password);
+  const candidates = normalized === password ? [password] : [password, normalized];
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      return await decryptVaultWithPassword(vault, candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("The vault could not be decrypted.");
 }
