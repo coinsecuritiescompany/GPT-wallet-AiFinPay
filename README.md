@@ -116,11 +116,13 @@ npx @modelcontextprotocol/inspector@latest --server-url http://localhost:8787/mc
 
 ## Connect from ChatGPT
 
-1. Enable Developer Mode in ChatGPT.
-2. Add `https://aifinpay-wallet-chatgpt.onrender.com/mcp` as the MCP server.
-3. Ask: `Open my AiFinPay wallet`.
+1. Open **Settings → Security and login** in ChatGPT and turn on **Developer mode**.
+2. Open **ChatGPT Plugins**, select **+**, and create an `AiFinPay Wallet` connection to `https://aifinpay-wallet-chatgpt.onrender.com/mcp`.
+3. Review the discovered tools, start a new conversation, add the connection from the tools menu, and ask: `Open my AiFinPay wallet`.
 4. On first use only, choose **Connect**, create or restore the local Vault, and approve sharing its public addresses.
-5. Future `Open my AiFinPay wallet` requests go directly to the dashboard until the app is disconnected in ChatGPT.
+5. Future `Open my AiFinPay wallet` requests go directly to the same user-specific Vault dashboard until the app is disconnected in ChatGPT.
+
+Every newly created Vault receives a fresh random recovery phrase and a new address set. The same connected user intentionally keeps that Vault across chats. Polygon, Arbitrum and the other EVM networks share one EVM address by standard account derivation; network selection still changes the chain ID, RPC balance, asset and smart-contract context.
 
 Never paste a recovery phrase, private key, Vault password or API credential into ChatGPT, an issue, a screenshot or a tool input. Full instructions: [ChatGPT setup](docs/CHATGPT_SETUP.md).
 
