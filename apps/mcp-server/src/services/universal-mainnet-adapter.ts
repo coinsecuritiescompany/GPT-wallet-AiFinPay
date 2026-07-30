@@ -1,10 +1,10 @@
+import { createHash } from "node:crypto";
 import type { ExecutionResult, WalletAdapter } from "@aifinpay/aifinpay-adapter";
 import {
-  AppError, LIVE_NETWORKS, buildNearTransferTransaction, nearRpcPublicKey,
-  nearTransactionHashBase58, type AptosUnsignedRequest, type Balance,
-  type LiveNetworkSpec, type NetworkId, type PaymentIntent, type TransactionRecord,
-  type UnsignedAptosTransaction, type UnsignedNearTransaction,
-  type UnsignedWalletTransaction, type WalletSummary
+  AppError, LIVE_NETWORKS, buildNearTransferTransaction, encodeBase58, nearRpcPublicKey,
+  type AptosUnsignedRequest, type Balance, type LiveNetworkSpec, type NetworkId,
+  type PaymentIntent, type TransactionRecord, type UnsignedAptosTransaction,
+  type UnsignedNearTransaction, type UnsignedWalletTransaction, type WalletSummary
 } from "@aifinpay/shared";
 import type { Store } from "../storage/store.js";
 import { MainnetAdapter } from "./mainnet-adapter.js";
@@ -19,6 +19,10 @@ function specFor(network: NetworkId): LiveNetworkSpec {
   const spec = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
   if (!spec) throw new AppError("NETWORK_UNSUPPORTED", `${network} is not a supported live network.`);
   return spec;
+}
+
+function nearHash(transaction: Uint8Array): string {
+  return encodeBase58(createHash("sha256").update(transaction).digest());
 }
 
 function normalizeAptosAddress(value: string): string {
@@ -152,7 +156,7 @@ export class UniversalMainnetAdapter implements WalletAdapter {
     return {
       kind: "NEAR",
       transactionBase64: Buffer.from(transaction).toString("base64"),
-      transactionHash: nearTransactionHashBase58(transaction),
+      transactionHash: nearHash(transaction),
       nonce: nonce.toString(),
       blockHash: accessKey.block_hash,
       feeReserveYocto: NEAR_FEE_RESERVE_YOCTO.toString()
@@ -200,7 +204,16 @@ export class UniversalMainnetAdapter implements WalletAdapter {
 
   async broadcastRawTransaction(network: NetworkId, rawTransaction: string): Promise<ExecutionResult> {
     if (network === "NEAR") {
+      let signed: Buffer;
+      try {
+        signed = Buffer.from(rawTransaction, "base64");
+        if (signed.length <= 65) throw new Error("Too short.");
+      } catch {
+        throw new AppError("SIGNING_FAILED", "Signed NEAR transaction is malformed.");
+      }
+      const expectedHash = nearHash(signed.subarray(0, signed.length - 65));
       const hash = await this.rpc<string>("NEAR", "broadcast_tx_async", [rawTransaction]);
+      if (hash !== expectedHash) throw new AppError("SIGNING_FAILED", "NEAR RPC returned an unexpected transaction hash.");
       return {
         status: "PENDING",
         transactionHash: hash,
