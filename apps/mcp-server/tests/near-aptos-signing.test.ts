@@ -1,18 +1,22 @@
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  buildNearTransferTransaction, encodeBase58, nearTransactionHashBase58,
-  serializeNearSignedTransaction, type AptosUnsignedRequest, type PaymentIntent,
-  type UnsignedAptosTransaction, type UnsignedNearTransaction
+  buildNearTransferTransaction, encodeBase58, serializeNearSignedTransaction,
+  type AptosUnsignedRequest, type PaymentIntent, type UnsignedAptosTransaction,
+  type UnsignedNearTransaction
 } from "@aifinpay/shared";
 import { loadConfig } from "../src/config.js";
 import { validateSignedAptosTransaction, validateSignedNearTransaction } from "../src/services/signed-transaction-validator.js";
 import { UniversalMainnetAdapter } from "../src/services/universal-mainnet-adapter.js";
 import { Store } from "../src/storage/store.js";
 
-function rawEd25519PublicKey(publicKey: ReturnType<typeof generateKeyPairSync>["publicKey"]): Buffer {
+function rawEd25519PublicKey(publicKey: KeyObject): Buffer {
   const der = publicKey.export({ format: "der", type: "spki" });
   return Buffer.from(der.subarray(der.length - 32));
+}
+
+function nearHash(transaction: Uint8Array): string {
+  return encodeBase58(createHash("sha256").update(transaction).digest());
 }
 
 function connectedStore(stores: Store[], near: string, aptos: string): Store {
@@ -65,7 +69,7 @@ describe("native NEAR and Aptos Vault signing", () => {
     const expected: UnsignedNearTransaction = {
       kind: "NEAR",
       transactionBase64: Buffer.from(transaction).toString("base64"),
-      transactionHash: nearTransactionHashBase58(transaction),
+      transactionHash: nearHash(transaction),
       nonce: "43",
       blockHash,
       feeReserveYocto: "10000000000000000000000"
@@ -106,7 +110,7 @@ describe("native NEAR and Aptos Vault signing", () => {
       blockHash,
       feeReserveYocto: "10000000000000000000000"
     });
-    expect(transaction.transactionHash).toBe(nearTransactionHashBase58(Buffer.from(transaction.transactionBase64, "base64")));
+    expect(transaction.transactionHash).toBe(nearHash(Buffer.from(transaction.transactionBase64, "base64")));
   });
 
   it("validates Aptos public-key ownership, exact request and Ed25519 signature", () => {
