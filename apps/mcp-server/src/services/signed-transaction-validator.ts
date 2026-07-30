@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
 import {
-  AppError, decodeBase58, nearTransactionHashBase58, parseNearSignedTransaction,
+  AppError, decodeBase58, encodeBase58, parseNearSignedTransaction,
   parseSolanaSignedTransaction, type AptosUnsignedRequest, type UnsignedAptosTransaction,
   type UnsignedEvmTransaction, type UnsignedNearTransaction, type UnsignedSolanaTransaction
 } from "@aifinpay/shared";
@@ -83,10 +83,10 @@ export function validateSignedNearTransaction(
     if (!Buffer.from(transaction).equals(expectedTransaction)) {
       throw new AppError("SIGNING_FAILED", "The signed NEAR transaction does not match the payment you reviewed.");
     }
-    if (nearTransactionHashBase58(transaction) !== expected.transactionHash) {
+    const digest = createHash("sha256").update(transaction).digest();
+    if (encodeBase58(digest) !== expected.transactionHash) {
       throw new AppError("SIGNING_FAILED", "The NEAR transaction hash does not match the reviewed transaction.");
     }
-    const digest = createHash("sha256").update(transaction).digest();
     if (!verifySignature(null, digest, ed25519Key(Buffer.from(connectedPublicKeyHex, "hex")), Buffer.from(signature))) {
       throw new AppError("SIGNING_FAILED", "The NEAR transaction was not signed by the connected wallet.");
     }
