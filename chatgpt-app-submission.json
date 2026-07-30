@@ -27,7 +27,7 @@
     "create_wallet_pairing": {
       "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
       "justifications": {
-        "read_only_justification": "Compatibility alias that retrieves the wallet dashboard and starts authorization only when no connection exists.",
+        "read_only_justification": "App-only compatibility alias that retrieves the wallet dashboard and starts authorization only when no connection exists.",
         "open_world_justification": "Authorization shares validated public wallet addresses with this app only and does not publish content or submit transactions.",
         "destructive_justification": "Does not delete data, expose recovery material, sign transactions or move funds."
       }
@@ -215,7 +215,7 @@
       "user_prompt": "Open my AiFinPay wallet and show my mainnet balances.",
       "file_attachment_urls": null,
       "tools_triggered": "render_wallet",
-      "expected_output": "Renders the connected wallet with live balances on the selected network and a selector for all 13 supported mainnets.",
+      "expected_output": "Renders the user-specific wallet with Casper first, live network-specific balances, a scrollable 13-mainnet selector, and QR receive addresses; EVM networks intentionally share one account address.",
       "expected_output_url": null
     },
     {
