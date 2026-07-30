@@ -98,7 +98,7 @@ footer { display:flex; justify-content:space-between; color:var(--muted); font-s
 .choice { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:15px 0; }
 .choice button,.word-picker button,.answer-box button { padding:10px; border:1px solid #d7e1ef; border-radius:11px; background:#fff; color:#41536d; font-weight:750; }
 .choice button.selected { border-color:#1768ff; background:#eaf2ff; color:#095ed6; box-shadow:0 0 0 2px rgba(23,104,255,.08); }
-.vault-panel>.primary,.vault-panel>.secondary { width:100%; margin-top:10px; }
+.vault-panel>.primary,.vault-panel>.secondary,.vault-panel form .primary { width:100%; margin-top:10px; }
 .text-button,.danger-link { width:100%; margin-top:12px; padding:8px; border:0; background:transparent; color:#1768ff; font-weight:750; }
 .danger-link { color:#c73848; }
 .phrase-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:18px 0; padding:0; list-style:none; }
