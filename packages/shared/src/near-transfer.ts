@@ -1,4 +1,3 @@
-import { sha256 } from "@noble/hashes/sha2.js";
 import { decodeBase58, encodeBase58 } from "./solana-transfer.js";
 
 function concatBytes(...parts: Uint8Array[]): Uint8Array {
@@ -39,9 +38,13 @@ function borshString(value: string): Uint8Array {
   return concatBytes(u32le(bytes.length), bytes);
 }
 
-function nearPublicKey(rawHex: string): Uint8Array {
-  if (!/^[0-9a-f]{64}$/.test(rawHex)) throw new Error("Expected a 32-byte NEAR Ed25519 public key.");
-  return Uint8Array.from(Buffer.from(rawHex, "hex"));
+function hexBytes(value: string): Uint8Array {
+  if (!/^[0-9a-f]{64}$/.test(value)) throw new Error("Expected a 32-byte NEAR Ed25519 public key.");
+  const output = new Uint8Array(32);
+  for (let index = 0; index < output.length; index += 1) {
+    output[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  }
+  return output;
 }
 
 /**
@@ -60,7 +63,7 @@ export function buildNearTransferTransaction(
   if (!/^[a-z0-9._-]{2,64}$/.test(receiverId)) throw new Error("Invalid NEAR receiver account.");
   if (nonce <= 0n) throw new Error("NEAR nonce must be positive.");
   if (depositYocto <= 0n) throw new Error("Transfer amount must be positive.");
-  const publicKey = nearPublicKey(publicKeyHex);
+  const publicKey = hexBytes(publicKeyHex);
   const blockHash = decodeBase58(blockHashBase58);
   if (blockHash.length !== 32) throw new Error("Expected a 32-byte NEAR block hash.");
   return concatBytes(
@@ -74,14 +77,6 @@ export function buildNearTransferTransaction(
     Uint8Array.of(3),
     u128le(depositYocto)
   );
-}
-
-export function nearTransactionHash(transaction: Uint8Array): Uint8Array {
-  return sha256(transaction);
-}
-
-export function nearTransactionHashBase58(transaction: Uint8Array): string {
-  return encodeBase58(nearTransactionHash(transaction));
 }
 
 export function serializeNearSignedTransaction(transaction: Uint8Array, signature: Uint8Array): Uint8Array {
@@ -99,5 +94,5 @@ export function parseNearSignedTransaction(serialized: Uint8Array, transactionLe
 }
 
 export function nearRpcPublicKey(publicKeyHex: string): string {
-  return `ed25519:${encodeBase58(nearPublicKey(publicKeyHex))}`;
+  return `ed25519:${encodeBase58(hexBytes(publicKeyHex))}`;
 }
