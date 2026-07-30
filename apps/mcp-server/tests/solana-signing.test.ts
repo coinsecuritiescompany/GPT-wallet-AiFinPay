@@ -34,21 +34,21 @@ describe("native Solana Vault signing", () => {
     stores.splice(0).forEach((store) => store.close());
   });
 
-  it("accepts SOLANA in the explicit signing allowlist and ignores unsupported families", () => {
+  it("accepts implemented chain families and ignores Casper until its deploy codec is complete", () => {
     const config = loadConfig({
       AIFINPAY_DEMO_MODE: "false",
       SESSION_SECRET: "test-session-secret-at-least-thirty-two-chars",
-      AIFINPAY_SIGNING_NETWORKS: "POLYGON,SOLANA,NEAR,CASPER"
+      AIFINPAY_SIGNING_NETWORKS: "POLYGON,SOLANA,NEAR,APTOS,CASPER"
     });
-    expect(config.signingNetworks).toEqual(["POLYGON", "SOLANA"]);
+    expect(config.signingNetworks).toEqual(["POLYGON", "SOLANA", "NEAR", "APTOS"]);
   });
 
   it("builds the deterministic SystemProgram.transfer message", () => {
     const sender = encodeBase58(Uint8Array.from({ length: 32 }, (_, index) => index + 33));
     const message = buildSolanaTransferMessage(sender, recipient, 123_456n, blockhash);
-    expect(message[0]).toBe(1); // one required signature
-    expect(message[1]).toBe(0); // no read-only signed accounts
-    expect(message[2]).toBe(1); // system program is read-only unsigned
+    expect(message[0]).toBe(1);
+    expect(message[1]).toBe(0);
+    expect(message[2]).toBe(1);
     expect(message).toHaveLength(150);
     expect(Buffer.from(message).toString("base64")).toBe(Buffer.from(buildSolanaTransferMessage(sender, recipient, 123_456n, blockhash)).toString("base64"));
   });
