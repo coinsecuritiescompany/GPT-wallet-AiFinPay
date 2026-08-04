@@ -196,11 +196,22 @@ export interface UnsignedAptosTransaction {
   maxFeeOctas: string;
 }
 
+export interface UnsignedCasperTransaction {
+  kind: "CASPER";
+  /** The deploy envelope, complete except for approvals. */
+  deployJson: Record<string, unknown>;
+  /** blake2b256 of the serialised header — this is what the vault signs. */
+  deployHashHex: string;
+  senderPublicKeyHex: string;
+  paymentMotes: string;
+}
+
 export type UnsignedWalletTransaction =
   | UnsignedEvmTransaction
   | UnsignedSolanaTransaction
   | UnsignedNearTransaction
-  | UnsignedAptosTransaction;
+  | UnsignedAptosTransaction
+  | UnsignedCasperTransaction;
 
 export interface VaultSignRequest {
   intentId: string;

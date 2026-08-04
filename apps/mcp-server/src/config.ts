@@ -48,7 +48,7 @@ function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
   const requested = parseRpcList(env.AIFINPAY_SIGNING_NETWORKS);
   return requested.filter((id): id is NetworkId => {
     const family = registry[id]?.family;
-    return family === "EVM" || family === "SOLANA" || family === "NEAR" || family === "APTOS";
+    return family === "EVM" || family === "SOLANA" || family === "NEAR" || family === "APTOS" || family === "CASPER";
   });
 }
 

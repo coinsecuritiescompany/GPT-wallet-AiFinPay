@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import type { ExecutionResult, WalletAdapter } from "@aifinpay/aifinpay-adapter";
 import {
-  AppError, LIVE_NETWORKS, buildNearTransferTransaction, encodeBase58, nearRpcPublicKey,
+  AppError, LIVE_NETWORKS, attachCasperApproval, buildCasperTransferDeploy,
+  buildNearTransferTransaction, encodeBase58, nearRpcPublicKey,
   type AptosUnsignedRequest, type Balance, type LiveNetworkSpec, type NetworkId,
   type PaymentIntent, type TransactionRecord, type UnsignedAptosTransaction,
-  type UnsignedNearTransaction, type UnsignedWalletTransaction, type WalletSummary
+  type UnsignedCasperTransaction, type UnsignedNearTransaction,
+  type UnsignedWalletTransaction, type WalletSummary
 } from "@aifinpay/shared";
 import type { Store } from "../storage/store.js";
 import { MainnetAdapter } from "./mainnet-adapter.js";
@@ -14,6 +16,11 @@ interface RpcEnvelope<T> { result?: T; error?: { code: number; message: string }
 const RPC_TIMEOUT_MS = 5_000;
 const NEAR_FEE_RESERVE_YOCTO = 10_000_000_000_000_000_000_000n; // 0.01 NEAR
 const APTOS_MAX_GAS_AMOUNT = 2_000n;
+// A native CSPR transfer costs a flat 0.1 CSPR on Casper mainnet, and the
+// network rejects a native transfer below 2.5 CSPR.
+const CASPER_PAYMENT_MOTES = 100_000_000n;
+const CASPER_MIN_TRANSFER_MOTES = 2_500_000_000n;
+const CASPER_TTL_MS = 1_800_000;
 
 function specFor(network: NetworkId): LiveNetworkSpec {
   const spec = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
@@ -69,7 +76,7 @@ export class UniversalMainnetAdapter implements WalletAdapter {
     return { "content-type": "application/json", ...(auth ? { authorization: auth } : {}) };
   }
 
-  private address(userId: string, field: "near" | "aptos"): string {
+  private address(userId: string, field: "near" | "aptos" | "casper"): string {
     const value = this.store.getWalletConnection(userId)?.addresses[field];
     if (!value) throw new AppError("WALLET_NOT_FOUND", `Connect your ${field.toUpperCase()} wallet before sending.`, 404);
     return value;
@@ -128,8 +135,61 @@ export class UniversalMainnetAdapter implements WalletAdapter {
   async buildTransferTransaction(userId: string, intent: PaymentIntent): Promise<UnsignedWalletTransaction> {
     if (intent.network === "NEAR") return this.buildNearTransfer(userId, intent);
     if (intent.network === "APTOS") return this.buildAptosTransfer(userId, intent);
+    if (intent.network === "CASPER") return this.buildCasperTransfer(userId, intent);
     if (!this.base.buildTransferTransaction) throw new AppError("SIGNING_FAILED", "Signing is unavailable.", 501);
     return this.base.buildTransferTransaction(userId, intent);
+  }
+
+  private async buildCasperTransfer(userId: string, intent: PaymentIntent): Promise<UnsignedCasperTransaction> {
+    if (intent.token === "USDC") {
+      throw new AppError("TOKEN_UNSUPPORTED", "Casper has no canonical USDC; send native CSPR only.");
+    }
+    const sender = this.address(userId, "casper");
+    if (!/^01[0-9a-f]{64}$/i.test(sender)) {
+      throw new AppError("INVALID_ADDRESS", "The connected Casper account is invalid.");
+    }
+    const recipient = intent.recipient.trim();
+    if (!/^01[0-9a-f]{64}$/i.test(recipient)) {
+      throw new AppError("INVALID_ADDRESS", "Expected a 33-byte ed25519 Casper public key beginning with 01.");
+    }
+    if (recipient.toLowerCase() === sender.toLowerCase()) {
+      throw new AppError("INVALID_ADDRESS", "The recipient is the sending account.");
+    }
+    const amount = BigInt(intent.amountBaseUnits);
+    if (amount < CASPER_MIN_TRANSFER_MOTES) {
+      throw new AppError("INVALID_AMOUNT", "Casper rejects native transfers below 2.5 CSPR.");
+    }
+    const balance = await this.base.getBalance(userId, "POL", "CASPER");
+    if (BigInt(balance.raw) < amount + CASPER_PAYMENT_MOTES) {
+      throw new AppError("INSUFFICIENT_FUNDS", "Insufficient CSPR for the transfer amount and its 0.1 CSPR fee.");
+    }
+    // The deploy commits to its own timestamp, so it is built once and signed
+    // as-is; rebuilding it later would change the hash the user approved.
+    const deploy = buildCasperTransferDeploy({
+      senderPublicKeyHex: sender.toLowerCase(),
+      recipientPublicKeyHex: recipient.toLowerCase(),
+      amountMotes: amount,
+      paymentMotes: CASPER_PAYMENT_MOTES,
+      chainName: this.casperChainName(),
+      timestampMs: Date.now(),
+      ttlMs: CASPER_TTL_MS,
+      id: null
+    });
+    return {
+      kind: "CASPER",
+      deployJson: deploy.deployJson,
+      deployHashHex: deploy.deployHashHex,
+      senderPublicKeyHex: sender.toLowerCase(),
+      paymentMotes: CASPER_PAYMENT_MOTES.toString()
+    };
+  }
+
+  /** Casper's chain name is part of the signed header, so it must be explicit. */
+  private casperChainName(): string {
+    const configured = process.env.CASPER_CHAIN_NAME?.trim();
+    if (configured) return configured;
+    const rpc = this.rpcUrls("CASPER")[0] ?? "";
+    return /testnet/i.test(rpc) ? "casper-test" : "casper";
   }
 
   private async buildNearTransfer(userId: string, intent: PaymentIntent): Promise<UnsignedNearTransaction> {
@@ -203,6 +263,32 @@ export class UniversalMainnetAdapter implements WalletAdapter {
   }
 
   async broadcastRawTransaction(network: NetworkId, rawTransaction: string): Promise<ExecutionResult> {
+    if (network === "CASPER") {
+      let signed: { deployJson: Record<string, unknown>; signerPublicKeyHex: string; signatureHex: string };
+      try {
+        signed = JSON.parse(rawTransaction) as typeof signed;
+      } catch {
+        throw new AppError("SIGNING_FAILED", "Signed Casper deploy is malformed.");
+      }
+      const deploy = attachCasperApproval(signed.deployJson, signed.signerPublicKeyHex, signed.signatureHex);
+      const hash = (deploy as { hash?: unknown }).hash;
+      if (typeof hash !== "string" || !/^[0-9a-f]{64}$/.test(hash)) {
+        throw new AppError("SIGNING_FAILED", "Signed Casper deploy has no valid hash.");
+      }
+      const result = await this.rpc<{ deploy_hash: string }>("CASPER", "account_put_deploy", { deploy });
+      // The node echoes the hash it accepted; if it differs from the one the
+      // user approved, something other than their deploy was submitted.
+      if (result.deploy_hash !== hash) {
+        throw new AppError("SIGNING_FAILED", "The Casper node accepted a different deploy hash.");
+      }
+      return {
+        status: "PENDING",
+        transactionHash: hash,
+        explorerUrl: `${specFor("CASPER").explorerBaseUrl}/deploy/${hash}`,
+        receiptId: `casper:${hash}`,
+        confirmations: 0
+      };
+    }
     if (network === "NEAR") {
       let signed: Buffer;
       try {

@@ -41,13 +41,13 @@ describe("native NEAR and Aptos Vault signing", () => {
     stores.splice(0).forEach((store) => store.close());
   });
 
-  it("allows NEAR and APTOS while keeping Casper send-locked", () => {
+  it("allows NEAR, APTOS and native CSPR send", () => {
     const config = loadConfig({
       AIFINPAY_DEMO_MODE: "false",
       SESSION_SECRET: "test-session-secret-at-least-thirty-two-chars",
       AIFINPAY_SIGNING_NETWORKS: "POLYGON,SOLANA,NEAR,APTOS,CASPER"
     });
-    expect(config.signingNetworks).toEqual(["POLYGON", "SOLANA", "NEAR", "APTOS"]);
+    expect(config.signingNetworks).toEqual(["POLYGON", "SOLANA", "NEAR", "APTOS", "CASPER"]);
   });
 
   it("builds and validates an exact Borsh NEAR transfer", () => {

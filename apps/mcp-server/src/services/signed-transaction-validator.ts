@@ -2,7 +2,8 @@ import { createHash, createPublicKey, verify as verifySignature } from "node:cry
 import {
   AppError, decodeBase58, encodeBase58, parseNearSignedTransaction,
   parseSolanaSignedTransaction, type AptosUnsignedRequest, type UnsignedAptosTransaction,
-  type UnsignedEvmTransaction, type UnsignedNearTransaction, type UnsignedSolanaTransaction
+  type UnsignedCasperTransaction, type UnsignedEvmTransaction, type UnsignedNearTransaction,
+  type UnsignedSolanaTransaction
 } from "@aifinpay/shared";
 import { parseTransaction, recoverTransactionAddress } from "viem";
 
@@ -127,5 +128,45 @@ export function validateSignedAptosTransaction(
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError("SIGNING_FAILED", "The signed Aptos transaction is invalid or cannot be verified.");
+  }
+}
+
+export function validateSignedCasperTransaction(
+  connectedPublicKeyHex: string,
+  rawTransactionJson: string,
+  expected: UnsignedCasperTransaction
+): void {
+  try {
+    const signed = JSON.parse(rawTransactionJson) as {
+      deployJson?: Record<string, unknown>;
+      signerPublicKeyHex?: string;
+      signatureHex?: string;
+    };
+    // The deploy the vault signed must be exactly the one the user reviewed;
+    // the hash alone is not enough, because the envelope is what gets submitted.
+    if (!signed.deployJson || JSON.stringify(signed.deployJson) !== JSON.stringify(expected.deployJson)) {
+      throw new AppError("SIGNING_FAILED", "The signed Casper deploy does not match the payment you reviewed.");
+    }
+    if (!/^01[0-9a-f]{64}$/i.test(signed.signerPublicKeyHex ?? "") || !/^[0-9a-f]{128}$/i.test(signed.signatureHex ?? "")) {
+      throw new Error("Malformed Casper signature.");
+    }
+    if (signed.signerPublicKeyHex!.toLowerCase() !== connectedPublicKeyHex.toLowerCase()) {
+      throw new AppError("SIGNING_FAILED", "The Casper deploy was not signed by the connected wallet.");
+    }
+    const hash = (signed.deployJson as { hash?: unknown }).hash;
+    if (typeof hash !== "string" || hash.toLowerCase() !== expected.deployHashHex.toLowerCase()) {
+      throw new AppError("SIGNING_FAILED", "The Casper deploy hash does not match the reviewed transaction.");
+    }
+    // Casper signs the deploy hash itself, which commits to the header and,
+    // through the body hash, to the payment and session items.
+    const publicKey = Buffer.from(signed.signerPublicKeyHex!.slice(2), "hex");
+    const message = Buffer.from(expected.deployHashHex, "hex");
+    const signature = Buffer.from(signed.signatureHex!, "hex");
+    if (!verifySignature(null, message, ed25519Key(publicKey), signature)) {
+      throw new AppError("SIGNING_FAILED", "The Casper deploy signature is not valid for the connected wallet.");
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError("SIGNING_FAILED", "The signed Casper deploy is invalid or cannot be verified.");
   }
 }
