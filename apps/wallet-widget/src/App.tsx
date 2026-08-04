@@ -71,7 +71,10 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
     ? data.connection?.addresses.evm
     : data.connection?.addresses[selectedNetwork];
   const canFetch = isMainnet && Boolean(data.connection);
-  const canSend = !isMainnet || (network.family === "EVM" && network.enabledForSigning);
+  // Sending is gated on whether the operator enabled signing for this network,
+  // not on its chain family. The family check predates native Solana, NEAR,
+  // Aptos and Casper signing and would hide the send form on all of them.
+  const canSend = !isMainnet || network.enabledForSigning;
   const networkLabel = isMainnet ? selectedNetwork === "polygon" ? "Polygon Mainnet" : network.label : "Polygon Amoy";
   const selectNetwork = async (id: MainnetId) => {
     setNetworkOpen(false);
