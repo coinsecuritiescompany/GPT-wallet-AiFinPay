@@ -60,7 +60,7 @@ export function createMcpServer(ctx: AppContext): McpServer {
             csp: { connectDomains: [], resourceDomains: [], redirectDomains: explorerOrigins },
             ...(ctx.config.widgetDomain.startsWith("https://") ? { domain: ctx.config.widgetDomain } : {})
           },
-          "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, plus locally approved transfers on enabled EVM networks and native Solana.",
+          "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, plus locally approved transfers on enabled EVM networks and native Solana, NEAR, Aptos and Casper.",
           "openai/widgetPrefersBorder": true,
           "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: [...explorerOrigins, "https://amoy.polygonscan.com"] }
         }
