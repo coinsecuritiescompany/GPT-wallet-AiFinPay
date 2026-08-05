@@ -7,6 +7,8 @@ interface Pending {
   timer: ReturnType<typeof window.setTimeout>;
 }
 
+const HOST_RESULT_KEYS = ["toolOutput", "toolResult", "toolResponse", "output"] as const;
+
 function widgetDataFrom(value: unknown): WidgetData | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
@@ -18,12 +20,16 @@ function widgetDataFrom(value: unknown): WidgetData | undefined {
   return undefined;
 }
 
+function hostResultValues(): unknown[] {
+  const openai = window.openai as unknown as Record<string, unknown> | undefined;
+  if (!openai) return [];
+  return HOST_RESULT_KEYS.map((key) => openai[key]);
+}
+
 /** Normalize every host shape observed on desktop and Android before React mounts. */
 export function hostWidgetData(): WidgetData | undefined {
-  const openai = window.openai as unknown as Record<string, unknown> | undefined;
-  if (!openai) return undefined;
-  for (const key of ["toolOutput", "toolResult", "toolResponse", "output"]) {
-    const candidate = widgetDataFrom(openai[key]);
+  for (const value of hostResultValues()) {
+    const candidate = widgetDataFrom(value);
     if (candidate) return candidate;
   }
   return undefined;
@@ -37,6 +43,11 @@ function resultFingerprint(value: unknown): string {
     const record = data as unknown as Record<string, unknown>;
     return `${data.view}:${String(record.intent ?? "")}`;
   }
+}
+
+/** Snapshot every Android/desktop result slot, not only toolOutput. */
+export function hostResultFingerprint(): string {
+  return hostResultValues().map(resultFingerprint).join("|");
 }
 
 function expectedViewsForTool(name: string): Set<string> | null {
@@ -88,9 +99,7 @@ export class McpAppsBridge {
           this.lastPushed = { data: pushed, at: Date.now() };
           this.pushWaiters.slice().forEach((resolve) => resolve(pushed));
           // Android may replay the last open_wallet result while another tool is
-          // running. Publishing that replay immediately navigates React back to
-          // the dashboard before transfer preparation finishes. Only publish a
-          // notification when it matches the active tool's result contract.
+          // running. Only publish a result matching the active tool contract.
           if (!this.activeTool || acceptsToolResult(this.activeTool, pushed)) this.emit(pushed);
         }
       }
@@ -130,10 +139,12 @@ export class McpAppsBridge {
         resolve(data);
       };
       const fresh = (): WidgetData | null => {
-        const output = window.openai?.toolOutput;
-        const data = widgetDataFrom(output);
-        if (!acceptsToolResult(name, data)) return null;
-        return resultFingerprint(output) === beforeFingerprint ? null : data;
+        if (hostResultFingerprint() === beforeFingerprint) return null;
+        for (const value of hostResultValues()) {
+          const data = widgetDataFrom(value);
+          if (acceptsToolResult(name, data)) return data;
+        }
+        return null;
       };
       const waiter = (data: WidgetData) => { if (acceptsToolResult(name, data)) finish(data); };
       this.pushWaiters.push(waiter);
@@ -149,31 +160,36 @@ export class McpAppsBridge {
   async callTool(name: string, args: Record<string, unknown>, options: { emit?: boolean } = {}): Promise<WidgetData> {
     const shouldEmit = options.emit ?? true;
     const startedAt = Date.now();
-    const beforeFingerprint = resultFingerprint(window.openai?.toolOutput);
+    const beforeFingerprint = hostResultFingerprint();
     this.activeTool = name;
     try {
-      if (this.hostWindow !== window) {
-        try {
-          await this.initialize();
-          const response = await this.request("tools/call", { name, arguments: args }, 20_000);
-          let data = widgetDataFrom(response);
-          if (!acceptsToolResult(name, data)) data = await this.awaitPushedResult(name, 10_000, beforeFingerprint, startedAt) ?? undefined;
-          if (data) {
-            if (shouldEmit) this.emit(data);
-            return data;
-          }
-        } catch (bridgeError) {
-          if (!window.openai?.callTool) throw bridgeError;
-        }
-      }
+      // Android exposes the supported callTool API but can leave iframe RPC
+      // unanswered after the server has already executed the request. Calling
+      // both paths creates duplicate payment intents. Use exactly one transport:
+      // the direct host API when present, iframe RPC only as a fallback.
       if (window.openai?.callTool) {
         const response = await window.openai.callTool(name, args);
         let data = widgetDataFrom(response);
-        if (!acceptsToolResult(name, data)) data = await this.awaitPushedResult(name, 10_000, beforeFingerprint, startedAt) ?? undefined;
+        if (!acceptsToolResult(name, data)) {
+          data = await this.awaitPushedResult(name, 30_000, beforeFingerprint, startedAt) ?? undefined;
+        }
         data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
         if (shouldEmit) this.emit(data);
         return data;
       }
+
+      if (this.hostWindow !== window) {
+        await this.initialize();
+        const response = await this.request("tools/call", { name, arguments: args }, 30_000);
+        let data = widgetDataFrom(response);
+        if (!acceptsToolResult(name, data)) {
+          data = await this.awaitPushedResult(name, 30_000, beforeFingerprint, startedAt) ?? undefined;
+        }
+        data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
+        if (shouldEmit) this.emit(data);
+        return data;
+      }
+
       throw new Error("MCP Apps bridge is available only inside ChatGPT or another compatible host.");
     } finally {
       if (this.activeTool === name) this.activeTool = null;
