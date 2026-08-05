@@ -220,6 +220,18 @@ app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000)
 app.all("/mcp", rateLimit("mcp", 180, 60_000), async (req: Request & { auth?: AuthInfo }, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+  // Record that a request arrived and how it was answered. The MCP transport
+  // consumes the raw body itself — this route deliberately has no JSON parser —
+  // so the tool name is not available here and is not worth breaking the stream
+  // for. Arrival, auth state and status still answer the question that matters:
+  // whether a press reached the server at all, which is the difference between
+  // a server bug and a client one. No body, no arguments, no addresses.
+  const startedAt = Date.now();
+  res.on("finish", () => console.log(JSON.stringify({
+    level: "info", event: "MCP_REQUEST", method: req.method,
+    authenticated: Boolean(req.headers.authorization),
+    status: res.statusCode, ms: Date.now() - startedAt
+  })));
   const authorization = req.headers.authorization;
   if (authorization?.startsWith("Bearer ")) {
     try { req.auth = await context.oauth.verifyAccessToken(authorization.slice(7)); }
