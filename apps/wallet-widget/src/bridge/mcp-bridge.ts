@@ -12,6 +12,8 @@ export class McpAppsBridge {
   private readonly pending = new Map<number, Pending>();
   private readonly listeners = new Set<Listener>();
   private ready: Promise<void> | null = null;
+  private lastPushed: { data: WidgetData; at: number } | null = null;
+  private readonly pushWaiters: Array<(data: WidgetData) => void> = [];
   private stopResizeObserver: (() => void) | null = null;
 
   constructor(private readonly hostWindow: Window = window.parent) {
@@ -28,7 +30,16 @@ export class McpAppsBridge {
         else pending.resolve(message.result);
         return;
       }
-      if (message.method === "ui/notifications/tool-result") this.emit(message.params?.structuredContent ?? message.params);
+      if (message.method === "ui/notifications/tool-result") {
+        const pushed = message.params?.structuredContent ?? message.params;
+        // The host may deliver a tool's result here rather than in the call's
+        // own response. Keep the latest so a viewless response can use it.
+        if (pushed?.view) {
+          this.lastPushed = { data: pushed, at: Date.now() };
+          this.pushWaiters.splice(0).forEach((resolve) => resolve(pushed));
+        }
+        this.emit(pushed);
+      }
     }, { passive: true });
   }
 
@@ -46,6 +57,28 @@ export class McpAppsBridge {
     return this.ready;
   }
 
+  /**
+   * Tools that carry an output template are rendered by the host, which may
+   * return an empty acknowledgement to the caller and deliver the real payload
+   * as a tool-result notification instead. Treating the empty response as the
+   * answer makes a working transfer look like a dead button, so wait briefly
+   * for the push before concluding anything.
+   */
+  private awaitPushedResult(timeoutMs = 4_000): Promise<WidgetData | null> {
+    if (this.lastPushed && Date.now() - this.lastPushed.at < timeoutMs) {
+      return Promise.resolve(this.lastPushed.data);
+    }
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        const index = this.pushWaiters.indexOf(waiter);
+        if (index >= 0) this.pushWaiters.splice(index, 1);
+        resolve(null);
+      }, timeoutMs);
+      const waiter = (data: WidgetData) => { window.clearTimeout(timer); resolve(data); };
+      this.pushWaiters.push(waiter);
+    });
+  }
+
   subscribe(listener: Listener): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async callTool(name: string, args: Record<string, unknown>, options: { emit?: boolean } = {}): Promise<WidgetData> {
@@ -54,7 +87,11 @@ export class McpAppsBridge {
       try {
         await this.initialize();
         const response = await this.request("tools/call", { name, arguments: args }, 20_000) as { structuredContent?: WidgetData };
-        const data = response.structuredContent ?? response as unknown as WidgetData;
+        let data = response.structuredContent ?? response as unknown as WidgetData;
+        if (!data?.view) {
+          const pushed = await this.awaitPushedResult();
+          if (pushed) return pushed;
+        }
         if (shouldEmit) this.emit(data);
         return data;
       } catch (bridgeError) {
@@ -66,7 +103,12 @@ export class McpAppsBridge {
     }
     if (window.openai?.callTool) {
       const response = await window.openai.callTool(name, args);
-      const data = response.structuredContent ?? { view: "error", error: { code: "INTERNAL_ERROR", message: "Tool returned no data." } };
+      let data = response.structuredContent as WidgetData | undefined;
+      if (!data?.view) {
+        const pushed = await this.awaitPushedResult();
+        if (pushed) return pushed;
+      }
+      data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: "Tool returned no data." } };
       if (shouldEmit) this.emit(data);
       return data;
     }
