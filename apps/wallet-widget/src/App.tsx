@@ -671,7 +671,14 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
   const [data, setData] = useState<WidgetData>(first); const [wallet, setWallet] = useState<WidgetData>(first.view === "wallet" ? first : browserDemoData);
   useEffect(() => bridge.subscribe((next) => { setData(next); if (next.view === "wallet") setWallet(next); }), []);
   useEffect(() => { document.documentElement.dataset.theme = window.openai?.theme ?? "light"; void bridge.initialize().catch(() => undefined); }, []);
-  const back = () => setData(wallet);
+  // Returning to the wallet used to replay a stored snapshot, so the balance
+  // shown after a payment was the one from before it — a send of 30 CSPR left
+  // the wallet still reporting its old total. Show the snapshot immediately so
+  // the screen never blanks, then refresh it from the chain.
+  const back = () => {
+    setData(wallet);
+    void bridge.callTool("render_wallet", {}, { emit: true }).catch(() => {});
+  };
   if (data.view === "loading") return <main className="card loading"><div className="spinner" /><span>Loading secure wallet…</span></main>;
   if (data.view === "wallet-connect" || data.view === "not-connected") return <WalletConnect data={data} onConnected={setData} />;
   if (data.view === "wallet-connected") return <WalletConnected onOpened={setData} />;
