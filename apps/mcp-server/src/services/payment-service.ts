@@ -45,6 +45,16 @@ function validatedRecipient(network: NetworkId, value: string): string {
     if (!/^0x[a-fA-F0-9]{1,64}$/.test(value)) throw new AppError("INVALID_ADDRESS", "Expected a valid Aptos address.");
     return `0x${value.slice(2).toLowerCase().padStart(64, "0")}`;
   }
+  if (spec.family === "CASPER") {
+    // A Casper key carries its algorithm tag: 01 with 32 bytes for ed25519,
+    // 02 with 33 bytes for secp256k1. Both are valid recipients.
+    const normalized = value.toLowerCase();
+    if (!/^(01[0-9a-f]{64}|02[0-9a-f]{66})$/.test(normalized)) {
+      throw new AppError("INVALID_ADDRESS",
+        "Expected a Casper public key: 01 followed by 32 bytes (ed25519), or 02 followed by 33 bytes (secp256k1).");
+    }
+    return normalized;
+  }
   throw new AppError("SIGNING_FAILED", `Direct sending on ${spec.label} is not implemented yet.`, 501);
 }
 
