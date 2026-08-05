@@ -69,6 +69,20 @@ function acceptsToolResult(name: string, data: WidgetData | undefined): data is 
   return !expected || expected.has(data.view);
 }
 
+function mobileHandoffPrompt(name: string, args: Record<string, unknown>): string | null {
+  if (name !== "prepare_casper_transfer") return null;
+  const recipient = typeof args.recipient === "string" ? args.recipient : "";
+  const amount = typeof args.amount === "string" ? args.amount : "";
+  const idempotencyKey = typeof args.idempotencyKey === "string" ? args.idempotencyKey : "";
+  if (!recipient || !amount || !idempotencyKey) return null;
+  return [
+    "Prepare this AiFinPay Casper transfer now and render the transfer review widget.",
+    `Call prepare_casper_transfer with recipient=${recipient}, amount=${amount}, idempotencyKey=${idempotencyKey}.`,
+    "The wallet UI may already have initiated the same request, so reuse the exact idempotency key and do not create a second payment.",
+    "Do not submit or broadcast anything. Wait for me to open the AiFinPay Vault, review, enter my password, and sign locally."
+  ].join(" ");
+}
+
 export class McpAppsBridge {
   private rpcId = 0;
   private readonly pending = new Map<number, Pending>();
@@ -98,8 +112,6 @@ export class McpAppsBridge {
         if (pushed) {
           this.lastPushed = { data: pushed, at: Date.now() };
           this.pushWaiters.slice().forEach((resolve) => resolve(pushed));
-          // Android may replay the last open_wallet result while another tool is
-          // running. Only publish a result matching the active tool contract.
           if (!this.activeTool || acceptsToolResult(this.activeTool, pushed)) this.emit(pushed);
         }
       }
@@ -155,6 +167,25 @@ export class McpAppsBridge {
     });
   }
 
+  private async handoffMissingResult(name: string, args: Record<string, unknown>): Promise<WidgetData | null> {
+    const prompt = mobileHandoffPrompt(name, args);
+    if (!prompt) return null;
+    if (window.openai?.sendFollowUpMessage) {
+      await window.openai.sendFollowUpMessage({ prompt });
+    } else if (this.hostWindow !== window) {
+      this.notify("ui/message", { role: "user", content: [{ type: "text", text: prompt }] });
+    } else {
+      return null;
+    }
+    return {
+      view: "error",
+      error: {
+        code: "MOBILE_HANDOFF",
+        message: "Mobile ChatGPT did not return the tool result to this card. The same idempotent transfer has been handed off to the chat; use the new review card below. Nothing has been broadcast."
+      }
+    };
+  }
+
   subscribe(listener: Listener): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
   async callTool(name: string, args: Record<string, unknown>, options: { emit?: boolean } = {}): Promise<WidgetData> {
@@ -163,15 +194,15 @@ export class McpAppsBridge {
     const beforeFingerprint = hostResultFingerprint();
     this.activeTool = name;
     try {
-      // Android exposes the supported callTool API but can leave iframe RPC
-      // unanswered after the server has already executed the request. Calling
-      // both paths creates duplicate payment intents. Use exactly one transport:
-      // the direct host API when present, iframe RPC only as a fallback.
       if (window.openai?.callTool) {
         const response = await window.openai.callTool(name, args);
         let data = widgetDataFrom(response);
         if (!acceptsToolResult(name, data)) {
-          data = await this.awaitPushedResult(name, 30_000, beforeFingerprint, startedAt) ?? undefined;
+          data = await this.awaitPushedResult(name, 12_000, beforeFingerprint, startedAt) ?? undefined;
+        }
+        if (!data) {
+          const handoff = await this.handoffMissingResult(name, args);
+          if (handoff) return handoff;
         }
         data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
         if (shouldEmit) this.emit(data);
@@ -183,7 +214,11 @@ export class McpAppsBridge {
         const response = await this.request("tools/call", { name, arguments: args }, 30_000);
         let data = widgetDataFrom(response);
         if (!acceptsToolResult(name, data)) {
-          data = await this.awaitPushedResult(name, 30_000, beforeFingerprint, startedAt) ?? undefined;
+          data = await this.awaitPushedResult(name, 12_000, beforeFingerprint, startedAt) ?? undefined;
+        }
+        if (!data) {
+          const handoff = await this.handoffMissingResult(name, args);
+          if (handoff) return handoff;
         }
         data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
         if (shouldEmit) this.emit(data);
