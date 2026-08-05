@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent a
 import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type SwapAsset, type TransactionRecord } from "@aifinpay/shared";
 import { QRCodeSVG } from "qrcode.react";
 import { bridge } from "./bridge/mcp-bridge.js";
+import { WidgetErrorBoundary } from "./error-boundary.js";
 import { browserDemoData } from "./demo-data.js";
 import { NetworkLogo, type NetworkLogoId } from "./NetworkLogo.js";
 import type { WidgetData } from "./types.js";
@@ -664,12 +665,42 @@ function Networks({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   return <main className="card"><Header label="13 mainnets" /><button className="back" onClick={onBack}>← Wallet</button><div className="network-list">{Object.entries(data.networks ?? {}).map(([id, network]) => <article key={id}><div><strong>{network.label}</strong><span>{network.family} · {network.nativeToken}{network.chainId ? ` · ${network.chainId}` : ""}</span><code title={network.deployment.address}>{network.deployment.name}{network.deployment.moduleName ? `::${network.deployment.moduleName}` : ""} · {short(network.deployment.address)}</code></div><span className={`network-mode ${network.enabledForSigning ? "live" : "staged"}`}>{network.enabledForSigning ? "SEND + BALANCE" : "BALANCE ONLY"}</span></article>)}</div><p className="disclaimer">Every network supports live balances and receiving. Sending appears only where the deployment operator has enabled and release-tested local signing.</p></main>;
 }
 
+// A reloaded conversation restores the last tool output, but nested objects do
+// not always survive that round trip. A view whose data is missing throws the
+// moment it renders, which is what killed the widget on reload. Anything we
+// cannot render is discarded in favour of a fresh load.
+// Exactly the views whose component dereferences a field with a non-null
+// assertion. "blocked" is deliberately absent: it reads data.intent optionally
+// and falls back to data.decision, so it renders fine without one.
+const REQUIRED_BY_VIEW: Record<string, keyof WidgetData> = {
+  "receipt": "intent",            // Receipt: data.intent!
+  "transfer-preview": "intent",   // TransferPreview: data.intent!
+  "swap-quote": "quote",          // SwapQuoteView: data.quote!
+  "swap-order": "order",          // SwapOrderView: data.order!
+  "swap-status": "swapStatus",    // SwapStatusView: data.swapStatus!
+  "wallet": "summary"             // Wallet: data.summary!
+};
+
+export function isRenderable(payload: WidgetData | undefined): boolean {
+  if (!payload?.view) return false;
+  const required = REQUIRED_BY_VIEW[payload.view];
+  return !required || Boolean(payload[required]);
+}
+
 function WalletApp({ initialData }: { initialData?: WidgetData }) {
   // Demo data is only for the standalone /preview page. Inside a host iframe,
   // never flash fabricated balances while waiting for the real tool result.
-  const first = useMemo<WidgetData>(() => initialData ?? window.openai?.toolOutput ?? (window.parent === window ? browserDemoData : { view: "loading" }), [initialData]);
+  const first = useMemo<WidgetData>(() => {
+    const restored = initialData ?? window.openai?.toolOutput;
+    if (isRenderable(restored)) return restored as WidgetData;
+    return window.parent === window ? browserDemoData : { view: "loading" };
+  }, [initialData]);
   const [data, setData] = useState<WidgetData>(first); const [wallet, setWallet] = useState<WidgetData>(first.view === "wallet" ? first : browserDemoData);
-  useEffect(() => bridge.subscribe((next) => { setData(next); if (next.view === "wallet") setWallet(next); }), []);
+  useEffect(() => bridge.subscribe((next) => {
+    if (!isRenderable(next)) return;
+    setData(next);
+    if (next.view === "wallet") setWallet(next);
+  }), []);
   useEffect(() => { document.documentElement.dataset.theme = window.openai?.theme ?? "light"; void bridge.initialize().catch(() => undefined); }, []);
   // Returning to the wallet used to replay a stored snapshot, so the balance
   // shown after a payment was the one from before it — a send of 30 CSPR left
@@ -704,5 +735,11 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
 }
 
 export function App({ initialData }: { initialData?: WidgetData }) {
-  return <WalletApp {...(initialData ? { initialData } : {})} />;
+  // Remounting on reset gives the boundary a genuinely clean tree to render.
+  const [generation, setGeneration] = useState(0);
+  return (
+    <WidgetErrorBoundary onReset={() => setGeneration((value) => value + 1)}>
+      <WalletApp key={generation} {...(initialData ? { initialData } : {})} />
+    </WidgetErrorBoundary>
+  );
 }
