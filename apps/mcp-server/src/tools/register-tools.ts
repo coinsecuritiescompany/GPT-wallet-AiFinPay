@@ -11,12 +11,12 @@ import type { AppContext } from "../context.js";
 
 // Treat the resource URI as a release cache key. ChatGPT can cache an earlier
 // widget body for an unchanged URI, so every shipped UI revision gets a bump.
-export const WIDGET_URI = "ui://aifinpay/wallet-v22.html";
+export const WIDGET_URI = "ui://aifinpay/wallet-v23.html";
 // ChatGPT can keep a tool descriptor cached across conversations and devices.
 // Keep every previously published template URI readable so a cached descriptor
 // never fails between a server deploy and the user's next metadata refresh.
 export const LEGACY_WIDGET_URIS = Array.from(
-  { length: 21 },
+  { length: 22 },
   (_, index) => `ui://aifinpay/wallet-v${index + 1}.html`
 );
 
