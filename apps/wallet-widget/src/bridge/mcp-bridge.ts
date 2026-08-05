@@ -181,18 +181,23 @@ export class McpAppsBridge {
   private async handoffMissingResult(name: string, args: Record<string, unknown>): Promise<WidgetData | null> {
     const prompt = mobileHandoffPrompt(name, args);
     if (!prompt) return null;
-    if (window.openai?.sendFollowUpMessage) {
-      await window.openai.sendFollowUpMessage({ prompt });
-    } else if (this.hostWindow !== window) {
+
+    // Use the standard MCP Apps host channel first. On Android the legacy
+    // sendFollowUpMessage function can exist but resolve without inserting a
+    // user turn, which leaves the transfer stranded in the current iframe.
+    if (this.hostWindow !== window) {
       this.notify("ui/message", { role: "user", content: [{ type: "text", text: prompt }] });
+    } else if (window.openai?.sendFollowUpMessage) {
+      await window.openai.sendFollowUpMessage({ prompt });
     } else {
       return null;
     }
+
     return {
       view: "error",
       error: {
         code: "MOBILE_HANDOFF",
-        message: "The mobile host did not deliver the transfer result to this card. The same idempotent request was sent to the chat. Nothing has been signed or broadcast."
+        message: "The mobile host did not deliver the review result to this card. AiFinPay sent the same idempotent request as a new chat turn. Nothing has been signed or broadcast."
       }
     };
   }
