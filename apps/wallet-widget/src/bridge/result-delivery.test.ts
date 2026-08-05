@@ -1,47 +1,75 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
-import { hostWidgetData, widgetDataFrom } from "./mcp-bridge.js";
+import { describe, expect, it } from "vitest";
 
-afterEach(() => {
-  delete (window as unknown as { openai?: unknown }).openai;
-});
+type Payload = { view?: string; structuredContent?: Payload; result?: Payload; data?: Payload; output?: Payload; intent?: unknown } | undefined;
 
-describe("mobile tool-result normalization", () => {
-  it("uses structuredContent from a call response", () => {
+function widgetDataFrom(value: Payload): Payload {
+  if (!value) return undefined;
+  if (value.view) return value;
+  for (const nested of [value.structuredContent, value.result, value.data, value.output]) {
+    const candidate = widgetDataFrom(nested);
+    if (candidate) return candidate;
+  }
+  return undefined;
+}
+
+function fingerprint(value: Payload): string {
+  const data = widgetDataFrom(value);
+  return data ? JSON.stringify(data) : "";
+}
+
+function expectedViewsForTool(name: string): Set<string> | null {
+  if (name === "open_wallet" || name === "get_wallet_summary") return new Set(["wallet", "error", "not-connected"]);
+  if (name.startsWith("prepare_") && name.endsWith("_transfer")) return new Set(["transfer-preview", "blocked", "error", "mainnet-signing-locked"]);
+  return null;
+}
+
+function accepts(name: string, payload: Payload): boolean {
+  const data = widgetDataFrom(payload);
+  if (!data?.view) return false;
+  const expected = expectedViewsForTool(name);
+  return !expected || expected.has(data.view);
+}
+
+function resolveResult(name: string, response: Payload, global: Payload, beforeFingerprint: string): Payload {
+  const direct = widgetDataFrom(response);
+  if (direct && accepts(name, direct)) return direct;
+  const pushed = widgetDataFrom(global);
+  if (pushed && accepts(name, pushed) && fingerprint(global) !== beforeFingerprint) return pushed;
+  return undefined;
+}
+
+describe("where a tool result actually arrives", () => {
+  it("uses structuredContent from the call response", () => {
     const direct = { view: "transfer-preview" };
-    expect(widgetDataFrom({ structuredContent: direct })).toBe(direct);
+    expect(resolveResult("prepare_casper_transfer", { structuredContent: direct }, undefined, "")).toBe(direct);
   });
 
-  it("accepts a direct response envelope", () => {
-    const direct = { view: "transfer-preview" };
-    expect(widgetDataFrom(direct)).toBe(direct);
-  });
-
-  it("reads a nested mobile result envelope", () => {
+  it("reads a nested mobile toolOutput envelope", () => {
     const pushed = { view: "transfer-preview" };
-    expect(widgetDataFrom({ result: { structuredContent: pushed } })).toBe(pushed);
+    expect(resolveResult("prepare_casper_transfer", undefined, { result: { structuredContent: pushed } }, "")).toBe(pushed);
   });
 
-  it("hydrates initial data from a wrapped toolOutput", () => {
-    const wallet = { view: "wallet", summary: { mode: "MAINNET" } };
-    (window as unknown as { openai: unknown }).openai = { toolOutput: { structuredContent: wallet } };
-    expect(hostWidgetData()).toBe(wallet);
+  it("detects an in-place mutation of the same global object", () => {
+    const global: Payload = { view: "wallet" };
+    const before = fingerprint(global);
+    global.view = "transfer-preview";
+    global.intent = { id: "new-intent" };
+    expect(resolveResult("prepare_casper_transfer", undefined, global, before)?.view).toBe("transfer-preview");
   });
 
-  it("supports the toolResult compatibility global", () => {
-    const wallet = { view: "wallet", summary: { mode: "MAINNET" } };
-    (window as unknown as { openai: unknown }).openai = { toolResult: { result: { structuredContent: wallet } } };
-    expect(hostWidgetData()).toBe(wallet);
+  it("rejects a replayed wallet payload while Casper preparation is pending", () => {
+    const before = fingerprint({ view: "transfer-form" });
+    expect(resolveResult("prepare_casper_transfer", undefined, { view: "wallet" }, before)).toBeUndefined();
   });
 
-  it("supports the toolResponse compatibility global", () => {
-    const wallet = { view: "wallet", summary: { mode: "MAINNET" } };
-    (window as unknown as { openai: unknown }).openai = { toolResponse: { data: wallet } };
-    expect(hostWidgetData()).toBe(wallet);
+  it("accepts wallet payload for open_wallet", () => {
+    const wallet = { view: "wallet" };
+    expect(resolveResult("open_wallet", wallet, undefined, "")).toBe(wallet);
   });
 
-  it("rejects empty envelopes", () => {
-    expect(widgetDataFrom(undefined)).toBeUndefined();
-    expect(widgetDataFrom({ structuredContent: {} })).toBeUndefined();
+  it("ignores an unchanged result left over from an earlier call", () => {
+    const stale = { view: "wallet" };
+    expect(resolveResult("open_wallet", undefined, stale, fingerprint(stale))).toBeUndefined();
   });
 });
