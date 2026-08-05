@@ -1,48 +1,60 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 
-// A tool result reaches a widget by different routes depending on the host
-// build. Desktop completes the MCP Apps postMessage handshake and returns the
-// payload in the call response. Some mobile builds expose window.openai but
-// never complete that handshake: the call resolves with nothing usable and the
-// payload appears on window.openai.toolOutput instead — sometimes announced by
-// an openai:set_globals event, sometimes not announced at all.
-//
-// Treating the empty response as the answer is what showed "The wallet service
-// returned no response" on a phone while the same build worked on desktop.
-type Payload = { view?: string } | undefined;
+type Payload = { view?: string; structuredContent?: Payload; result?: Payload; intent?: unknown } | undefined;
 
-function resolveResult(response: { structuredContent?: Payload }, global: Payload, before: Payload): Payload {
-  const direct = response.structuredContent;
-  if (direct?.view) return direct;
-  if (global?.view && global !== before) return global;
+function widgetDataFrom(value: Payload): Payload {
+  if (!value) return undefined;
+  if (value.view) return value;
+  if (value.structuredContent?.view) return value.structuredContent;
+  if (value.result) return widgetDataFrom(value.result);
+  return undefined;
+}
+
+function fingerprint(value: Payload): string {
+  const data = widgetDataFrom(value);
+  return data ? JSON.stringify(data) : "";
+}
+
+function resolveResult(response: Payload, global: Payload, beforeFingerprint: string): Payload {
+  const direct = widgetDataFrom(response);
+  if (direct) return direct;
+  const pushed = widgetDataFrom(global);
+  if (pushed && fingerprint(global) !== beforeFingerprint) return pushed;
   return undefined;
 }
 
 describe("where a tool result actually arrives", () => {
-  it("uses the call response when the host provides one", () => {
+  it("uses structuredContent from the call response", () => {
     const direct = { view: "transfer-preview" };
-    expect(resolveResult({ structuredContent: direct }, undefined, undefined)).toBe(direct);
+    expect(resolveResult({ structuredContent: direct }, undefined, "")).toBe(direct);
   });
 
-  it("falls back to the toolOutput global when the response is empty", () => {
+  it("accepts a direct response envelope", () => {
+    const direct = { view: "transfer-preview" };
+    expect(resolveResult(direct, undefined, "")).toBe(direct);
+  });
+
+  it("reads a nested mobile toolOutput envelope", () => {
     const pushed = { view: "transfer-preview" };
-    expect(resolveResult({}, pushed, undefined)).toBe(pushed);
+    expect(resolveResult(undefined, { result: { structuredContent: pushed } }, "")).toBe(pushed);
   });
 
-  it("ignores a global left over from an earlier call", () => {
+  it("detects an in-place mutation of the same global object", () => {
+    const global: Payload = { view: "wallet" };
+    const before = fingerprint(global);
+    global.view = "transfer-preview";
+    global.intent = { id: "new-intent" };
+    expect(resolveResult(undefined, global, before)?.view).toBe("transfer-preview");
+  });
+
+  it("ignores an unchanged result left over from an earlier call", () => {
     const stale = { view: "wallet" };
-    expect(resolveResult({}, stale, stale)).toBeUndefined();
+    expect(resolveResult(undefined, stale, fingerprint(stale))).toBeUndefined();
   });
 
-  it("accepts a new global even when the previous one had the same view", () => {
-    const stale = { view: "wallet" };
-    const fresh = { view: "wallet" };
-    expect(resolveResult({}, fresh, stale)).toBe(fresh);
-  });
-
-  it("reports nothing when neither route produced a usable payload", () => {
-    expect(resolveResult({}, undefined, undefined)).toBeUndefined();
-    expect(resolveResult({ structuredContent: {} }, {}, undefined)).toBeUndefined();
+  it("reports nothing when no route produced a usable payload", () => {
+    expect(resolveResult(undefined, undefined, "")).toBeUndefined();
+    expect(resolveResult({ structuredContent: {} }, {}, "")).toBeUndefined();
   });
 });
