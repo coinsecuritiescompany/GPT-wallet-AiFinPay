@@ -9,8 +9,8 @@ COPY packages/demo-ledger/package.json packages/demo-ledger/package.json
 RUN npm ci
 COPY . .
 # ChatGPT caches an Apps SDK widget by its resource URI. Patch the release key
-# before compiling so Android receives the current bridge instead of wallet-v23.
-RUN sed -i 's|ui://aifinpay/wallet-v23.html|ui://aifinpay/wallet-v24.html|g; s|{ length: 22 }|{ length: 23 }|g' apps/mcp-server/src/tools/register-tools.ts
+# before compiling so Android receives the current bridge instead of wallet-v24.
+RUN sed -i 's|ui://aifinpay/wallet-v23.html|ui://aifinpay/wallet-v25.html|g; s|{ length: 22 }|{ length: 24 }|g' apps/mcp-server/src/tools/register-tools.ts
 RUN npm run build
 # Keep compilers, linters and test runners out of the public runtime image.
 # Workspace production dependencies and compiled application files remain.
