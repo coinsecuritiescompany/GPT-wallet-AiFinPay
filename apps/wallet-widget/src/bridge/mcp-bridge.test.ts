@@ -52,6 +52,39 @@ describe("MCP Apps bridge reliability", () => {
     expect(callTool).toHaveBeenCalledTimes(1);
   });
 
+  it("reads the canonical ChatGPT mcp_tool_result metadata envelope", async () => {
+    vi.useFakeTimers();
+    const callTool = vi.fn().mockResolvedValue(undefined);
+    setOpenAI({
+      callTool,
+      toolOutput: { view: "wallet" },
+      toolResponseMetadata: { status: "completed" }
+    });
+    const bridge = new McpAppsBridge(window);
+
+    const resultPromise = bridge.callTool("prepare_casper_transfer", {
+      recipient: `01${"ef".repeat(32)}`,
+      amount: "5",
+      idempotencyKey: "android-metadata-1"
+    }, { emit: false });
+
+    window.setTimeout(() => {
+      (window.openai as unknown as Record<string, unknown>).toolResponseMetadata = {
+        status: "completed",
+        mcp_tool_result: {
+          structuredContent: { view: "transfer-preview", intent: { id: "intent-metadata" } }
+        }
+      };
+      window.dispatchEvent(new Event("openai:set_globals"));
+    }, 250);
+
+    await vi.advanceTimersByTimeAsync(300);
+    await expect(resultPromise).resolves.toMatchObject({
+      view: "transfer-preview",
+      intent: { id: "intent-metadata" }
+    });
+  });
+
   it("hands a lost Android Casper result to the chat with the same idempotency key", async () => {
     vi.useFakeTimers();
     const callTool = vi.fn().mockResolvedValue(undefined);
@@ -83,10 +116,14 @@ describe("MCP Apps bridge reliability", () => {
   it("includes all supported result slots in the host fingerprint", () => {
     setOpenAI({
       toolOutput: { structuredContent: { view: "wallet" } },
+      toolResponseMetadata: {
+        call_tool_result: { structuredContent: { view: "transfer-preview" } }
+      },
       toolResult: { structuredContent: { view: "receipt" } }
     });
     expect(hostWidgetData()).toMatchObject({ view: "wallet" });
     expect(hostResultFingerprint()).toContain("wallet");
+    expect(hostResultFingerprint()).toContain("transfer-preview");
     expect(hostResultFingerprint()).toContain("receipt");
   });
 });
