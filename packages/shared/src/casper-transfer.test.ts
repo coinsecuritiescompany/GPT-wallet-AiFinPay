@@ -80,3 +80,38 @@ describe("casper transfer codec", () => {
     expect(casperAccountHash(SENDER)).toMatch(/^[0-9a-f]{64}$/);
   });
 });
+
+describe("casper recipients — both key algorithms", () => {
+  const ED = "01d92f9915ff6c42524153e62297ba993619cdb8bdaf69143c1b14d9b3c61b968a";
+  // secp256k1 keys carry the 02 tag and a 33-byte compressed key, as in the
+  // address a partner reported the wallet rejecting.
+  const SECP = "020281dc794ce7e404913237917929c9b0426d6b0aa1c8e0b1e6e1b4dbb2b7c4a0d1";
+
+  it("accepts a secp256k1 recipient, not only ed25519", () => {
+    const deploy = buildCasperTransferDeploy({
+      senderPublicKeyHex: ED, recipientPublicKeyHex: SECP,
+      amountMotes: 2_500_000_000n, paymentMotes: 100_000_000n,
+      chainName: "casper", timestampMs: 1_785_900_000_000, ttlMs: 1_800_000, id: null
+    });
+    expect(deploy.deployHashHex).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("still requires the SENDER to be ed25519, since that is what the Vault derives", () => {
+    expect(() => buildCasperTransferDeploy({
+      senderPublicKeyHex: SECP, recipientPublicKeyHex: ED,
+      amountMotes: 2_500_000_000n, paymentMotes: 100_000_000n,
+      chainName: "casper", timestampMs: 1_785_900_000_000, ttlMs: 1_800_000, id: null
+    })).toThrow(/sending account must be/);
+  });
+
+  it("derives account hashes with the right algorithm label for each", () => {
+    expect(casperAccountHash(ED)).toMatch(/^[0-9a-f]{64}$/);
+    expect(casperAccountHash(SECP)).toMatch(/^[0-9a-f]{64}$/);
+    expect(casperAccountHash(ED)).not.toBe(casperAccountHash(SECP));
+  });
+
+  it("rejects a key whose length does not match its algorithm tag", () => {
+    expect(() => casperAccountHash("02" + "a".repeat(64))).toThrow();  // secp length of an ed key
+    expect(() => casperAccountHash("01" + "a".repeat(66))).toThrow();  // ed length of a secp key
+  });
+});

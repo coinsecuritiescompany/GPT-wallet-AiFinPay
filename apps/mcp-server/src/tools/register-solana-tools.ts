@@ -14,8 +14,10 @@ const annotations = { readOnlyHint: false, destructiveHint: false, openWorldHint
 const nearAddressSchema = z.string().transform((value) => value.toLowerCase()).pipe(z.string().regex(/^[a-z0-9._-]{2,64}$/, "Expected a valid NEAR account ID"));
 const aptosAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{1,64}$/, "Expected a valid Aptos address");
 // Casper ed25519 public key: the 01 algorithm tag followed by 32 bytes.
+// Either Casper algorithm is a valid recipient: 01 + 32 bytes (ed25519) or
+// 02 + 33 bytes (secp256k1). Only the sender must be ed25519.
 const casperAddressSchema = z.string().transform((value) => value.toLowerCase())
-  .pipe(z.string().regex(/^01[0-9a-f]{64}$/, "Expected a 33-byte ed25519 Casper public key beginning with 01"));
+  .pipe(z.string().regex(/^(01[0-9a-f]{64}|02[0-9a-f]{66})$/, "Expected a Casper public key: 01 + 32 bytes (ed25519) or 02 + 33 bytes (secp256k1)"));
 
 function data(message: string, structuredContent: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text: message }], structuredContent };
