@@ -7,13 +7,19 @@ interface Pending {
   timer: ReturnType<typeof window.setTimeout>;
 }
 
-const HOST_RESULT_KEYS = ["toolOutput", "toolResult", "toolResponse", "output"] as const;
+// toolResponseMetadata is the canonical ChatGPT field containing the full MCP
+// result envelope. Android can update this field without updating toolOutput.
+const HOST_RESULT_KEYS = ["toolOutput", "toolResponseMetadata", "toolResult", "toolResponse", "output"] as const;
 
 function widgetDataFrom(value: unknown): WidgetData | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   if (typeof record.view === "string" && record.view) return record as unknown as WidgetData;
-  for (const key of ["structuredContent", "result", "data", "output", "toolResult", "toolResponse"]) {
+  for (const key of [
+    "structuredContent", "result", "data", "output", "toolResult", "toolResponse",
+    // ChatGPT exposes the full tool envelope under these metadata fields.
+    "call_tool_result", "mcp_tool_result"
+  ]) {
     const candidate = widgetDataFrom(record[key]);
     if (candidate) return candidate;
   }
@@ -45,7 +51,7 @@ function resultFingerprint(value: unknown): string {
   }
 }
 
-/** Snapshot every Android/desktop result slot, not only toolOutput. */
+/** Snapshot every Android/desktop result slot, including the canonical metadata envelope. */
 export function hostResultFingerprint(): string {
   return hostResultValues().map(resultFingerprint).join("|");
 }
