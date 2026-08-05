@@ -17,8 +17,17 @@ function Logo() {
   return <div className="brand"><img className="logo" src={logoUrl} alt="" aria-hidden="true" /><span>AiFinPay</span></div>;
 }
 
+
+// A fire-and-forget tool call that rejects with no handler becomes an unhandled
+// promise rejection, and the host treats that as a fatal runtime error: the
+// widget is replaced by "Error loading app" and Retry cannot recover it. Every
+// such call routes its failure here instead.
+function reportToolFailure(error: unknown): void {
+  console.error("[aifinpay-widget] tool call failed", error instanceof Error ? error.message : error);
+}
+
 function Header({ label = "Wallet", badge = "BETA" }: { label?: string; badge?: string }) {
-  return <header><Logo /><div className="header-right"><button className="vault-link" onClick={() => void bridge.callTool("open_wallet", {})}>Wallet</button><span className={`demo-badge ${badge === "MAINNET" ? "mainnet-badge" : ""}`}>{badge}</span><span className="header-label">{label}</span></div></header>;
+  return <header><Logo /><div className="header-right"><button className="vault-link" onClick={() => void bridge.callTool("open_wallet", {}).catch(reportToolFailure)}>Wallet</button><span className={`demo-badge ${badge === "MAINNET" ? "mainnet-badge" : ""}`}>{badge}</span><span className="header-label">{label}</span></div></header>;
 }
 
 function StatusPill({ value }: { value: string }) {
@@ -196,10 +205,10 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
       <button onClick={() => onNavigate(canSend ? "transfer-form" : "mainnet-signing-locked")}><b>↗</b>Send</button>
       <button onClick={() => onNavigate("receive")}><b>↙</b>Receive</button>
       <button onClick={() => onNavigate("swap-form")}><b>⇄</b>Swap</button>
-      <button onClick={() => void bridge.callTool("list_agent_policies", {})}><b>⌁</b>Agent limits</button>
-      <button onClick={() => void bridge.callTool("get_audit_log", { limit: 30 })}><b>≡</b>Audit log</button>
+      <button onClick={() => void bridge.callTool("list_agent_policies", {}).catch(reportToolFailure)}><b>⌁</b>Agent limits</button>
+      <button onClick={() => void bridge.callTool("get_audit_log", { limit: 30 }).catch(reportToolFailure)}><b>≡</b>Audit log</button>
     </nav>
-    <section className="section-head"><h2>Recent activity</h2><button className="link" onClick={() => void bridge.callTool("list_transactions", { limit: 20 })}>View all</button></section>
+    <section className="section-head"><h2>Recent activity</h2><button className="link" onClick={() => void bridge.callTool("list_transactions", { limit: 20 }).catch(reportToolFailure)}>View all</button></section>
     <Transactions items={summary.latestTransactions} />
     <footer><span><i className={`secure-dot ${isLiveBalance ? "" : "staged-dot"}`} /> {isLiveBalance ? "Live RPC balance" : switching ? "Loading balance…" : isMainnet ? "Address ready" : "Policy engine active"}</span><span>{isMainnet ? `${network.label}${network.chainId ? ` · Chain ${network.chainId}` : ""}` : "Demo/Testnet"}</span></footer>
     {networkOpen && <div className="network-sheet-backdrop" role="presentation" onClick={() => setNetworkOpen(false)}>
@@ -397,14 +406,14 @@ function SwapOrderView({ data, onBack }: { data: WidgetData; onBack: () => void 
     {fundingToken
       ? <button className="primary" disabled={busy} onClick={() => void fundFromVault()}>{busy ? "Preparing transfer…" : "Review deposit in AiFinPay Vault"}</button>
       : <p className="mainnet-warning">Send only {order.fromAsset.ticker.toUpperCase()} on {order.fromAsset.network} from a compatible wallet. AiFinPay will never substitute another asset.</p>}
-    <button className="secondary" onClick={() => void bridge.callTool("get_swap_status", { orderReference: data.orderReference! })}>Refresh swap status</button>
+    <button className="secondary" onClick={() => void bridge.callTool("get_swap_status", { orderReference: data.orderReference! }).catch(reportToolFailure)}>Refresh swap status</button>
     <p className="disclaimer">Expected output: ≈ {order.expectedAmount} {order.toAsset.ticker.toUpperCase()} to {short(order.payoutAddress)}. Keep this screen until the swap completes.</p>
   </main>;
 }
 
 function SwapStatusView({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   const status = data.swapStatus!;
-  return <main className="card"><Header label="Swap status" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="hero-icon">⇄</section><div className="center"><span className="eyebrow">ORDER {short(status.id)}</span><h2>{status.status.replaceAll("_", " ").toUpperCase()}</h2><p>Provider status updated {date(status.updatedAt)}.</p></div><div className="details">{status.payinHash && <div><span>Deposit transaction</span><strong>{short(status.payinHash)}</strong></div>}{status.payoutHash && <div><span>Payout transaction</span><strong>{short(status.payoutHash)}</strong></div>}</div><button className="primary" onClick={() => void bridge.callTool("get_swap_status", { orderReference: data.orderReference! })}>Refresh status</button><button className="secondary" onClick={onBack}>Return to wallet</button></main>;
+  return <main className="card"><Header label="Swap status" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="hero-icon">⇄</section><div className="center"><span className="eyebrow">ORDER {short(status.id)}</span><h2>{status.status.replaceAll("_", " ").toUpperCase()}</h2><p>Provider status updated {date(status.updatedAt)}.</p></div><div className="details">{status.payinHash && <div><span>Deposit transaction</span><strong>{short(status.payinHash)}</strong></div>}{status.payoutHash && <div><span>Payout transaction</span><strong>{short(status.payoutHash)}</strong></div>}</div><button className="primary" onClick={() => void bridge.callTool("get_swap_status", { orderReference: data.orderReference! }).catch(reportToolFailure)}>Refresh status</button><button className="secondary" onClick={onBack}>Return to wallet</button></main>;
 }
 
 
@@ -501,7 +510,7 @@ function TransferPreview({ data, onBack }: { data: WidgetData; onBack: () => voi
   const intent = data.intent!; const [busy, setBusy] = useState(false);
   const tokenLabel = intentTokenLabel(intent);
   const signUrl = data.signUrl;
-  const cancel = () => void bridge.callTool("cancel_transfer", { transferIntentId: intent.id });
+  const cancel = () => void bridge.callTool("cancel_transfer", { transferIntentId: intent.id }).catch(reportToolFailure);
   // Mainnet with signing enabled: the server returns a signUrl. Sending is
   // non-custodial, so open the Vault where the key lives to review and sign.
   const openVault = () => {
