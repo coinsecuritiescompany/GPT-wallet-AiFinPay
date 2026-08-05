@@ -12,26 +12,46 @@ describe("MCP Apps bridge reliability", () => {
     delete window.openai;
   });
 
-  it("uses the direct ChatGPT tool API exactly once when it is available", async () => {
-    const postMessage = vi.fn();
-    const host = { postMessage } as unknown as Window;
-    const callTool = vi.fn().mockResolvedValue({ structuredContent: { view: "wallet" } });
+  it("prefers canonical MCP tools/call when embedded", async () => {
+    const host = {} as Window;
+    const postMessage = vi.fn((message: unknown) => {
+      const request = message as { id?: number; method?: string };
+      if (typeof request.id !== "number") return;
+      const result = request.method === "ui/initialize"
+        ? { hostContext: { platform: "android" } }
+        : { structuredContent: { view: "wallet" } };
+      window.setTimeout(() => {
+        window.dispatchEvent(new MessageEvent("message", {
+          source: host,
+          data: { jsonrpc: "2.0", id: request.id, result }
+        }));
+      }, 0);
+    });
+    Object.assign(host, { postMessage });
+    const callTool = vi.fn().mockResolvedValue({ structuredContent: { view: "error" } });
     setOpenAI({ callTool });
     const bridge = new McpAppsBridge(host);
 
     await expect(bridge.callTool("render_wallet", {}, { emit: false })).resolves.toEqual({ view: "wallet" });
+    expect(callTool).not.toHaveBeenCalled();
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ method: "ui/initialize" }), "*");
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ method: "tools/call" }), "*");
+  });
+
+  it("uses the ChatGPT compatibility API outside an embedded MCP host", async () => {
+    const callTool = vi.fn().mockResolvedValue({ structuredContent: { view: "wallet" } });
+    setOpenAI({ callTool });
+    const bridge = new McpAppsBridge(window);
+
+    await expect(bridge.callTool("render_wallet", {}, { emit: false })).resolves.toEqual({ view: "wallet" });
     expect(callTool).toHaveBeenCalledTimes(1);
     expect(callTool).toHaveBeenCalledWith("render_wallet", {});
-    expect(postMessage).not.toHaveBeenCalled();
   });
 
   it("reads an Android transfer result delivered through toolResponse", async () => {
     vi.useFakeTimers();
     const callTool = vi.fn().mockResolvedValue(undefined);
-    setOpenAI({
-      callTool,
-      toolOutput: { structuredContent: { view: "wallet" } }
-    });
+    setOpenAI({ callTool, toolOutput: { structuredContent: { view: "wallet" } } });
     const bridge = new McpAppsBridge(window);
 
     const resultPromise = bridge.callTool("prepare_casper_transfer", {
@@ -55,11 +75,7 @@ describe("MCP Apps bridge reliability", () => {
   it("reads the canonical ChatGPT mcp_tool_result metadata envelope", async () => {
     vi.useFakeTimers();
     const callTool = vi.fn().mockResolvedValue(undefined);
-    setOpenAI({
-      callTool,
-      toolOutput: { view: "wallet" },
-      toolResponseMetadata: { status: "completed" }
-    });
+    setOpenAI({ callTool, toolOutput: { view: "wallet" }, toolResponseMetadata: { status: "completed" } });
     const bridge = new McpAppsBridge(window);
 
     const resultPromise = bridge.callTool("prepare_casper_transfer", {
@@ -71,18 +87,13 @@ describe("MCP Apps bridge reliability", () => {
     window.setTimeout(() => {
       (window.openai as unknown as Record<string, unknown>).toolResponseMetadata = {
         status: "completed",
-        mcp_tool_result: {
-          structuredContent: { view: "transfer-preview", intent: { id: "intent-metadata" } }
-        }
+        mcp_tool_result: { structuredContent: { view: "transfer-preview", intent: { id: "intent-metadata" } } }
       };
       window.dispatchEvent(new Event("openai:set_globals"));
     }, 250);
 
     await vi.advanceTimersByTimeAsync(300);
-    await expect(resultPromise).resolves.toMatchObject({
-      view: "transfer-preview",
-      intent: { id: "intent-metadata" }
-    });
+    await expect(resultPromise).resolves.toMatchObject({ view: "transfer-preview", intent: { id: "intent-metadata" } });
   });
 
   it("hands a lost Android Casper result to the chat with the same idempotency key", async () => {
@@ -99,16 +110,11 @@ describe("MCP Apps bridge reliability", () => {
       idempotencyKey: "android-handoff-1"
     }, { emit: false });
 
-    await vi.advanceTimersByTimeAsync(12_100);
-    await expect(resultPromise).resolves.toMatchObject({
-      view: "error",
-      error: { code: "MOBILE_HANDOFF" }
-    });
+    await vi.advanceTimersByTimeAsync(8_100);
+    await expect(resultPromise).resolves.toMatchObject({ view: "error", error: { code: "MOBILE_HANDOFF" } });
     expect(callTool).toHaveBeenCalledTimes(1);
     expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
-    expect(sendFollowUpMessage).toHaveBeenCalledWith({
-      prompt: expect.stringContaining("android-handoff-1")
-    });
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({ prompt: expect.stringContaining("android-handoff-1") });
     expect(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt).toContain(recipient);
     expect(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt).toContain("amount=5");
   });
@@ -116,9 +122,7 @@ describe("MCP Apps bridge reliability", () => {
   it("includes all supported result slots in the host fingerprint", () => {
     setOpenAI({
       toolOutput: { structuredContent: { view: "wallet" } },
-      toolResponseMetadata: {
-        call_tool_result: { structuredContent: { view: "transfer-preview" } }
-      },
+      toolResponseMetadata: { call_tool_result: { structuredContent: { view: "transfer-preview" } } },
       toolResult: { structuredContent: { view: "receipt" } }
     });
     expect(hostWidgetData()).toMatchObject({ view: "wallet" });
