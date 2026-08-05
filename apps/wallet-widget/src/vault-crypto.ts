@@ -11,6 +11,7 @@ import {
   serializeSolanaSignedTransaction,
   type UnsignedAptosTransaction,
   type UnsignedEvmTransaction,
+  type UnsignedCasperTransaction,
   type UnsignedNearTransaction,
   type UnsignedSolanaTransaction
 } from "@aifinpay/shared";
@@ -130,6 +131,26 @@ export function signAptosTransaction(mnemonic: string, unsigned: UnsignedAptosTr
     request: unsigned.request,
     publicKeyHex: `0x${bytesToHex(publicKey)}`,
     signatureHex: `0x${bytesToHex(signature)}`
+  });
+}
+
+export function signCasperTransaction(mnemonic: string, unsigned: UnsignedCasperTransaction): string {
+  const seed = mnemonicToSeedSync(mnemonic);
+  const casperSeed = slip10(seed, [44, 506, 0, 0, 0]);
+  // Casper signs the 32-byte deploy hash itself, not a re-hash of it. The hash
+  // commits to the header, which commits to the body, so this one signature
+  // covers the whole deploy.
+  const deployHash = hexToBytes(unsigned.deployHashHex);
+  if (deployHash.length !== 32) throw new Error("The Casper deploy hash is invalid.");
+  const expected = `01${bytesToHex(ed25519.getPublicKey(casperSeed))}`;
+  if (expected !== unsigned.senderPublicKeyHex.toLowerCase()) {
+    throw new Error("This deploy was prepared for a different Casper account.");
+  }
+  const signature = ed25519.sign(deployHash, casperSeed);
+  return JSON.stringify({
+    deployJson: unsigned.deployJson,
+    signerPublicKeyHex: expected,
+    signatureHex: bytesToHex(signature)
   });
 }
 

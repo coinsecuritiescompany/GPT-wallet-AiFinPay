@@ -12,7 +12,7 @@ import type { PublicWalletAddresses } from "./auth/oauth-provider.js";
 import { landingPage, privacyPage, supportPage, termsPage } from "./public-pages.js";
 import { appIconPng, createMcpServer, vaultHtml, widgetHtml } from "./server.js";
 import {
-  validateSignedAptosTransaction, validateSignedEvmTransaction,
+  validateSignedAptosTransaction, validateSignedCasperTransaction, validateSignedEvmTransaction,
   validateSignedNearTransaction, validateSignedSolanaTransaction
 } from "./services/signed-transaction-validator.js";
 import { WIDGET_URI } from "./tools/register-tools.js";
@@ -201,8 +201,11 @@ app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000)
     } else if (claims.transaction.kind === "APTOS") {
       if (intent.network !== "APTOS") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
       validateSignedAptosTransaction(connection.addresses.aptos, signedTransaction, claims.transaction);
+    } else if (claims.transaction.kind === "CASPER") {
+      if (intent.network !== "CASPER") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      validateSignedCasperTransaction(connection.addresses.casper, signedTransaction, claims.transaction);
     } else {
-      if (["SOLANA", "NEAR", "APTOS"].includes(intent.network)) throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (["SOLANA", "NEAR", "APTOS", "CASPER"].includes(intent.network)) throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
       if (!/^0x[0-9a-fA-F]{2,}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is missing or malformed.");
       await validateSignedEvmTransaction(connection.addresses.evm, signedTransaction, claims.transaction);
     }

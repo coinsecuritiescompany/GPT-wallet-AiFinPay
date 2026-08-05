@@ -34,13 +34,13 @@ describe("native Solana Vault signing", () => {
     stores.splice(0).forEach((store) => store.close());
   });
 
-  it("accepts implemented chain families and ignores Casper until its deploy codec is complete", () => {
+  it("accepts every chain family whose deploy codec is implemented, Casper included", () => {
     const config = loadConfig({
       AIFINPAY_DEMO_MODE: "false",
       SESSION_SECRET: "test-session-secret-at-least-thirty-two-chars",
       AIFINPAY_SIGNING_NETWORKS: "POLYGON,SOLANA,NEAR,APTOS,CASPER"
     });
-    expect(config.signingNetworks).toEqual(["POLYGON", "SOLANA", "NEAR", "APTOS"]);
+    expect(config.signingNetworks).toEqual(["POLYGON", "SOLANA", "NEAR", "APTOS", "CASPER"]);
   });
 
   it("builds the deterministic SystemProgram.transfer message", () => {
