@@ -13,9 +13,6 @@ const outputSchema = z.object({ view: z.string().min(1) }).passthrough();
 const annotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const nearAddressSchema = z.string().transform((value) => value.toLowerCase()).pipe(z.string().regex(/^[a-z0-9._-]{2,64}$/, "Expected a valid NEAR account ID"));
 const aptosAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{1,64}$/, "Expected a valid Aptos address");
-// Casper ed25519 public key: the 01 algorithm tag followed by 32 bytes.
-// Either Casper algorithm is a valid recipient: 01 + 32 bytes (ed25519) or
-// 02 + 33 bytes (secp256k1). Only the sender must be ed25519.
 const casperAddressSchema = z.string().transform((value) => value.toLowerCase())
   .pipe(z.string().regex(/^(01[0-9a-f]{64}|02[0-9a-f]{66})$/, "Expected a Casper public key: 01 + 32 bytes (ed25519) or 02 + 33 bytes (secp256k1)"));
 
@@ -79,8 +76,13 @@ function registerNativeTransfer(
     annotations,
     _meta: {
       securitySchemes: [{ type: "oauth2", scopes: ["wallet:write"] }],
-      ui: { resourceUri: WIDGET_URI },
-      "openai/outputTemplate": WIDGET_URI
+      // Standards-first app visibility plus the compatibility flag required by
+      // window.openai.callTool on older/mobile ChatGPT hosts.
+      ui: { resourceUri: WIDGET_URI, visibility: ["model", "app"] },
+      "openai/outputTemplate": WIDGET_URI,
+      "openai/widgetAccessible": true,
+      "openai/toolInvocation/invoking": `Preparing ${settings.symbol} transfer…`,
+      "openai/toolInvocation/invoked": `${settings.symbol} transfer ready`
     }
   }, async ({ recipient, amount, memo, idempotencyKey }, extra) => {
     try {
