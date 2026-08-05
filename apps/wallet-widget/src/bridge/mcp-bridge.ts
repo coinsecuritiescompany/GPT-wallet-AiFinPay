@@ -17,6 +17,7 @@ function widgetDataFrom(value: unknown): WidgetData | undefined {
   if (typeof record.view === "string" && record.view) return record as unknown as WidgetData;
   for (const key of [
     "structuredContent", "result", "data", "output", "toolResult", "toolResponse",
+    // ChatGPT exposes the full tool envelope under these metadata fields.
     "call_tool_result", "mcp_tool_result"
   ]) {
     const candidate = widgetDataFrom(record[key]);
@@ -31,6 +32,7 @@ function hostResultValues(): unknown[] {
   return HOST_RESULT_KEYS.map((key) => openai[key]);
 }
 
+/** Normalize every host shape observed on desktop and Android before React mounts. */
 export function hostWidgetData(): WidgetData | undefined {
   for (const value of hostResultValues()) {
     const candidate = widgetDataFrom(value);
@@ -49,12 +51,13 @@ function resultFingerprint(value: unknown): string {
   }
 }
 
+/** Snapshot every Android/desktop result slot, including the canonical metadata envelope. */
 export function hostResultFingerprint(): string {
   return hostResultValues().map(resultFingerprint).join("|");
 }
 
 function expectedViewsForTool(name: string): Set<string> | null {
-  if (name === "open_wallet" || name === "open_wallet_current" || name === "create_wallet_pairing" || name === "get_wallet_summary" || name === "render_wallet") {
+  if (name === "open_wallet" || name === "open_wallet_current" || name === "create_wallet_pairing" || name === "get_wallet_summary") {
     return new Set(["wallet", "error", "not-connected"]);
   }
   if ((name.startsWith("prepare_") && name.endsWith("_transfer")) || name === "prepare_transfer") {
@@ -81,7 +84,7 @@ function mobileHandoffPrompt(name: string, args: Record<string, unknown>): strin
   return [
     "Prepare this AiFinPay Casper transfer now and render the transfer review widget.",
     `Call prepare_casper_transfer with recipient=${recipient}, amount=${amount}, idempotencyKey=${idempotencyKey}.`,
-    "Reuse the exact idempotency key and do not create a second payment.",
+    "The wallet UI may already have initiated the same request, so reuse the exact idempotency key and do not create a second payment.",
     "Do not submit or broadcast anything. Wait for me to open the AiFinPay Vault, review, enter my password, and sign locally."
   ].join(" ");
 }
@@ -126,7 +129,7 @@ export class McpAppsBridge {
     if (this.hostWindow === window) { this.ready = Promise.resolve(); return this.ready; }
     this.ready = this.request("ui/initialize", {
       appInfo: { name: "aifinpay-wallet-widget", version: "0.3.0" }, appCapabilities: {}, protocolVersion: "2026-01-26"
-    }, 5_000).then((result) => {
+    }, 3_500).then((result) => {
       const hostContext = (result as { hostContext?: { platform?: string } } | undefined)?.hostContext;
       if (hostContext?.platform) document.documentElement.dataset.platform = hostContext.platform;
       this.notify("ui/notifications/initialized", {});
@@ -170,34 +173,21 @@ export class McpAppsBridge {
     });
   }
 
-  private async readToolResult(name: string, response: unknown, beforeFingerprint: string, startedAt: number): Promise<WidgetData | undefined> {
-    let data = widgetDataFrom(response);
-    if (!acceptsToolResult(name, data)) {
-      data = await this.awaitPushedResult(name, 8_000, beforeFingerprint, startedAt) ?? undefined;
-    }
-    return acceptsToolResult(name, data) ? data : undefined;
-  }
-
   private async handoffMissingResult(name: string, args: Record<string, unknown>): Promise<WidgetData | null> {
     const prompt = mobileHandoffPrompt(name, args);
     if (!prompt) return null;
-
-    // Use the standard MCP Apps host channel first. On Android the legacy
-    // sendFollowUpMessage function can exist but resolve without inserting a
-    // user turn, which leaves the transfer stranded in the current iframe.
-    if (this.hostWindow !== window) {
-      this.notify("ui/message", { role: "user", content: [{ type: "text", text: prompt }] });
-    } else if (window.openai?.sendFollowUpMessage) {
+    if (window.openai?.sendFollowUpMessage) {
       await window.openai.sendFollowUpMessage({ prompt });
+    } else if (this.hostWindow !== window) {
+      this.notify("ui/message", { role: "user", content: [{ type: "text", text: prompt }] });
     } else {
       return null;
     }
-
     return {
       view: "error",
       error: {
         code: "MOBILE_HANDOFF",
-        message: "The mobile host did not deliver the review result to this card. AiFinPay sent the same idempotent request as a new chat turn. Nothing has been signed or broadcast."
+        message: "Mobile ChatGPT did not return the tool result to this card. The same idempotent transfer has been handed off to the chat; use the new review card below. Nothing has been broadcast."
       }
     };
   }
@@ -209,48 +199,39 @@ export class McpAppsBridge {
     const startedAt = Date.now();
     const beforeFingerprint = hostResultFingerprint();
     this.activeTool = name;
-    let canonicalError: unknown;
     try {
-      // MCP Apps tools/call is the canonical component-to-server transport.
-      // Use it first whenever the widget is embedded. window.openai.callTool is
-      // retained only as a compatibility fallback for hosts without MCP Apps RPC.
-      if (this.hostWindow !== window) {
-        try {
-          await this.initialize();
-          const response = await this.request("tools/call", { name, arguments: args }, 30_000);
-          const data = await this.readToolResult(name, response, beforeFingerprint, startedAt);
-          if (data) {
-            if (shouldEmit) this.emit(data);
-            return data;
-          }
-        } catch (error) {
-          canonicalError = error;
-        }
-      }
-
       if (window.openai?.callTool) {
-        try {
-          const response = await window.openai.callTool(name, args);
-          const data = await this.readToolResult(name, response, beforeFingerprint, startedAt);
-          if (data) {
-            if (shouldEmit) this.emit(data);
-            return data;
-          }
-        } catch (error) {
-          canonicalError = canonicalError ?? error;
+        const response = await window.openai.callTool(name, args);
+        let data = widgetDataFrom(response);
+        if (!acceptsToolResult(name, data)) {
+          data = await this.awaitPushedResult(name, 12_000, beforeFingerprint, startedAt) ?? undefined;
         }
+        if (!data) {
+          const handoff = await this.handoffMissingResult(name, args);
+          if (handoff) return handoff;
+        }
+        data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
+        if (shouldEmit) this.emit(data);
+        return data;
       }
 
-      const handoff = await this.handoffMissingResult(name, args);
-      if (handoff) {
-        if (shouldEmit) this.emit(handoff);
-        return handoff;
+      if (this.hostWindow !== window) {
+        await this.initialize();
+        const response = await this.request("tools/call", { name, arguments: args }, 30_000);
+        let data = widgetDataFrom(response);
+        if (!acceptsToolResult(name, data)) {
+          data = await this.awaitPushedResult(name, 12_000, beforeFingerprint, startedAt) ?? undefined;
+        }
+        if (!data) {
+          const handoff = await this.handoffMissingResult(name, args);
+          if (handoff) return handoff;
+        }
+        data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
+        if (shouldEmit) this.emit(data);
+        return data;
       }
 
-      const detail = canonicalError instanceof Error ? ` ${canonicalError.message}` : "";
-      const data: WidgetData = { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.${detail}` } };
-      if (shouldEmit) this.emit(data);
-      return data;
+      throw new Error("MCP Apps bridge is available only inside ChatGPT or another compatible host.");
     } finally {
       if (this.activeTool === name) this.activeTool = null;
     }
