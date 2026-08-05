@@ -413,6 +413,17 @@ function SwapStatusView({ data, onBack }: { data: WidgetData; onBack: () => void
 // a missing scope — never reaches the user.
 function toolErrorMessage(result: unknown, fallback: string): string | null {
   const view = (result as { view?: unknown } | null)?.view;
+  // A payload with no view never reaches the router, so the screen silently
+  // stays put and the button just springs back. That is indistinguishable from
+  // a dead button, so say so rather than leave the user guessing.
+  if (typeof view !== "string" || !view) {
+    const text = (result as { content?: Array<{ text?: unknown }> } | null)?.content
+      ?.map((part) => (typeof part?.text === "string" ? part.text : ""))
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    return text || "The wallet service returned no response. Reconnect the AiFinPay connector and try again.";
+  }
   if (view !== "error" && view !== "blocked") return null;
   const error = (result as { error?: { message?: unknown } } | null)?.error;
   const message = typeof error?.message === "string" ? error.message : "";

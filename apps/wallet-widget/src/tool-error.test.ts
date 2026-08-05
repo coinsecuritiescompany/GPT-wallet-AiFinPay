@@ -37,3 +37,35 @@ describe("surfacing tool errors that resolve rather than throw", () => {
     expect(toolErrorMessage(null, "fallback")).toBeNull();
   });
 });
+
+describe("a response the router cannot use", () => {
+  function toolErrorMessage(result: unknown, fallback: string): string | null {
+    const view = (result as { view?: unknown } | null)?.view;
+    if (typeof view !== "string" || !view) {
+      const text = (result as { content?: Array<{ text?: unknown }> } | null)?.content
+        ?.map((part) => (typeof part?.text === "string" ? part.text : ""))
+        .filter(Boolean).join(" ").trim();
+      return text || "The wallet service returned no response. Reconnect the AiFinPay connector and try again.";
+    }
+    if (view !== "error" && view !== "blocked") return null;
+    const error = (result as { error?: { message?: unknown } } | null)?.error;
+    const message = typeof error?.message === "string" ? error.message : "";
+    return message.trim() || fallback;
+  }
+
+  it("reports a payload with no view rather than leaving the button looking dead", () => {
+    // The bridge only navigates when data.view exists, so this case silently
+    // did nothing at all — the exact symptom reported from a phone.
+    expect(toolErrorMessage({}, "fallback")).toMatch(/no response/i);
+    expect(toolErrorMessage({ structuredContent: {} }, "fallback")).toMatch(/no response/i);
+  });
+
+  it("surfaces any text the host did return", () => {
+    expect(toolErrorMessage({ content: [{ text: "Tool call was not permitted." }] }, "fallback"))
+      .toBe("Tool call was not permitted.");
+  });
+
+  it("still says nothing on a normal successful view", () => {
+    expect(toolErrorMessage({ view: "transfer-preview" }, "fallback")).toBeNull();
+  });
+});
