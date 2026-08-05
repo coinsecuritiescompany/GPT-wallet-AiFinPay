@@ -8,9 +8,9 @@ COPY packages/aifinpay-adapter/package.json packages/aifinpay-adapter/package.js
 COPY packages/demo-ledger/package.json packages/demo-ledger/package.json
 RUN npm ci
 COPY . .
-# ChatGPT caches an Apps SDK widget by its resource URI. Patch the release key
-# before compiling so Android receives the MCP ui/message handoff fix.
-RUN sed -i 's|ui://aifinpay/wallet-v23.html|ui://aifinpay/wallet-v29.html|g; s|{ length: 22 }|{ length: 28 }|g' apps/mcp-server/src/tools/register-tools.ts
+# ChatGPT caches an Apps SDK widget by its resource URI. Publish the restored
+# stable bridge under a fresh URI so clients do not reuse broken v28/v29 HTML.
+RUN sed -i 's|ui://aifinpay/wallet-v23.html|ui://aifinpay/wallet-v30.html|g; s|{ length: 22 }|{ length: 29 }|g' apps/mcp-server/src/tools/register-tools.ts
 RUN npm run build
 # Keep compilers, linters and test runners out of the public runtime image.
 # Workspace production dependencies and compiled application files remain.
