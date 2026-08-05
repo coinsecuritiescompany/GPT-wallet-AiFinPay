@@ -9,8 +9,8 @@ COPY packages/demo-ledger/package.json packages/demo-ledger/package.json
 RUN npm ci
 COPY . .
 # ChatGPT caches an Apps SDK widget by its resource URI. Patch the release key
-# before compiling so mobile clients receive the standards-first MCP bridge.
-RUN sed -i 's|ui://aifinpay/wallet-v23.html|ui://aifinpay/wallet-v28.html|g; s|{ length: 22 }|{ length: 27 }|g' apps/mcp-server/src/tools/register-tools.ts
+# before compiling so Android receives the MCP ui/message handoff fix.
+RUN sed -i 's|ui://aifinpay/wallet-v23.html|ui://aifinpay/wallet-v29.html|g; s|{ length: 22 }|{ length: 28 }|g' apps/mcp-server/src/tools/register-tools.ts
 RUN npm run build
 # Keep compilers, linters and test runners out of the public runtime image.
 # Workspace production dependencies and compiled application files remain.
