@@ -316,10 +316,49 @@ const swapKey = (asset: SwapAsset) => `${asset.ticker}:${asset.network}`;
 // The current local signing path can fund Polygon native POL and Polygon USDC
 // deposits. Never substitute POL for an arbitrary Polygon token: sending the
 // wrong asset to an exchange deposit address can permanently lose funds.
-function polygonFundingToken(asset: SwapAsset): "NATIVE" | "USDC" | null {
-  if (asset.network !== "matic") return null;
-  if (asset.ticker === "usdc") return "USDC";
-  if (asset.ticker === "pol" || asset.ticker === "matic") return "NATIVE";
+interface SwapFundingRoute {
+  network: string;
+  token: "NATIVE" | "USDC";
+  /** The transfer tool that accepts this chain's address format. */
+  tool: string;
+}
+
+// A swap deposit is an ordinary transfer to the provider's address, so it can be
+// funded from any chain the Vault signs for — not only Polygon. The provider's
+// network name is mapped to ours, and each chain uses the transfer tool that
+// accepts its address format, exactly as the send form does.
+const SWAP_FUNDING_NETWORKS: Record<string, { network: string; tool: string }> = {
+  cspr: { network: "CASPER", tool: "prepare_casper_transfer" },
+  sol: { network: "SOLANA", tool: "prepare_solana_transfer" },
+  near: { network: "NEAR", tool: "prepare_near_transfer" },
+  aptos: { network: "APTOS", tool: "prepare_aptos_transfer" },
+  matic: { network: "POLYGON", tool: "prepare_transfer" },
+  arbitrum: { network: "ARBITRUM", tool: "prepare_transfer" },
+  base: { network: "BASE", tool: "prepare_transfer" },
+  op: { network: "OPTIMISM", tool: "prepare_transfer" },
+  bsc: { network: "BNB", tool: "prepare_transfer" },
+  avaxc: { network: "AVALANCHE", tool: "prepare_transfer" }
+};
+
+// Only the chain's own native asset, or USDC on an EVM chain. Never substitute
+// one token for another: sending the wrong asset to an exchange deposit address
+// can permanently lose the funds.
+const NATIVE_TICKERS: Record<string, string[]> = {
+  cspr: ["cspr"], sol: ["sol"], near: ["near"], aptos: ["apt"],
+  matic: ["pol", "matic"], arbitrum: ["eth"], base: ["eth"],
+  op: ["eth"], bsc: ["bnb"], avaxc: ["avax"]
+};
+
+export function swapFundingRoute(asset: SwapAsset): SwapFundingRoute | null {
+  const chain = SWAP_FUNDING_NETWORKS[asset.network];
+  if (!chain) return null;
+  if (NATIVE_TICKERS[asset.network]?.includes(asset.ticker)) {
+    return { network: chain.network, token: "NATIVE", tool: chain.tool };
+  }
+  // USDC only where the generic EVM transfer tool can carry a token argument.
+  if (asset.ticker === "usdc" && chain.tool === "prepare_transfer") {
+    return { network: chain.network, token: "USDC", tool: chain.tool };
+  }
   return null;
 }
 
@@ -391,19 +430,27 @@ function SwapQuoteView({ data, onBack }: { data: WidgetData; onBack: () => void 
 
 function SwapOrderView({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   const order = data.order!; const [copied, setCopied] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  const fundingToken = polygonFundingToken(order.fromAsset);
+  const funding = swapFundingRoute(order.fromAsset);
   const copy = async () => { try { await navigator.clipboard.writeText(order.payinAddress); } catch { /* address remains selectable */ } setCopied(true); };
   const fundFromVault = async () => {
-    if (!fundingToken) return;
+    if (!funding) return;
     setBusy(true); setError("");
-    try { await bridge.callTool("prepare_transfer", { recipient: order.payinAddress, amount: order.fromAmount, token: fundingToken, network: "POLYGON", idempotencyKey: `swap-${order.id}` }); }
+    try {
+      // Non-EVM chains have their own tool and take no token argument.
+      const args = funding.tool === "prepare_transfer"
+        ? { recipient: order.payinAddress, amount: order.fromAmount, token: funding.token, network: funding.network, idempotencyKey: `swap-${order.id}` }
+        : { recipient: order.payinAddress, amount: order.fromAmount, idempotencyKey: `swap-${order.id}` };
+      const result = await bridge.callTool(funding.tool, args);
+      const message = toolErrorMessage(result, "The deposit could not be prepared. Check the balance and request a fresh swap order if needed.");
+      if (message) setError(message);
+    }
     catch { setError("The deposit could not be prepared. Check the balance and request a fresh swap order if needed."); }
     finally { setBusy(false); }
   };
   return <main className="card"><Header label="Swap deposit" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><div className="center"><span className="eyebrow">Order {short(order.id)}</span><h2>Deposit exactly {order.fromAmount} {order.fromAsset.ticker.toUpperCase()}</h2><p>Use only the {order.fromAsset.network} network. A different asset or network can be permanently lost.</p></div>
     <section className="receive-card swap-deposit"><div className="qr-shell"><QRCodeSVG value={order.payinAddress} size={196} level="M" marginSize={2} title="Swap deposit address QR code" /></div><code className="receive-address">{order.payinAddress}</code><button className="secondary copy-address" onClick={() => void copy()}>{copied ? "Copied ✓" : "Copy deposit address"}</button></section>
     {error && <p className="vault-error">{error}</p>}
-    {fundingToken
+    {funding
       ? <button className="primary" disabled={busy} onClick={() => void fundFromVault()}>{busy ? "Preparing transfer…" : "Review deposit in AiFinPay Vault"}</button>
       : <p className="mainnet-warning">Send only {order.fromAsset.ticker.toUpperCase()} on {order.fromAsset.network} from a compatible wallet. AiFinPay will never substitute another asset.</p>}
     <button className="secondary" onClick={() => void bridge.callTool("get_swap_status", { orderReference: data.orderReference! }).catch(reportToolFailure)}>Refresh swap status</button>
