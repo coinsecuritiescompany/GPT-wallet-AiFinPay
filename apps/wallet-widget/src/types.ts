@@ -42,7 +42,8 @@ declare global {
       theme?: "light" | "dark";
       displayMode?: "inline" | "pip" | "fullscreen";
       widgetState?: Record<string, unknown>;
-      callTool?: (name: string, args: Record<string, unknown>) => Promise<{ structuredContent?: WidgetData }>;
+      callTool?: (name: string, args: Record<string, unknown>) => Promise<{ structuredContent?: WidgetData } | undefined>;
+      sendFollowUpMessage?: (args: { prompt: string }) => Promise<unknown>;
       requestDisplayMode?: (args: { mode: "inline" | "pip" | "fullscreen" }) => Promise<unknown>;
       openExternal?: (args: { href: string }) => Promise<unknown>;
       setWidgetState?: (state: Record<string, unknown>) => Promise<void>;
