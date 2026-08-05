@@ -2,6 +2,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hostResultFingerprint, hostWidgetData, McpAppsBridge } from "./mcp-bridge.js";
 
+function setOpenAI(value: Record<string, unknown>): void {
+  Object.defineProperty(window, "openai", { configurable: true, writable: true, value });
+}
+
 describe("MCP Apps bridge reliability", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -12,7 +16,7 @@ describe("MCP Apps bridge reliability", () => {
     const postMessage = vi.fn();
     const host = { postMessage } as unknown as Window;
     const callTool = vi.fn().mockResolvedValue({ structuredContent: { view: "wallet" } });
-    window.openai = { callTool };
+    setOpenAI({ callTool });
     const bridge = new McpAppsBridge(host);
 
     await expect(bridge.callTool("render_wallet", {}, { emit: false })).resolves.toEqual({ view: "wallet" });
@@ -24,10 +28,10 @@ describe("MCP Apps bridge reliability", () => {
   it("reads an Android transfer result delivered through toolResponse", async () => {
     vi.useFakeTimers();
     const callTool = vi.fn().mockResolvedValue(undefined);
-    window.openai = {
+    setOpenAI({
       callTool,
       toolOutput: { structuredContent: { view: "wallet" } }
-    };
+    });
     const bridge = new McpAppsBridge(window);
 
     const resultPromise = bridge.callTool("prepare_casper_transfer", {
@@ -49,10 +53,10 @@ describe("MCP Apps bridge reliability", () => {
   });
 
   it("includes all supported result slots in the host fingerprint", () => {
-    window.openai = {
+    setOpenAI({
       toolOutput: { structuredContent: { view: "wallet" } },
       toolResult: { structuredContent: { view: "receipt" } }
-    } as typeof window.openai;
+    });
     expect(hostWidgetData()).toMatchObject({ view: "wallet" });
     expect(hostResultFingerprint()).toContain("wallet");
     expect(hostResultFingerprint()).toContain("receipt");
