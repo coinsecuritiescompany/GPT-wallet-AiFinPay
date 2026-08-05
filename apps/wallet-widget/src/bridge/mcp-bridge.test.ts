@@ -96,7 +96,7 @@ describe("MCP Apps bridge reliability", () => {
     await expect(resultPromise).resolves.toMatchObject({ view: "transfer-preview", intent: { id: "intent-metadata" } });
   });
 
-  it("hands a lost Android Casper result to the chat with the same idempotency key", async () => {
+  it("hands a lost compatibility result to the chat with the same idempotency key", async () => {
     vi.useFakeTimers();
     const callTool = vi.fn().mockResolvedValue(undefined);
     const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
@@ -117,6 +117,46 @@ describe("MCP Apps bridge reliability", () => {
     expect(sendFollowUpMessage).toHaveBeenCalledWith({ prompt: expect.stringContaining("android-handoff-1") });
     expect(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt).toContain(recipient);
     expect(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt).toContain("amount=5");
+  });
+
+  it("uses MCP ui/message for an embedded Android handoff even when legacy follow-up exists", async () => {
+    vi.useFakeTimers();
+    const host = {} as Window;
+    const postMessage = vi.fn((message: unknown) => {
+      const request = message as { id?: number; method?: string };
+      if (typeof request.id !== "number") return;
+      const result = request.method === "ui/initialize"
+        ? { hostContext: { platform: "android" } }
+        : undefined;
+      window.setTimeout(() => {
+        window.dispatchEvent(new MessageEvent("message", {
+          source: host,
+          data: { jsonrpc: "2.0", id: request.id, result }
+        }));
+      }, 0);
+    });
+    Object.assign(host, { postMessage });
+    const callTool = vi.fn().mockResolvedValue(undefined);
+    const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
+    setOpenAI({ callTool, sendFollowUpMessage, toolOutput: { structuredContent: { view: "wallet" } } });
+    const bridge = new McpAppsBridge(host);
+
+    const resultPromise = bridge.callTool("prepare_casper_transfer", {
+      recipient: `01${"aa".repeat(32)}`,
+      amount: "5",
+      idempotencyKey: "android-ui-message-1"
+    }, { emit: false });
+
+    await vi.advanceTimersByTimeAsync(16_100);
+    await expect(resultPromise).resolves.toMatchObject({ view: "error", error: { code: "MOBILE_HANDOFF" } });
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      method: "ui/message",
+      params: expect.objectContaining({
+        role: "user",
+        content: [expect.objectContaining({ text: expect.stringContaining("android-ui-message-1") })]
+      })
+    }), "*");
+    expect(sendFollowUpMessage).not.toHaveBeenCalled();
   });
 
   it("includes all supported result slots in the host fingerprint", () => {
