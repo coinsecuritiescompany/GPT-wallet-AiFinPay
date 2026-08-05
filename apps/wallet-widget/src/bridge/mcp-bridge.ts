@@ -7,6 +7,27 @@ interface Pending {
   timer: ReturnType<typeof window.setTimeout>;
 }
 
+function widgetDataFrom(value: unknown): WidgetData | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.view === "string" && record.view) return record as unknown as WidgetData;
+  const structured = record.structuredContent;
+  if (structured && typeof structured === "object") {
+    const candidate = structured as Record<string, unknown>;
+    if (typeof candidate.view === "string" && candidate.view) return candidate as unknown as WidgetData;
+  }
+  const result = record.result;
+  if (result && typeof result === "object") return widgetDataFrom(result);
+  return undefined;
+}
+
+function resultFingerprint(value: unknown): string {
+  const data = widgetDataFrom(value);
+  if (!data) return "";
+  try { return JSON.stringify(data); }
+  catch { return `${data.view}:${String((data as Record<string, unknown>).intent ?? "")}`; }
+}
+
 export class McpAppsBridge {
   private rpcId = 0;
   private readonly pending = new Map<number, Pending>();
@@ -31,14 +52,12 @@ export class McpAppsBridge {
         return;
       }
       if (message.method === "ui/notifications/tool-result") {
-        const pushed = message.params?.structuredContent ?? message.params;
-        // The host may deliver a tool's result here rather than in the call's
-        // own response. Keep the latest so a viewless response can use it.
-        if (pushed?.view) {
+        const pushed = widgetDataFrom(message.params?.structuredContent ?? message.params);
+        if (pushed) {
           this.lastPushed = { data: pushed, at: Date.now() };
           this.pushWaiters.splice(0).forEach((resolve) => resolve(pushed));
+          this.emit(pushed);
         }
-        this.emit(pushed);
       }
     }, { passive: true });
   }
@@ -57,19 +76,12 @@ export class McpAppsBridge {
     return this.ready;
   }
 
-  /**
-   * Tools that carry an output template are rendered by the host, which may
-   * return an empty acknowledgement to the caller and deliver the real payload
-   * as a tool-result notification instead. Treating the empty response as the
-   * answer makes a working transfer look like a dead button, so wait briefly
-   * for the push before concluding anything.
-   */
-  private awaitPushedResult(timeoutMs = 6_000, since?: WidgetData): Promise<WidgetData | null> {
-    if (this.lastPushed && Date.now() - this.lastPushed.at < timeoutMs) {
-      return Promise.resolve(this.lastPushed.data);
-    }
+  private awaitPushedResult(timeoutMs: number, beforeFingerprint: string, startedAt: number): Promise<WidgetData | null> {
+    if (this.lastPushed && this.lastPushed.at >= startedAt) return Promise.resolve(this.lastPushed.data);
     return new Promise((resolve) => {
       let settled = false;
+      let timer = 0;
+      let poller = 0;
       const finish = (data: WidgetData | null) => {
         if (settled) return;
         settled = true;
@@ -81,27 +93,19 @@ export class McpAppsBridge {
         resolve(data);
       };
 
-      // The result can reach a widget three different ways depending on the
-      // host build, so watch all of them rather than assume one.
-      //   1. a ui/notifications/tool-result push (desktop MCP Apps path)
-      //   2. window.openai.toolOutput being replaced, announced by an event
-      //   3. the same global changing with no event at all, seen on mobile
-      //      builds that expose the compatibility API but never complete the
-      //      postMessage handshake
       const fresh = (): WidgetData | null => {
         const output = window.openai?.toolOutput;
-        if (!output?.view) return null;
-        return output === since ? null : output;
+        const data = widgetDataFrom(output);
+        if (!data) return null;
+        return resultFingerprint(output) === beforeFingerprint ? null : data;
       };
 
       const waiter = (data: WidgetData) => finish(data);
       this.pushWaiters.push(waiter);
-
       const onGlobals = () => { const data = fresh(); if (data) finish(data); };
       window.addEventListener("openai:set_globals", onGlobals);
-
-      const poller = window.setInterval(() => { const data = fresh(); if (data) finish(data); }, 150);
-      const timer = window.setTimeout(() => finish(null), timeoutMs);
+      poller = window.setInterval(() => { const data = fresh(); if (data) finish(data); }, 100);
+      timer = window.setTimeout(() => finish(null), timeoutMs);
     });
   }
 
@@ -109,34 +113,26 @@ export class McpAppsBridge {
 
   async callTool(name: string, args: Record<string, unknown>, options: { emit?: boolean } = {}): Promise<WidgetData> {
     const shouldEmit = options.emit ?? true;
-    // Remember the global as it stands, so a value left over from an earlier
-    // call is never mistaken for the answer to this one.
-    const before = window.openai?.toolOutput;
+    const startedAt = Date.now();
+    const beforeFingerprint = resultFingerprint(window.openai?.toolOutput);
     if (this.hostWindow !== window) {
       try {
         await this.initialize();
-        const response = await this.request("tools/call", { name, arguments: args }, 20_000) as { structuredContent?: WidgetData };
-        let data = response.structuredContent ?? response as unknown as WidgetData;
-        if (!data?.view) {
-          const pushed = await this.awaitPushedResult(6_000, before);
-          if (pushed) return pushed;
+        const response = await this.request("tools/call", { name, arguments: args }, 20_000);
+        let data = widgetDataFrom(response);
+        if (!data) data = await this.awaitPushedResult(8_000, beforeFingerprint, startedAt) ?? undefined;
+        if (data) {
+          if (shouldEmit) this.emit(data);
+          return data;
         }
-        if (shouldEmit) this.emit(data);
-        return data;
       } catch (bridgeError) {
-        // Some mobile ChatGPT builds expose the compatibility API but do not
-        // complete the MCP Apps postMessage handshake. Never leave the wallet
-        // on an infinite spinner: fall back to the host API when it is present.
         if (!window.openai?.callTool) throw bridgeError;
       }
     }
     if (window.openai?.callTool) {
       const response = await window.openai.callTool(name, args);
-      let data = response.structuredContent as WidgetData | undefined;
-      if (!data?.view) {
-        const pushed = await this.awaitPushedResult(6_000, before);
-        if (pushed) return pushed;
-      }
+      let data = widgetDataFrom(response);
+      if (!data) data = await this.awaitPushedResult(8_000, beforeFingerprint, startedAt) ?? undefined;
       data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: "Tool returned no data." } };
       if (shouldEmit) this.emit(data);
       return data;
