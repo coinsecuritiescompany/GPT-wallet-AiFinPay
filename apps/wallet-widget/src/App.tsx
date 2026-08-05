@@ -343,8 +343,12 @@ function SwapForm({ data, onBack }: { data: WidgetData; onBack: () => void }) {
     event.preventDefault();
     if (!from || !to || !amount.trim()) { setError("Choose two assets and enter an amount."); return; }
     setBusy(true); setError("");
-    try { await bridge.callTool("get_swap_quote", { fromAsset: from, toAsset: to, fromAmount: amount.trim() }); }
-    catch { setError("Could not load a live quote. Check the amount or try again."); }
+    try {
+      const result = await bridge.callTool("get_swap_quote", { fromAsset: from, toAsset: to, fromAmount: amount.trim() });
+      const message = toolErrorMessage(result, "Could not load a live quote. Check the amount or try again.");
+      if (message) setError(message);
+    }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load a live quote. Check the amount or try again."); }
     finally { setBusy(false); }
   };
   return <main className="card"><Header label="Swap" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="hero-icon">⇄</section><div className="center"><h2>Cross-chain swap</h2><p>Live non-custodial quotes. Output is sent only to an address controlled by your connected Vault.</p></div>
@@ -402,6 +406,19 @@ function SwapStatusView({ data, onBack }: { data: WidgetData; onBack: () => void
   return <main className="card"><Header label="Swap status" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="hero-icon">⇄</section><div className="center"><span className="eyebrow">ORDER {short(status.id)}</span><h2>{status.status.replaceAll("_", " ").toUpperCase()}</h2><p>Provider status updated {date(status.updatedAt)}.</p></div><div className="details">{status.payinHash && <div><span>Deposit transaction</span><strong>{short(status.payinHash)}</strong></div>}{status.payoutHash && <div><span>Payout transaction</span><strong>{short(status.payoutHash)}</strong></div>}</div><button className="primary" onClick={() => void bridge.callTool("get_swap_status", { orderReference: data.orderReference! })}>Refresh status</button><button className="secondary" onClick={onBack}>Return to wallet</button></main>;
 }
 
+
+// The MCP tools resolve with { view: "error", error } instead of throwing, so a
+// rejected transfer looks like a successful call. Without checking the payload a
+// form silently reverts and the real reason — insufficient funds, a policy block,
+// a missing scope — never reaches the user.
+function toolErrorMessage(result: unknown, fallback: string): string | null {
+  const view = (result as { view?: unknown } | null)?.view;
+  if (view !== "error" && view !== "blocked") return null;
+  const error = (result as { error?: { message?: unknown } } | null)?.error;
+  const message = typeof error?.message === "string" ? error.message : "";
+  return message.trim() || fallback;
+}
+
 function TransferForm({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   const summary = data.summary;
   const isMainnet = summary?.mode === "MAINNET";
@@ -436,17 +453,17 @@ function TransferForm({ data, onBack }: { data: WidgetData; onBack: () => void }
     if (!recipient.trim() || !amount.trim()) { setError("Enter a recipient address and an amount."); return; }
     setBusy(true); setError("");
     try {
-      if (nativeTool) {
-        await bridge.callTool(nativeTool, {
+      const result = nativeTool
+        ? await bridge.callTool(nativeTool, {
           recipient: recipient.trim(),
           amount: amount.trim(),
           idempotencyKey: `widget-${Date.now()}`
-        });
-      } else {
-        await bridge.callTool("prepare_transfer", { recipient: recipient.trim(), amount: amount.trim(), token, network: networkParam, idempotencyKey: `widget-${Date.now()}` });
-      }
+        })
+        : await bridge.callTool("prepare_transfer", { recipient: recipient.trim(), amount: amount.trim(), token, network: networkParam, idempotencyKey: `widget-${Date.now()}` });
+      const message = toolErrorMessage(result, "Could not prepare the transfer. Check the address and amount.");
+      if (message) setError(message);
     }
-    catch { setError("Could not prepare the transfer. Check the address and amount."); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not prepare the transfer. Check the address and amount."); }
     finally { setBusy(false); }
   };
   return <main className="card"><Header label="New transfer" badge={isMainnet ? "MAINNET" : "BETA"} /><button className="back" onClick={onBack}>← Wallet</button>
