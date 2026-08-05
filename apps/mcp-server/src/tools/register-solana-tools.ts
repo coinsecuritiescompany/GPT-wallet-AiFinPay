@@ -13,6 +13,9 @@ const outputSchema = z.object({ view: z.string().min(1) }).passthrough();
 const annotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const nearAddressSchema = z.string().transform((value) => value.toLowerCase()).pipe(z.string().regex(/^[a-z0-9._-]{2,64}$/, "Expected a valid NEAR account ID"));
 const aptosAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{1,64}$/, "Expected a valid Aptos address");
+// Casper ed25519 public key: the 01 algorithm tag followed by 32 bytes.
+const casperAddressSchema = z.string().transform((value) => value.toLowerCase())
+  .pipe(z.string().regex(/^01[0-9a-f]{64}$/, "Expected a 33-byte ed25519 Casper public key beginning with 01"));
 
 function data(message: string, structuredContent: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text: message }], structuredContent };
@@ -57,7 +60,7 @@ function registerNativeTransfer(
     title: string;
     description: string;
     recipientSchema: z.ZodType<string>;
-    network: Extract<NetworkId, "SOLANA" | "NEAR" | "APTOS">;
+    network: Extract<NetworkId, "SOLANA" | "NEAR" | "APTOS" | "CASPER">;
     symbol: string;
   }
 ): void {
@@ -127,6 +130,14 @@ export function registerSolanaTools(server: McpServer, ctx: AppContext): void {
     recipientSchema: nearAddressSchema,
     network: "NEAR",
     symbol: "NEAR"
+  });
+  registerNativeTransfer(server, ctx, {
+    name: "prepare_casper_transfer",
+    title: "Prepare native CSPR transfer",
+    description: "Use only when the user asks to send native CSPR on Casper mainnet. It builds a Casper transfer deploy, checks the live balance against the amount plus the 0.1 CSPR fee, and requires local Ed25519 signing of the deploy hash in the Vault. Casper rejects native transfers below 2.5 CSPR.",
+    recipientSchema: casperAddressSchema,
+    network: "CASPER",
+    symbol: "CSPR"
   });
   registerNativeTransfer(server, ctx, {
     name: "prepare_aptos_transfer",
