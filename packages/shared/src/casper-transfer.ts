@@ -9,7 +9,20 @@ import { blake2b } from "@noble/hashes/blake2.js";
 // serialised header. The header in turn commits to a body hash covering the
 // payment and session items, so signing the hash commits to the whole payload.
 
+// Casper keys carry an algorithm tag: 01 is ed25519 (32-byte key), 02 is
+// secp256k1 (33-byte compressed key). Both are valid transfer targets.
 const ED25519_TAG = 0x01;
+const SECP256K1_TAG = 0x02;
+
+/** Validate a Casper public key of either algorithm, returning its bytes. */
+export function parseCasperPublicKey(hex: string): Uint8Array {
+  const bytes = hexToBytes(hex);
+  if (bytes[0] === ED25519_TAG && bytes.length === 33) return bytes;
+  if (bytes[0] === SECP256K1_TAG && bytes.length === 34) return bytes;
+  throw new Error(
+    "Expected a Casper public key: 01 followed by 32 bytes (ed25519), or 02 followed by 33 bytes (secp256k1)."
+  );
+}
 
 function concatBytes(...parts: Uint8Array[]): Uint8Array {
   const output = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
@@ -114,10 +127,9 @@ function amountArg(motes: bigint): NamedArg {
 }
 
 function targetArg(publicKeyHex: string): NamedArg {
-  const bytes = hexToBytes(publicKeyHex);
-  if (bytes.length !== 33 || bytes[0] !== ED25519_TAG) {
-    throw new Error("Expected a 33-byte ed25519 Casper public key beginning with 01.");
-  }
+  // The recipient may use either algorithm; only the sender must be ed25519,
+  // because that is what the Vault derives and signs with.
+  const bytes = parseCasperPublicKey(publicKeyHex);
   return {
     name: "target",
     value: bytes,
@@ -193,7 +205,7 @@ export interface UnsignedCasperDeploy {
 export function buildCasperTransferDeploy(params: CasperTransferParams): UnsignedCasperDeploy {
   const account = hexToBytes(params.senderPublicKeyHex);
   if (account.length !== 33 || account[0] !== ED25519_TAG) {
-    throw new Error("Expected a 33-byte ed25519 Casper public key beginning with 01.");
+    throw new Error("The sending account must be a 33-byte ed25519 Casper public key beginning with 01.");
   }
   if (params.amountMotes <= 0n) throw new Error("The transfer amount must be positive.");
   if (params.paymentMotes <= 0n) throw new Error("The payment amount must be positive.");
@@ -256,12 +268,10 @@ export function attachCasperApproval(
 
 /** Casper account hash, used for balance queries and display. */
 export function casperAccountHash(publicKeyHex: string): string {
-  const bytes = hexToBytes(publicKeyHex);
-  if (bytes.length !== 33 || bytes[0] !== ED25519_TAG) {
-    throw new Error("Expected a 33-byte ed25519 Casper public key beginning with 01.");
-  }
+  const bytes = parseCasperPublicKey(publicKeyHex);
+  const algorithm = bytes[0] === ED25519_TAG ? "ed25519" : "secp256k1";
   const input = concatBytes(
-    new TextEncoder().encode("ed25519"),
+    new TextEncoder().encode(algorithm),
     new Uint8Array([0]),
     bytes.slice(1)
   );

@@ -29,3 +29,4 @@ private/
 production/
 customer-data/
 *.sqlite3
+apps/mcp-server/data/

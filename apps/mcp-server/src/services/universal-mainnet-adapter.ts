@@ -149,8 +149,9 @@ export class UniversalMainnetAdapter implements WalletAdapter {
       throw new AppError("INVALID_ADDRESS", "The connected Casper account is invalid.");
     }
     const recipient = intent.recipient.trim();
-    if (!/^01[0-9a-f]{64}$/i.test(recipient)) {
-      throw new AppError("INVALID_ADDRESS", "Expected a 33-byte ed25519 Casper public key beginning with 01.");
+    if (!/^(01[0-9a-f]{64}|02[0-9a-f]{66})$/i.test(recipient)) {
+      throw new AppError("INVALID_ADDRESS",
+        "Expected a Casper public key: 01 followed by 32 bytes (ed25519), or 02 followed by 33 bytes (secp256k1).");
     }
     if (recipient.toLowerCase() === sender.toLowerCase()) {
       throw new AppError("INVALID_ADDRESS", "The recipient is the sending account.");

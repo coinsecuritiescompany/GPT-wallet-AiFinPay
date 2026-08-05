@@ -418,18 +418,41 @@ function TransferForm({ data, onBack }: { data: WidgetData; onBack: () => void }
   const [token, setToken] = useState<"NATIVE" | "USDC">("NATIVE");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // prepare_transfer only accepts EVM recipients. Every non-EVM chain has its
+  // own tool, and sending on one of them means calling that tool instead —
+  // otherwise the address is rejected before the transfer is ever built.
+  const NATIVE_TRANSFER_TOOLS: Record<string, string> = {
+    SOLANA: "prepare_solana_transfer",
+    NEAR: "prepare_near_transfer",
+    APTOS: "prepare_aptos_transfer",
+    CASPER: "prepare_casper_transfer"
+  };
+  const nativeTool = isMainnet ? NATIVE_TRANSFER_TOOLS[networkId] : undefined;
+  const recipientPlaceholder = nativeTool
+    ? { SOLANA: "Base58 address", NEAR: "example.near", APTOS: "0x…", CASPER: "01… or 02…" }[networkId] ?? "Recipient address"
+    : "0x…";
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!recipient.trim() || !amount.trim()) { setError("Enter a recipient address and an amount."); return; }
     setBusy(true); setError("");
-    try { await bridge.callTool("prepare_transfer", { recipient: recipient.trim(), amount: amount.trim(), token, network: networkParam, idempotencyKey: `widget-${Date.now()}` }); }
+    try {
+      if (nativeTool) {
+        await bridge.callTool(nativeTool, {
+          recipient: recipient.trim(),
+          amount: amount.trim(),
+          idempotencyKey: `widget-${Date.now()}`
+        });
+      } else {
+        await bridge.callTool("prepare_transfer", { recipient: recipient.trim(), amount: amount.trim(), token, network: networkParam, idempotencyKey: `widget-${Date.now()}` });
+      }
+    }
     catch { setError("Could not prepare the transfer. Check the address and amount."); }
     finally { setBusy(false); }
   };
   return <main className="card"><Header label="New transfer" badge={isMainnet ? "MAINNET" : "BETA"} /><button className="back" onClick={onBack}>← Wallet</button>
-    <form className="form" onSubmit={submit}><label>Recipient<input aria-label="Recipient" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} /></label>
+    <form className="form" onSubmit={submit}><label>Recipient<input aria-label="Recipient" placeholder={recipientPlaceholder} value={recipient} onChange={(e) => setRecipient(e.target.value)} /></label>
       <label>Amount<div className="amount-input"><input aria-label="Amount" placeholder="0.0" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /><span>{token === "NATIVE" ? nativeToken : "USDC"}</span></div></label>
-      <label>Token<select aria-label="Token" value={token} onChange={(e) => setToken(e.target.value as "NATIVE" | "USDC")}><option value="NATIVE">{nativeToken}</option>{hasUsdc && <option value="USDC">USDC</option>}</select></label>
+      <label>Token<select aria-label="Token" value={token} onChange={(e) => setToken(e.target.value as "NATIVE" | "USDC")}><option value="NATIVE">{nativeToken}</option>{hasUsdc && !nativeTool && <option value="USDC">USDC</option>}</select></label>
       <div className="info-row"><span>Network</span><strong>{networkLabel}</strong></div>
       {error && <p className="vault-error">{error}</p>}
       <button className="primary" disabled={busy}>{busy ? "Checking policy…" : "Review transfer"}</button></form>
