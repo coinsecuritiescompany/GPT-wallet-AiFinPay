@@ -12,17 +12,64 @@ describe("MCP Apps bridge reliability", () => {
     delete window.openai;
   });
 
-  it("uses the direct ChatGPT tool API exactly once when it is available", async () => {
+  it("prefers the embedded MCP bridge and answers from its tools/call response", async () => {
+    // A host that answers the handshake and tools/call over the message
+    // channel, the way ChatGPT desktop does. The proven desktop transport
+    // must win whenever it works; the compatibility API must stay untouched.
+    const host = {
+      postMessage: vi.fn((message: { jsonrpc?: string; id?: number; method?: string }) => {
+        if (message?.jsonrpc !== "2.0" || typeof message.id !== "number") return;
+        const result = message.method === "tools/call"
+          ? { structuredContent: { view: "wallet" } }
+          : {};
+        window.dispatchEvent(new MessageEvent("message", {
+          data: { jsonrpc: "2.0", id: message.id, result },
+          source: host as unknown as Window
+        }));
+      })
+    };
+    const callTool = vi.fn();
+    setOpenAI({ callTool });
+    const bridge = new McpAppsBridge(host as unknown as Window);
+
+    await expect(bridge.callTool("render_wallet", {}, { emit: false })).resolves.toMatchObject({ view: "wallet" });
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the ChatGPT tool API exactly once when the handshake stalls", async () => {
+    vi.useFakeTimers();
     const postMessage = vi.fn();
     const host = { postMessage } as unknown as Window;
     const callTool = vi.fn().mockResolvedValue({ structuredContent: { view: "wallet" } });
     setOpenAI({ callTool });
     const bridge = new McpAppsBridge(host);
 
-    await expect(bridge.callTool("render_wallet", {}, { emit: false })).resolves.toEqual({ view: "wallet" });
-    expect(callTool).toHaveBeenCalledTimes(1);
+    const resultPromise = bridge.callTool("render_wallet", {}, { emit: false });
+    await vi.advanceTimersByTimeAsync(3_600);   // let ui/initialize time out
+    await expect(resultPromise).resolves.toEqual({ view: "wallet" });
+    expect(postMessage).toHaveBeenCalled();      // the bridge was tried first
+    expect(callTool).toHaveBeenCalledTimes(1);   // then the fallback, once
     expect(callTool).toHaveBeenCalledWith("render_wallet", {});
-    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("accepts a pushed confirm_transfer result with the transaction-status view", async () => {
+    vi.useFakeTimers();
+    const callTool = vi.fn().mockResolvedValue(undefined);
+    setOpenAI({ callTool });
+    const bridge = new McpAppsBridge(window);
+
+    const resultPromise = bridge.callTool("confirm_transfer", { transferIntentId: "intent-9" }, { emit: false });
+    window.setTimeout(() => {
+      (window.openai as unknown as Record<string, unknown>).toolOutput = {
+        structuredContent: { view: "transaction-status", intent: { id: "intent-9", status: "broadcast" } }
+      };
+      window.dispatchEvent(new Event("openai:set_globals"));
+    }, 250);
+
+    await vi.advanceTimersByTimeAsync(300);
+    // confirm_transfer reports send progress as transaction-status; the filter
+    // discarding it made every send look like it failed after signing.
+    await expect(resultPromise).resolves.toMatchObject({ view: "transaction-status" });
   });
 
   it("reads an Android transfer result delivered through toolResponse", async () => {

@@ -56,6 +56,12 @@ export function hostResultFingerprint(): string {
   return hostResultValues().map(resultFingerprint).join("|");
 }
 
+// These sets exist ONLY to route unsolicited pushes and polled globals, where a
+// stale payload from an earlier call could be mistaken for this call's answer.
+// They must list every view the server can actually emit for the tool: a missing
+// view name silently discards a real result (confirm_transfer once returned
+// "transaction-status", the filter did not list it, and every send appeared to
+// fail after signing). A direct response to our own call is never filtered.
 function expectedViewsForTool(name: string): Set<string> | null {
   if (name === "open_wallet" || name === "open_wallet_current" || name === "create_wallet_pairing" || name === "get_wallet_summary") {
     return new Set(["wallet", "error", "not-connected"]);
@@ -64,7 +70,7 @@ function expectedViewsForTool(name: string): Set<string> | null {
     return new Set(["transfer-preview", "blocked", "error", "mainnet-signing-locked"]);
   }
   if (name === "confirm_transfer" || name.startsWith("submit_")) {
-    return new Set(["receipt", "pending", "error", "blocked"]);
+    return new Set(["transaction-status", "receipt", "pending", "error", "blocked"]);
   }
   return null;
 }
@@ -173,16 +179,18 @@ export class McpAppsBridge {
     });
   }
 
+  /**
+   * Last resort for mobile hosts that expose the compatibility API but never
+   * deliver the tool result anywhere the widget can see. Only the documented
+   * sendFollowUpMessage API is used: posting a synthetic ui/message into the
+   * conversation is not part of the MCP Apps protocol, and on desktop it
+   * injected ghost user-messages into the chat.
+   */
   private async handoffMissingResult(name: string, args: Record<string, unknown>): Promise<WidgetData | null> {
     const prompt = mobileHandoffPrompt(name, args);
     if (!prompt) return null;
-    if (window.openai?.sendFollowUpMessage) {
-      await window.openai.sendFollowUpMessage({ prompt });
-    } else if (this.hostWindow !== window) {
-      this.notify("ui/message", { role: "user", content: [{ type: "text", text: prompt }] });
-    } else {
-      return null;
-    }
+    if (!window.openai?.sendFollowUpMessage) return null;
+    await window.openai.sendFollowUpMessage({ prompt });
     return {
       view: "error",
       error: {
@@ -199,39 +207,49 @@ export class McpAppsBridge {
     const startedAt = Date.now();
     const beforeFingerprint = hostResultFingerprint();
     this.activeTool = name;
+    let usedCompatApi = false;
     try {
-      if (window.openai?.callTool) {
-        const response = await window.openai.callTool(name, args);
-        let data = widgetDataFrom(response);
-        if (!acceptsToolResult(name, data)) {
-          data = await this.awaitPushedResult(name, 12_000, beforeFingerprint, startedAt) ?? undefined;
-        }
-        if (!data) {
-          const handoff = await this.handoffMissingResult(name, args);
-          if (handoff) return handoff;
-        }
-        data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
-        if (shouldEmit) this.emit(data);
-        return data;
-      }
-
+      // The embedded MCP postMessage bridge is the transport that has moved
+      // real mainnet value on desktop. Prefer it whenever a host window
+      // exists; fall back to the compatibility API only when the handshake
+      // fails, as on mobile builds that expose window.openai but never answer
+      // the postMessage handshake. The tool is invoked exactly once — a
+      // response without a view means the host delivered the payload through
+      // another route, not that the call should be retried elsewhere.
+      let called = false;
+      let data: WidgetData | undefined;
       if (this.hostWindow !== window) {
-        await this.initialize();
-        const response = await this.request("tools/call", { name, arguments: args }, 30_000);
-        let data = widgetDataFrom(response);
-        if (!acceptsToolResult(name, data)) {
-          data = await this.awaitPushedResult(name, 12_000, beforeFingerprint, startedAt) ?? undefined;
+        try {
+          await this.initialize();
+          const response = await this.request("tools/call", { name, arguments: args }, 20_000);
+          called = true;
+          data = widgetDataFrom(response);
+        } catch (bridgeError) {
+          if (!window.openai?.callTool) throw bridgeError;
         }
-        if (!data) {
-          const handoff = await this.handoffMissingResult(name, args);
-          if (handoff) return handoff;
-        }
-        data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
-        if (shouldEmit) this.emit(data);
-        return data;
       }
-
-      throw new Error("MCP Apps bridge is available only inside ChatGPT or another compatible host.");
+      if (!called) {
+        if (!window.openai?.callTool) {
+          throw new Error("MCP Apps bridge is available only inside ChatGPT or another compatible host.");
+        }
+        usedCompatApi = true;
+        const response = await window.openai.callTool(name, args);
+        data = widgetDataFrom(response);
+      }
+      // A direct response to our own call is authoritative — never filter it
+      // by view name. Only when the response carried no payload at all do we
+      // watch the other delivery routes, where the filter guards against
+      // stale globals and unrelated pushes.
+      if (!data) {
+        data = await this.awaitPushedResult(name, 8_000, beforeFingerprint, startedAt) ?? undefined;
+      }
+      if (!data && usedCompatApi) {
+        const handoff = await this.handoffMissingResult(name, args);
+        if (handoff) return handoff;
+      }
+      data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
+      if (shouldEmit) this.emit(data);
+      return data;
     } finally {
       if (this.activeTool === name) this.activeTool = null;
     }
