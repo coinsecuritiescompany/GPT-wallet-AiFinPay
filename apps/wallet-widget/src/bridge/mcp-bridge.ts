@@ -64,18 +64,44 @@ export class McpAppsBridge {
    * answer makes a working transfer look like a dead button, so wait briefly
    * for the push before concluding anything.
    */
-  private awaitPushedResult(timeoutMs = 4_000): Promise<WidgetData | null> {
+  private awaitPushedResult(timeoutMs = 6_000, since?: WidgetData): Promise<WidgetData | null> {
     if (this.lastPushed && Date.now() - this.lastPushed.at < timeoutMs) {
       return Promise.resolve(this.lastPushed.data);
     }
     return new Promise((resolve) => {
-      const timer = window.setTimeout(() => {
+      let settled = false;
+      const finish = (data: WidgetData | null) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        window.clearInterval(poller);
+        window.removeEventListener("openai:set_globals", onGlobals);
         const index = this.pushWaiters.indexOf(waiter);
         if (index >= 0) this.pushWaiters.splice(index, 1);
-        resolve(null);
-      }, timeoutMs);
-      const waiter = (data: WidgetData) => { window.clearTimeout(timer); resolve(data); };
+        resolve(data);
+      };
+
+      // The result can reach a widget three different ways depending on the
+      // host build, so watch all of them rather than assume one.
+      //   1. a ui/notifications/tool-result push (desktop MCP Apps path)
+      //   2. window.openai.toolOutput being replaced, announced by an event
+      //   3. the same global changing with no event at all, seen on mobile
+      //      builds that expose the compatibility API but never complete the
+      //      postMessage handshake
+      const fresh = (): WidgetData | null => {
+        const output = window.openai?.toolOutput;
+        if (!output?.view) return null;
+        return output === since ? null : output;
+      };
+
+      const waiter = (data: WidgetData) => finish(data);
       this.pushWaiters.push(waiter);
+
+      const onGlobals = () => { const data = fresh(); if (data) finish(data); };
+      window.addEventListener("openai:set_globals", onGlobals);
+
+      const poller = window.setInterval(() => { const data = fresh(); if (data) finish(data); }, 150);
+      const timer = window.setTimeout(() => finish(null), timeoutMs);
     });
   }
 
@@ -83,13 +109,16 @@ export class McpAppsBridge {
 
   async callTool(name: string, args: Record<string, unknown>, options: { emit?: boolean } = {}): Promise<WidgetData> {
     const shouldEmit = options.emit ?? true;
+    // Remember the global as it stands, so a value left over from an earlier
+    // call is never mistaken for the answer to this one.
+    const before = window.openai?.toolOutput;
     if (this.hostWindow !== window) {
       try {
         await this.initialize();
         const response = await this.request("tools/call", { name, arguments: args }, 20_000) as { structuredContent?: WidgetData };
         let data = response.structuredContent ?? response as unknown as WidgetData;
         if (!data?.view) {
-          const pushed = await this.awaitPushedResult();
+          const pushed = await this.awaitPushedResult(6_000, before);
           if (pushed) return pushed;
         }
         if (shouldEmit) this.emit(data);
@@ -105,7 +134,7 @@ export class McpAppsBridge {
       const response = await window.openai.callTool(name, args);
       let data = response.structuredContent as WidgetData | undefined;
       if (!data?.view) {
-        const pushed = await this.awaitPushedResult();
+        const pushed = await this.awaitPushedResult(6_000, before);
         if (pushed) return pushed;
       }
       data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: "Tool returned no data." } };
