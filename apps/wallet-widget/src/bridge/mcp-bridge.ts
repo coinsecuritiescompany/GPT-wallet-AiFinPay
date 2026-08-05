@@ -12,8 +12,7 @@ function widgetDataFrom(value: unknown): WidgetData | undefined {
   const record = value as Record<string, unknown>;
   if (typeof record.view === "string" && record.view) return record as unknown as WidgetData;
   for (const key of ["structuredContent", "result", "data", "output", "toolResult", "toolResponse"]) {
-    const nested = record[key];
-    const candidate = widgetDataFrom(nested);
+    const candidate = widgetDataFrom(record[key]);
     if (candidate) return candidate;
   }
   return undefined;
@@ -30,10 +29,7 @@ function expectedViewsForTool(name: string): Set<string> | null {
   if (name === "open_wallet" || name === "open_wallet_current" || name === "create_wallet_pairing" || name === "get_wallet_summary") {
     return new Set(["wallet", "error", "not-connected"]);
   }
-  if (name.startsWith("prepare_") && name.endsWith("_transfer")) {
-    return new Set(["transfer-preview", "blocked", "error", "mainnet-signing-locked"]);
-  }
-  if (name === "prepare_transfer") {
+  if ((name.startsWith("prepare_") && name.endsWith("_transfer")) || name === "prepare_transfer") {
     return new Set(["transfer-preview", "blocked", "error", "mainnet-signing-locked"]);
   }
   if (name === "confirm_transfer" || name.startsWith("submit_")) {
@@ -56,6 +52,7 @@ export class McpAppsBridge {
   private lastPushed: { data: WidgetData; at: number } | null = null;
   private readonly pushWaiters: Array<(data: WidgetData) => void> = [];
   private stopResizeObserver: (() => void) | null = null;
+  private activeTool: string | null = null;
 
   constructor(private readonly hostWindow: Window = window.parent) {
     window.addEventListener("message", (event) => {
@@ -76,7 +73,11 @@ export class McpAppsBridge {
         if (pushed) {
           this.lastPushed = { data: pushed, at: Date.now() };
           this.pushWaiters.slice().forEach((resolve) => resolve(pushed));
-          this.emit(pushed);
+          // Android may replay the last open_wallet result while another tool is
+          // running. Publishing that replay immediately navigates React back to
+          // the dashboard before transfer preparation finishes. Only publish a
+          // notification when it matches the active tool's result contract.
+          if (!this.activeTool || acceptsToolResult(this.activeTool, pushed)) this.emit(pushed);
         }
       }
     }, { passive: true });
@@ -114,17 +115,13 @@ export class McpAppsBridge {
         if (index >= 0) this.pushWaiters.splice(index, 1);
         resolve(data);
       };
-
       const fresh = (): WidgetData | null => {
         const output = window.openai?.toolOutput;
         const data = widgetDataFrom(output);
         if (!acceptsToolResult(name, data)) return null;
         return resultFingerprint(output) === beforeFingerprint ? null : data;
       };
-
-      const waiter = (data: WidgetData) => {
-        if (acceptsToolResult(name, data)) finish(data);
-      };
+      const waiter = (data: WidgetData) => { if (acceptsToolResult(name, data)) finish(data); };
       this.pushWaiters.push(waiter);
       const onGlobals = () => { const data = fresh(); if (data) finish(data); };
       window.addEventListener("openai:set_globals", onGlobals);
@@ -139,29 +136,34 @@ export class McpAppsBridge {
     const shouldEmit = options.emit ?? true;
     const startedAt = Date.now();
     const beforeFingerprint = resultFingerprint(window.openai?.toolOutput);
-    if (this.hostWindow !== window) {
-      try {
-        await this.initialize();
-        const response = await this.request("tools/call", { name, arguments: args }, 20_000);
+    this.activeTool = name;
+    try {
+      if (this.hostWindow !== window) {
+        try {
+          await this.initialize();
+          const response = await this.request("tools/call", { name, arguments: args }, 20_000);
+          let data = widgetDataFrom(response);
+          if (!acceptsToolResult(name, data)) data = await this.awaitPushedResult(name, 10_000, beforeFingerprint, startedAt) ?? undefined;
+          if (data) {
+            if (shouldEmit) this.emit(data);
+            return data;
+          }
+        } catch (bridgeError) {
+          if (!window.openai?.callTool) throw bridgeError;
+        }
+      }
+      if (window.openai?.callTool) {
+        const response = await window.openai.callTool(name, args);
         let data = widgetDataFrom(response);
         if (!acceptsToolResult(name, data)) data = await this.awaitPushedResult(name, 10_000, beforeFingerprint, startedAt) ?? undefined;
-        if (data) {
-          if (shouldEmit) this.emit(data);
-          return data;
-        }
-      } catch (bridgeError) {
-        if (!window.openai?.callTool) throw bridgeError;
+        data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
+        if (shouldEmit) this.emit(data);
+        return data;
       }
+      throw new Error("MCP Apps bridge is available only inside ChatGPT or another compatible host.");
+    } finally {
+      if (this.activeTool === name) this.activeTool = null;
     }
-    if (window.openai?.callTool) {
-      const response = await window.openai.callTool(name, args);
-      let data = widgetDataFrom(response);
-      if (!acceptsToolResult(name, data)) data = await this.awaitPushedResult(name, 10_000, beforeFingerprint, startedAt) ?? undefined;
-      data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
-      if (shouldEmit) this.emit(data);
-      return data;
-    }
-    throw new Error("MCP Apps bridge is available only inside ChatGPT or another compatible host.");
   }
 
   private emit(data: WidgetData): void { if (data?.view) this.listeners.forEach((listener) => listener(data)); }
