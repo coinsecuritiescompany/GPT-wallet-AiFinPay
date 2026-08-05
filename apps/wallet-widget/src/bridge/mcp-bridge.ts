@@ -18,11 +18,25 @@ function widgetDataFrom(value: unknown): WidgetData | undefined {
   return undefined;
 }
 
+/** Normalize every host shape observed on desktop and Android before React mounts. */
+export function hostWidgetData(): WidgetData | undefined {
+  const openai = window.openai as unknown as Record<string, unknown> | undefined;
+  if (!openai) return undefined;
+  for (const key of ["toolOutput", "toolResult", "toolResponse", "output"]) {
+    const candidate = widgetDataFrom(openai[key]);
+    if (candidate) return candidate;
+  }
+  return undefined;
+}
+
 function resultFingerprint(value: unknown): string {
   const data = widgetDataFrom(value);
   if (!data) return "";
   try { return JSON.stringify(data); }
-  catch { return `${data.view}:${String((data as Record<string, unknown>).intent ?? "")}`; }
+  catch {
+    const record = data as unknown as Record<string, unknown>;
+    return `${data.view}:${String(record.intent ?? "")}`;
+  }
 }
 
 function expectedViewsForTool(name: string): Set<string> | null {
