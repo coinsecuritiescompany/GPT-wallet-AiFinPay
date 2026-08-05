@@ -7,29 +7,14 @@ interface Pending {
   timer: ReturnType<typeof window.setTimeout>;
 }
 
-/** Normalize every result envelope observed across ChatGPT hosts. */
-export function widgetDataFrom(value: unknown): WidgetData | undefined {
+function widgetDataFrom(value: unknown): WidgetData | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   if (typeof record.view === "string" && record.view) return record as unknown as WidgetData;
-
-  for (const key of ["structuredContent", "result", "toolOutput", "output", "data"]) {
+  for (const key of ["structuredContent", "result", "data", "output", "toolResult", "toolResponse"]) {
     const nested = record[key];
-    if (nested && typeof nested === "object") {
-      const found = widgetDataFrom(nested);
-      if (found) return found;
-    }
-  }
-  return undefined;
-}
-
-/** Mobile builds have used more than one compatibility-global name. */
-export function hostWidgetData(): WidgetData | undefined {
-  const host = window.openai as unknown as Record<string, unknown> | undefined;
-  if (!host) return undefined;
-  for (const key of ["toolOutput", "toolResult", "toolResponse", "output"]) {
-    const found = widgetDataFrom(host[key]);
-    if (found) return found;
+    const candidate = widgetDataFrom(nested);
+    if (candidate) return candidate;
   }
   return undefined;
 }
@@ -41,8 +26,26 @@ function resultFingerprint(value: unknown): string {
   catch { return `${data.view}:${String((data as Record<string, unknown>).intent ?? "")}`; }
 }
 
-function hostFingerprint(): string {
-  return resultFingerprint(hostWidgetData());
+function expectedViewsForTool(name: string): Set<string> | null {
+  if (name === "open_wallet" || name === "open_wallet_current" || name === "create_wallet_pairing" || name === "get_wallet_summary") {
+    return new Set(["wallet", "error", "not-connected"]);
+  }
+  if (name.startsWith("prepare_") && name.endsWith("_transfer")) {
+    return new Set(["transfer-preview", "blocked", "error", "mainnet-signing-locked"]);
+  }
+  if (name === "prepare_transfer") {
+    return new Set(["transfer-preview", "blocked", "error", "mainnet-signing-locked"]);
+  }
+  if (name === "confirm_transfer" || name.startsWith("submit_")) {
+    return new Set(["receipt", "pending", "error", "blocked"]);
+  }
+  return null;
+}
+
+function acceptsToolResult(name: string, data: WidgetData | undefined): data is WidgetData {
+  if (!data?.view) return false;
+  const expected = expectedViewsForTool(name);
+  return !expected || expected.has(data.view);
 }
 
 export class McpAppsBridge {
@@ -69,10 +72,10 @@ export class McpAppsBridge {
         return;
       }
       if (message.method === "ui/notifications/tool-result") {
-        const pushed = widgetDataFrom(message.params);
+        const pushed = widgetDataFrom(message.params?.structuredContent ?? message.params);
         if (pushed) {
           this.lastPushed = { data: pushed, at: Date.now() };
-          this.pushWaiters.splice(0).forEach((resolve) => resolve(pushed));
+          this.pushWaiters.slice().forEach((resolve) => resolve(pushed));
           this.emit(pushed);
         }
       }
@@ -93,8 +96,10 @@ export class McpAppsBridge {
     return this.ready;
   }
 
-  private awaitPushedResult(timeoutMs: number, beforeFingerprint: string, startedAt: number): Promise<WidgetData | null> {
-    if (this.lastPushed && this.lastPushed.at >= startedAt) return Promise.resolve(this.lastPushed.data);
+  private awaitPushedResult(name: string, timeoutMs: number, beforeFingerprint: string, startedAt: number): Promise<WidgetData | null> {
+    if (this.lastPushed && this.lastPushed.at >= startedAt && acceptsToolResult(name, this.lastPushed.data)) {
+      return Promise.resolve(this.lastPushed.data);
+    }
     return new Promise((resolve) => {
       let settled = false;
       let timer = 0;
@@ -111,12 +116,15 @@ export class McpAppsBridge {
       };
 
       const fresh = (): WidgetData | null => {
-        const data = hostWidgetData();
-        if (!data) return null;
-        return hostFingerprint() === beforeFingerprint ? null : data;
+        const output = window.openai?.toolOutput;
+        const data = widgetDataFrom(output);
+        if (!acceptsToolResult(name, data)) return null;
+        return resultFingerprint(output) === beforeFingerprint ? null : data;
       };
 
-      const waiter = (data: WidgetData) => finish(data);
+      const waiter = (data: WidgetData) => {
+        if (acceptsToolResult(name, data)) finish(data);
+      };
       this.pushWaiters.push(waiter);
       const onGlobals = () => { const data = fresh(); if (data) finish(data); };
       window.addEventListener("openai:set_globals", onGlobals);
@@ -130,14 +138,13 @@ export class McpAppsBridge {
   async callTool(name: string, args: Record<string, unknown>, options: { emit?: boolean } = {}): Promise<WidgetData> {
     const shouldEmit = options.emit ?? true;
     const startedAt = Date.now();
-    const beforeFingerprint = hostFingerprint();
-
+    const beforeFingerprint = resultFingerprint(window.openai?.toolOutput);
     if (this.hostWindow !== window) {
       try {
         await this.initialize();
         const response = await this.request("tools/call", { name, arguments: args }, 20_000);
         let data = widgetDataFrom(response);
-        if (!data) data = await this.awaitPushedResult(10_000, beforeFingerprint, startedAt) ?? undefined;
+        if (!acceptsToolResult(name, data)) data = await this.awaitPushedResult(name, 10_000, beforeFingerprint, startedAt) ?? undefined;
         if (data) {
           if (shouldEmit) this.emit(data);
           return data;
@@ -146,14 +153,11 @@ export class McpAppsBridge {
         if (!window.openai?.callTool) throw bridgeError;
       }
     }
-
     if (window.openai?.callTool) {
       const response = await window.openai.callTool(name, args);
-      let data = widgetDataFrom(response) ?? hostWidgetData();
-      if (!data || hostFingerprint() === beforeFingerprint) {
-        data = await this.awaitPushedResult(10_000, beforeFingerprint, startedAt) ?? data;
-      }
-      data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: "The ChatGPT mobile host did not expose the tool result. Reopen the wallet in a new chat and try again." } };
+      let data = widgetDataFrom(response);
+      if (!acceptsToolResult(name, data)) data = await this.awaitPushedResult(name, 10_000, beforeFingerprint, startedAt) ?? undefined;
+      data = data ?? { view: "error", error: { code: "INTERNAL_ERROR", message: `No usable result was returned for ${name}.` } };
       if (shouldEmit) this.emit(data);
       return data;
     }
