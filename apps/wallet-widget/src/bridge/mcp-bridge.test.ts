@@ -52,6 +52,34 @@ describe("MCP Apps bridge reliability", () => {
     expect(callTool).toHaveBeenCalledTimes(1);
   });
 
+  it("hands a lost Android Casper result to the chat with the same idempotency key", async () => {
+    vi.useFakeTimers();
+    const callTool = vi.fn().mockResolvedValue(undefined);
+    const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
+    setOpenAI({ callTool, sendFollowUpMessage, toolOutput: { structuredContent: { view: "wallet" } } });
+    const bridge = new McpAppsBridge(window);
+    const recipient = `01${"cd".repeat(32)}`;
+
+    const resultPromise = bridge.callTool("prepare_casper_transfer", {
+      recipient,
+      amount: "5",
+      idempotencyKey: "android-handoff-1"
+    }, { emit: false });
+
+    await vi.advanceTimersByTimeAsync(12_100);
+    await expect(resultPromise).resolves.toMatchObject({
+      view: "error",
+      error: { code: "MOBILE_HANDOFF" }
+    });
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: expect.stringContaining("android-handoff-1")
+    });
+    expect(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt).toContain(recipient);
+    expect(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt).toContain("amount=5");
+  });
+
   it("includes all supported result slots in the host fingerprint", () => {
     setOpenAI({
       toolOutput: { structuredContent: { view: "wallet" } },
