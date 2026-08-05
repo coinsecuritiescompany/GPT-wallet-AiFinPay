@@ -21,5 +21,12 @@ export default tseslint.config(
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-explicit-any": "off"
     }
+  },
+  {
+    // App.tsx intentionally exports small pure routing helpers used by the
+    // regression suite. They are not React components and do not affect the
+    // production single-file widget's refresh behavior.
+    files: ["apps/wallet-widget/src/App.tsx"],
+    rules: { "react-refresh/only-export-components": "off" }
   }
 );
