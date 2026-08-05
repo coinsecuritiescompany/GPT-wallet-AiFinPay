@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { McpAppsBridge } from "./mcp-bridge.js";
+import { hostResultFingerprint, hostWidgetData, McpAppsBridge } from "./mcp-bridge.js";
 
 describe("MCP Apps bridge reliability", () => {
   afterEach(() => {
@@ -8,22 +8,53 @@ describe("MCP Apps bridge reliability", () => {
     delete window.openai;
   });
 
-  it("falls back to the ChatGPT compatibility tool API when mobile initialization times out", async () => {
-    vi.useFakeTimers();
+  it("uses the direct ChatGPT tool API exactly once when it is available", async () => {
     const postMessage = vi.fn();
     const host = { postMessage } as unknown as Window;
     const callTool = vi.fn().mockResolvedValue({ structuredContent: { view: "wallet" } });
     window.openai = { callTool };
     const bridge = new McpAppsBridge(host);
 
-    const resultPromise = bridge.callTool("render_wallet", {}, { emit: false });
-    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
-      jsonrpc: "2.0",
-      method: "ui/initialize"
-    }), "*");
-
-    await vi.advanceTimersByTimeAsync(3_500);
-    await expect(resultPromise).resolves.toEqual({ view: "wallet" });
+    await expect(bridge.callTool("render_wallet", {}, { emit: false })).resolves.toEqual({ view: "wallet" });
+    expect(callTool).toHaveBeenCalledTimes(1);
     expect(callTool).toHaveBeenCalledWith("render_wallet", {});
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("reads an Android transfer result delivered through toolResponse", async () => {
+    vi.useFakeTimers();
+    const callTool = vi.fn().mockResolvedValue(undefined);
+    window.openai = {
+      callTool,
+      toolOutput: { structuredContent: { view: "wallet" } }
+    };
+    const bridge = new McpAppsBridge(window);
+
+    const resultPromise = bridge.callTool("prepare_casper_transfer", {
+      recipient: `01${"ab".repeat(32)}`,
+      amount: "2.5",
+      idempotencyKey: "android-test-1"
+    }, { emit: false });
+
+    window.setTimeout(() => {
+      (window.openai as unknown as Record<string, unknown>).toolResponse = {
+        result: { structuredContent: { view: "transfer-preview", intent: { id: "intent-1" } } }
+      };
+      window.dispatchEvent(new Event("openai:set_globals"));
+    }, 250);
+
+    await vi.advanceTimersByTimeAsync(300);
+    await expect(resultPromise).resolves.toMatchObject({ view: "transfer-preview" });
+    expect(callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("includes all supported result slots in the host fingerprint", () => {
+    window.openai = {
+      toolOutput: { structuredContent: { view: "wallet" } },
+      toolResult: { structuredContent: { view: "receipt" } }
+    } as typeof window.openai;
+    expect(hostWidgetData()).toMatchObject({ view: "wallet" });
+    expect(hostResultFingerprint()).toContain("wallet");
+    expect(hostResultFingerprint()).toContain("receipt");
   });
 });
