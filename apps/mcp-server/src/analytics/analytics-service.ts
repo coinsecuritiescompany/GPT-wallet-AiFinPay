@@ -150,11 +150,17 @@ export class AnalyticsService {
     const intents = rows<{ json: string }>("SELECT json FROM payment_intents")
       .map((row) => JSON.parse(row.json) as { status: string; network: string; token: string; createdAt: string });
     const transfersByStatus: Record<string, number> = {};
-    const transfersByNetwork: Record<string, number> = {};
+    const completedByNetwork: Record<string, number> = {};
+    const broadcastByNetwork: Record<string, number> = {};
     for (const intent of intents) {
       transfersByStatus[intent.status] = (transfersByStatus[intent.status] ?? 0) + 1;
+      // "completed" must mean confirmed final — a PENDING broadcast is shown
+      // separately so the dashboard never overstates what actually settled.
+      if (intent.status === "COMPLETED") {
+        completedByNetwork[intent.network] = (completedByNetwork[intent.network] ?? 0) + 1;
+      }
       if (intent.status === "COMPLETED" || intent.status === "PENDING") {
-        transfersByNetwork[intent.network] = (transfersByNetwork[intent.network] ?? 0) + 1;
+        broadcastByNetwork[intent.network] = (broadcastByNetwork[intent.network] ?? 0) + 1;
       }
     }
 
@@ -173,7 +179,7 @@ export class AnalyticsService {
         walletOpenToCompletedConversion: usersOpenedWallet ? Number((usersCompleted / usersOpenedWallet).toFixed(3)) : 0
       },
       activeUsers: { daily: this.countDistinctUsersSince(day), weekly: this.countDistinctUsersSince(week), monthly: this.countDistinctUsersSince(month) },
-      transfers: { byStatus: transfersByStatus, completedByNetwork: transfersByNetwork },
+      transfers: { byStatus: transfersByStatus, completedByNetwork, broadcastByNetwork },
       funnel30d: Object.fromEntries(rows<{ event: string; n: number }>(
         "SELECT event, COUNT(*) AS n FROM analytics_events WHERE ts>=? GROUP BY event ORDER BY n DESC", month
       ).map((row) => [row.event, Number(row.n)])),
