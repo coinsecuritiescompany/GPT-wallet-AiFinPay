@@ -4,6 +4,7 @@ import {
   AppError, LIVE_NETWORKS, formatBaseUnits, networkMeta, parseBaseUnits, paymentAssetSpec,
   type LiveNetworkSpec, type NetworkId, type PaymentIntent, type RiskLevel, type TokenSymbol
 } from "@aifinpay/shared";
+import type { AnalyticsService } from "../analytics/analytics-service.js";
 import type { AuditService } from "../audit/audit-service.js";
 import type { Store } from "../storage/store.js";
 import type { ConfirmationService } from "./confirmation-service.js";
@@ -63,8 +64,18 @@ export class PaymentService {
     private readonly store: Store,
     private readonly audit: AuditService,
     private readonly confirmations: ConfirmationService,
-    private readonly adapter: WalletAdapter
+    private readonly adapter: WalletAdapter,
+    private readonly analytics?: AnalyticsService
   ) {}
+
+  /** Server-side analytics are authoritative for the transfer funnel. */
+  private track(event: Parameters<AnalyticsService["record"]>[0], userId: string, intent?: Pick<PaymentIntent, "id" | "network" | "token" | "amount">, extra: { stage?: string; errorCode?: string } = {}): void {
+    this.analytics?.record(event, "server", {
+      userId,
+      ...(intent ? { intentId: intent.id, network: intent.network, asset: intent.token, amount: intent.amount } : {}),
+      ...extra
+    });
+  }
 
   private digest(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 
@@ -80,6 +91,8 @@ export class PaymentService {
       return response;
     }
 
+    this.analytics?.record("transfer_prepare_started", "server", { userId, network: input.network, asset: input.token, amount: input.amount });
+    try {
     const recipient = validatedRecipient(input.network, input.recipient);
     const asset = paymentAssetSpec(input.network, input.token);
     if (!asset) throw new AppError("TOKEN_UNSUPPORTED", `${input.token} is not available on ${input.network}.`);
@@ -119,9 +132,16 @@ export class PaymentService {
     this.store.saveIntent(intent, requestHash);
     this.audit.record({ userId, agentId: input.initiatedByAgentId ?? null, action: "PREPARE_TRANSFER", entityType: "PaymentIntent", entityId: id,
       decision: policy.decision, reasonCode: policy.reasonCodes.join(","), metadata: { token: input.token, network: input.network, amountBaseUnits: amountBaseUnits.toString() } });
+    this.track("transfer_prepared", userId, intent, { stage: policy.decision });
     const response: { intent: PaymentIntent; confirmationToken?: string; policyExplanation: string } = { intent, policyExplanation: policy.explanation };
     if (status !== "BLOCKED") response.confirmationToken = this.confirmations.issue(id, userId, expiresAt);
     return response;
+    } catch (error) {
+      const code = error instanceof AppError ? error.code : "INTERNAL_ERROR";
+      this.analytics?.record("transfer_prepare_failed", "server", { userId, network: input.network, asset: input.token, amount: input.amount, errorCode: code });
+      this.analytics?.record("stage_error", "server", { userId, network: input.network, stage: "prepare", errorCode: code });
+      throw error;
+    }
   }
 
   async confirm(userId: string, intentId: string, confirmationToken: string): Promise<{ intent: PaymentIntent; explorerUrl: string }> {
@@ -148,6 +168,11 @@ export class PaymentService {
     this.audit.record({ userId, agentId: intent.initiatedByType === "AGENT" ? intent.initiatedById : null, action: "CONFIRM_TRANSFER",
       entityType: "PaymentIntent", entityId: intent.id, decision: intent.status, reasonCode: intent.policyReasonCodes.join(","),
       metadata: { transactionHash: execution.transactionHash, amountBaseUnits: intent.amountBaseUnits } });
+    this.track("transaction_broadcast", userId, intent);
+    // transition() mutates through a method, so widen past the narrowed union.
+    const settled = intent.status as PaymentIntent["status"];
+    if (settled === "COMPLETED") this.track("transaction_confirmed", userId, intent);
+    else if (settled === "FAILED") this.track("transaction_failed", userId, intent, { stage: "execution" });
     return { intent, explorerUrl: execution.explorerUrl };
   }
 
@@ -180,6 +205,9 @@ export class PaymentService {
     this.audit.record({ userId, agentId: intent.initiatedByType === "AGENT" ? intent.initiatedById : null, action: "VAULT_BROADCAST",
       entityType: "PaymentIntent", entityId: intent.id, decision: intent.status, reasonCode: intent.policyReasonCodes.join(","),
       metadata: { transactionHash: execution.transactionHash, amountBaseUnits: intent.amountBaseUnits, network: intent.network } });
+    this.track("transaction_broadcast", userId, intent);
+    if (intent.status === "COMPLETED") this.track("transaction_confirmed", userId, intent);
+    else if (intent.status === "FAILED") this.track("transaction_failed", userId, intent, { stage: "vault_broadcast" });
     return { intent, explorerUrl: execution.explorerUrl };
   }
 
@@ -190,6 +218,7 @@ export class PaymentService {
     this.store.saveIntent(intent, this.digest({ idempotencyKey: intent.idempotencyKey }));
     this.audit.record({ userId, agentId: null, action: "CANCEL_TRANSFER", entityType: "PaymentIntent", entityId: intent.id,
       decision: "CANCELLED", reasonCode: "USER_CONFIRMATION_REQUIRED" });
+    this.track("transfer_cancelled", userId, intent);
     return intent;
   }
 

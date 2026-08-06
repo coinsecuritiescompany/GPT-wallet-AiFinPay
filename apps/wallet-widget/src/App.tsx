@@ -13,6 +13,32 @@ const short = (value = "") => value.length > 14 ? `${value.slice(0, 8)}…${valu
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 type MainnetId = keyof typeof MAINNET_NETWORKS;
 
+// ----------------------------------------------------------------- telemetry
+// UI telemetry only: what screen showed on what platform. The server records
+// the transaction funnel itself, so nothing here is ever proof of a payment,
+// and a failure here must never affect the wallet.
+type UiTelemetryEvent = "widget_loaded" | "wallet_viewed" | "network_selected" | "balance_viewed" | "transfer_form_opened";
+
+function uiPlatform(): "desktop" | "web" | "android" | "ios" | "unknown" {
+  const reported = document.documentElement.dataset.platform?.toLowerCase() ?? "";
+  if (reported.includes("android")) return "android";
+  if (reported.includes("ios") || reported.includes("iphone") || reported.includes("ipad")) return "ios";
+  if (reported.includes("desktop") || reported.includes("mac") || reported.includes("windows")) return "desktop";
+  if (reported.includes("web")) return "web";
+  const agent = navigator.userAgent;
+  if (/android/i.test(agent)) return "android";
+  if (/iphone|ipad|ipod/i.test(agent)) return "ios";
+  return "unknown";
+}
+
+function track(event: UiTelemetryEvent, network?: string): void {
+  // The standalone /preview demo has no host to report to.
+  if (window.parent === window && !window.openai) return;
+  void bridge.callTool("track_ui_event", {
+    event, platform: uiPlatform(), ...(network ? { network } : {})
+  }, { emit: false }).catch(() => undefined);
+}
+
 function Logo() {
   return <div className="brand"><img className="logo" src={logoUrl} alt="" aria-hidden="true" /><span>AiFinPay</span></div>;
 }
@@ -90,6 +116,7 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
     setNetworkOpen(false);
     if (id === selectedNetwork) return;
     setSelectedNetwork(id);
+    track("network_selected", id.toUpperCase());
     void window.openai?.setWidgetState?.({ ...(window.openai?.widgetState ?? {}), selectedNetwork: id });
     if (!canFetch) return;
     // Fetch this network's live read-only balances; the emitted summary updates the view.
@@ -757,7 +784,22 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
     setData(next);
     if (next.view === "wallet") setWallet(next);
   }), []);
-  useEffect(() => { document.documentElement.dataset.theme = window.openai?.theme ?? "light"; void bridge.initialize().catch(() => undefined); }, []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = window.openai?.theme ?? "light";
+    // Report widget_loaded after the handshake so the host has had the chance
+    // to reveal its platform; a failed handshake still reports via user agent.
+    void bridge.initialize().catch(() => undefined).then(() => track("widget_loaded"));
+  }, []);
+  const lastViewTracked = useRef("");
+  useEffect(() => {
+    const viewEvents: Record<string, UiTelemetryEvent> = {
+      wallet: "wallet_viewed", balance: "balance_viewed", "transfer-form": "transfer_form_opened"
+    };
+    const event = viewEvents[data.view];
+    if (!event || lastViewTracked.current === data.view) return;
+    lastViewTracked.current = data.view;
+    track(event);
+  }, [data.view]);
   // Returning to the wallet used to replay a stored snapshot, so the balance
   // shown after a payment was the one from before it — a send of 30 CSPR left
   // the wallet still reporting its old total. Show the snapshot immediately so

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import compression from "compression";
 import express, { type Request, type Response } from "express";
@@ -123,7 +123,21 @@ app.get("/icon.png", (_req, res) => {
   res.status(200).set({ "content-type": "image/png", "content-length": String(icon.byteLength), "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" }).send(icon);
 });
 
-app.get("/", (_req, res) => sendHtml(res, landingPage(config.publicUrl)));
+// Referral attribution: a campaign link like /?src=casper-community sets a
+// first-party cookie which the OAuth approval later reads, so community-driven
+// installs are attributable without tracking anything else about the browser.
+function referralFromCookie(req: Request): string | undefined {
+  const match = /(?:^|;\s*)afp_src=([A-Za-z0-9_-]{1,40})(?:;|$)/.exec(req.headers.cookie ?? "");
+  return match?.[1];
+}
+
+app.get("/", (req, res) => {
+  const src = typeof req.query.src === "string" ? req.query.src : "";
+  if (/^[A-Za-z0-9_-]{1,40}$/.test(src)) {
+    res.append("set-cookie", `afp_src=${src}; Max-Age=${30 * 86_400}; Path=/; Secure; HttpOnly; SameSite=Lax`);
+  }
+  sendHtml(res, landingPage(config.publicUrl));
+});
 app.get("/preview", (_req, res) => sendHtml(res, widgetHtml()));
 app.get("/vault", (_req, res) => sendHtml(res, vaultHtml(), true));
 app.get("/privacy", (_req, res) => sendHtml(res, privacyPage()));
@@ -135,7 +149,7 @@ app.post("/api/oauth/approve", rateLimit("oauth-approve", 20, 10 * 60_000), expr
     const request = typeof req.body?.request === "string" ? req.body.request : "";
     const addresses = validAddresses(req.body?.addresses);
     if (!request.startsWith("afp1.authorize.") || !addresses) { res.status(400).json({ error: "INVALID_AUTHORIZATION_APPROVAL" }); return; }
-    res.status(200).set("cache-control", "no-store").json({ redirectUrl: context.oauth.approveAuthorization(request, addresses) });
+    res.status(200).set("cache-control", "no-store").json({ redirectUrl: context.oauth.approveAuthorization(request, addresses, referralFromCookie(req)) });
   } catch {
     res.status(410).set("cache-control", "no-store").json({ error: "AUTHORIZATION_EXPIRED_OR_INVALID" });
   }
@@ -145,7 +159,12 @@ app.post("/api/vault/pair", rateLimit("vault-pair", 30, 10 * 60_000), express.js
   const token = typeof req.body?.token === "string" ? req.body.token : "";
   const addresses = validAddresses(req.body?.addresses);
   if (!/^[A-Za-z0-9_-]{32}$/.test(token) || !addresses) { res.status(400).json({ error: "INVALID_PAIRING_REQUEST" }); return; }
-  const result = context.store.completeWalletPairing(createHash("sha256").update(token).digest("hex"), addresses);
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const pairingUser = context.store.pairingUserId(tokenHash);
+  const result = context.store.completeWalletPairing(tokenHash, addresses);
+  if (result === "connected" && pairingUser) {
+    context.analytics.record("vault_connected", "server", { userId: pairingUser, ...(referralFromCookie(req) ? { referral: referralFromCookie(req) } : {}) });
+  }
   res.status(result === "invalid" ? 410 : 200).json(result === "invalid" ? { error: "PAIRING_EXPIRED_OR_UNKNOWN" } : { connected: true, alreadyConnected: result === "already_connected" });
 });
 
@@ -177,8 +196,14 @@ app.post("/api/vault/sign-request", rateLimit("sign-request", 30, 10 * 60_000), 
       display: { recipient: intent.recipient, amount: intent.amount, token: asset?.symbol ?? intent.token, network: intent.network, networkLabel: spec?.label ?? intent.network },
       expiresAt: intent.expiresAt
     };
+    context.analytics.record("signing_request_opened", "server",
+      { userId: claims.userId, intentId: intent.id, network: intent.network, asset: intent.token, amount: intent.amount });
     res.status(200).set("cache-control", "no-store").json(payload);
-  } catch (error) { respondSigningError(res, error); }
+  } catch (error) {
+    const safe = safeError(error);
+    context.analytics.record("stage_error", "server", { stage: "sign_request", errorCode: safe.code });
+    respondSigningError(res, error);
+  }
 });
 
 app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000), express.json({ limit: "32kb", type: "application/json" }), async (req, res) => {
@@ -210,11 +235,81 @@ app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000)
       await validateSignedEvmTransaction(connection.addresses.evm, signedTransaction, claims.transaction);
     }
 
+    // The signature has passed validation against the connected wallet's own
+    // key — record "signed" before broadcast so a network rejection is still
+    // visible as its own funnel stage.
+    context.analytics.record("transaction_signed", "server",
+      { userId: claims.userId, intentId: intent.id, network: intent.network, asset: intent.token, amount: intent.amount });
+
     if (!context.adapter.broadcastRawTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot broadcast transactions.", 501);
     const execution = await context.adapter.broadcastRawTransaction(intent.network, signedTransaction);
     const result = context.payments.finalizeVaultBroadcast(claims.userId, claims.intentId, execution);
     res.status(200).set("cache-control", "no-store").json({ transactionHash: execution.transactionHash, explorerUrl: result.explorerUrl, status: result.intent.status });
-  } catch (error) { respondSigningError(res, error); }
+  } catch (error) {
+    const safe = safeError(error);
+    context.analytics.record("stage_error", "server", { stage: "submit_signed", errorCode: safe.code });
+    respondSigningError(res, error);
+  }
+});
+
+// Internal analytics dashboard. Enabled only when ANALYTICS_DASHBOARD_TOKEN is
+// set; authenticated by that token; renders aggregates only — no addresses, no
+// user identifiers, nothing reversible.
+function dashboardAuthorized(req: Request): boolean {
+  const token = config.analyticsDashboardToken;
+  if (!token) return false;
+  const provided = (req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : "")
+    || (typeof req.query.token === "string" ? req.query.token : "");
+  if (provided.length !== token.length) return false;
+  return timingSafeEqual(Buffer.from(provided), Buffer.from(token));
+}
+
+app.get("/internal/analytics.json", rateLimit("analytics", 60, 60_000), (req, res) => {
+  if (!dashboardAuthorized(req)) { res.status(404).type("text/plain").send("Not Found"); return; }
+  res.status(200).set("cache-control", "no-store").json({
+    ...context.analytics.summary(),
+    casperCommunity: context.analytics.communitySlice()
+  });
+});
+
+app.get("/internal/analytics", rateLimit("analytics", 60, 60_000), (req, res) => {
+  if (!dashboardAuthorized(req)) { res.status(404).type("text/plain").send("Not Found"); return; }
+  const summary = context.analytics.summary() as Record<string, any>;
+  const community = context.analytics.communitySlice() as Record<string, any>;
+  const section = (title: string, value: unknown): string =>
+    `<section><h2>${title}</h2><pre>${JSON.stringify(value, null, 2)}</pre></section>`;
+  const totals = summary.totals as Record<string, number>;
+  const active = summary.activeUsers as Record<string, number>;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>AiFinPay Wallet Analytics</title><style>
+    body{font-family:-apple-system,Helvetica,sans-serif;background:#111;color:#eee;max-width:960px;margin:24px auto;padding:0 16px}
+    h1{font-size:20px;border-bottom:2px solid #4880CF;padding-bottom:8px} h2{font-size:14px;color:#7ab0f5;margin:18px 0 6px}
+    pre{background:#1b1b1b;border:1px solid #2c2c2c;border-radius:8px;padding:12px;overflow-x:auto;font-size:12px}
+    .cards{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+    .card{background:#1b1b1b;border:1px solid #2c2c2c;border-radius:10px;padding:12px 16px;min-width:130px}
+    .card b{display:block;font-size:22px;color:#fff} .card span{font-size:11px;color:#999}
+  </style></head><body><h1>AiFinPay GPT Wallet — internal analytics</h1>
+  <p style="color:#888;font-size:12px">Generated ${summary.generatedAt}. Server-side events are authoritative; UI events are directional only. No addresses or user identifiers are stored or shown.</p>
+  <div class="cards">
+    <div class="card"><b>${totals.connectedVaults}</b><span>connected Vaults</span></div>
+    <div class="card"><b>${totals.uniqueUsers}</b><span>unique users</span></div>
+    <div class="card"><b>${active.daily}</b><span>daily active</span></div>
+    <div class="card"><b>${active.weekly}</b><span>weekly active</span></div>
+    <div class="card"><b>${Math.round((totals.walletOpenToCompletedConversion ?? 0) * 100)}%</b><span>open → completed tx</span></div>
+  </div>
+  ${section("Transfers by status (authoritative, from payment intents)", summary.transfers)}
+  ${section("Funnel — events, last 30 days", summary.funnel30d)}
+  ${section("Daily active users, last 14 days", summary.dailyActive14d)}
+  ${section("Platforms (UI events, distinct users, 30d)", summary.byPlatform30d)}
+  ${section("Widget versions seen (30d)", summary.byWidgetVersion30d)}
+  ${section("Network selections (30d)", summary.networkSelections30d)}
+  ${section("Errors by stage (30d)", summary.errors30d)}
+  ${section("Referrals (first touch)", summary.referrals)}
+  ${section("Casper community test results", community)}
+  </body></html>`;
+  res.status(200).set({
+    "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
+    "x-robots-tag": "noindex", "x-content-type-options": "nosniff", "x-frame-options": "DENY"
+  }).send(html);
 });
 
 app.all("/mcp", rateLimit("mcp", 180, 60_000), async (req: Request & { auth?: AuthInfo }, res) => {
@@ -250,6 +345,12 @@ app.all("/mcp", rateLimit("mcp", 180, 60_000), async (req: Request & { auth?: Au
 });
 
 app.use((_req, res) => res.status(404).type("text/plain").send("Not Found"));
+
+// Documented retention: raw analytics events are kept for 180 days; the
+// dashboard's aggregates are computed live so nothing else needs deleting.
+context.analytics.pruneOldEvents();
+const analyticsPruneTimer = setInterval(() => context.analytics.pruneOldEvents(), 24 * 60 * 60 * 1000);
+analyticsPruneTimer.unref();
 
 const httpServer = createServer(app);
 httpServer.listen(config.port, () => console.log(JSON.stringify({

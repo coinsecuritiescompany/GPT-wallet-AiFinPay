@@ -83,7 +83,9 @@ export class AiFinPayOAuthProvider implements OAuthServerProvider {
     private readonly secret: string,
     private readonly issuer: URL,
     private readonly resource: URL,
-    private readonly consumePersistedCode?: (codeHash: string, expiresAtUnixSeconds: number) => boolean
+    private readonly consumePersistedCode?: (codeHash: string, expiresAtUnixSeconds: number) => boolean,
+    /** Called once per approved authorization, for analytics — never blocks the flow. */
+    private readonly onApproved?: (userId: string, referral?: string) => void
   ) {
     this.clientsStore = new StatelessClientsStore(this.sign.bind(this), this.verify.bind(this));
   }
@@ -134,7 +136,7 @@ export class AiFinPayOAuthProvider implements OAuthServerProvider {
     res.redirect(302, target.href);
   }
 
-  approveAuthorization(requestToken: string, addresses: PublicWalletAddresses): string {
+  approveAuthorization(requestToken: string, addresses: PublicWalletAddresses, referral?: string): string {
     const request = this.verify<AuthorizationRequest>("authorize", requestToken);
     const normalized = canonicalAddresses(addresses);
     const identityAddresses = {
@@ -144,6 +146,7 @@ export class AiFinPayOAuthProvider implements OAuthServerProvider {
       aptos: normalized.aptos
     };
     const userId = `wallet_${createHash("sha256").update(JSON.stringify(identityAddresses)).digest("hex").slice(0, 32)}`;
+    try { this.onApproved?.(userId, referral); } catch { /* analytics must never break auth */ }
     const now = Math.floor(Date.now() / 1000);
     const code = this.sign("code", { ...request, addresses: normalized, userId, iat: now, exp: now + AUTH_CODE_TTL_SECONDS });
     const redirect = new URL(request.redirectUri);

@@ -43,8 +43,8 @@ describe("MCP tool registration", () => {
     });
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
-    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "open_wallet", "open_wallet_current", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", ...nativeTools, "confirm_transfer", "list_swap_assets", "get_swap_quote", "create_swap_order", "get_swap_status", "create_agent_policy", "evaluate_payment_request", "render_wallet"]));
-    expect(names).toHaveLength(29);
+    expect(names).toEqual(expect.arrayContaining(["list_supported_mainnets", "open_wallet", "open_wallet_current", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "prepare_transfer", ...nativeTools, "confirm_transfer", "list_swap_assets", "get_swap_quote", "create_swap_order", "get_swap_status", "create_agent_policy", "evaluate_payment_request", "render_wallet", "track_ui_event"]));
+    expect(names).toHaveLength(30);
     for (const tool of tools.tools) {
       expect(tool.annotations).toMatchObject({
         readOnlyHint: expect.any(Boolean),

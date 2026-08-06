@@ -11,12 +11,12 @@ import type { AppContext } from "../context.js";
 
 // Treat the resource URI as a release cache key. ChatGPT can cache an earlier
 // widget body for an unchanged URI, so every shipped UI revision gets a bump.
-export const WIDGET_URI = "ui://aifinpay/wallet-v31.html";
+export const WIDGET_URI = "ui://aifinpay/wallet-v32.html";
 // ChatGPT can keep a tool descriptor cached across conversations and devices.
 // Keep every previously published template URI readable so a cached descriptor
 // never fails between a server deploy and the user's next metadata refresh.
 export const LEGACY_WIDGET_URIS = Array.from(
-  { length: 30 },
+  { length: 31 },
   (_, index) => `ui://aifinpay/wallet-v${index + 1}.html`
 );
 
@@ -191,6 +191,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
       const connection = ctx.store.getWalletConnection(user.userId);
       if (!connection) throw new AppError("AUTH_REQUIRED", "Connect AiFinPay Wallet once to continue.", 401);
       const state = await walletState(ctx, user.userId, resolveNetwork(ctx));
+      ctx.analytics.record("wallet_opened", "server", { userId: user.userId, widgetVersion: WIDGET_URI });
       return rendered("AiFinPay wallet opened.", { view: "wallet", summary: { ...state.summary, address: undefined }, connection: state.connection, networks: runtimeNetworks(ctx) });
     } catch (error) { return failure(error, ctx); }
   };
@@ -241,6 +242,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
       const user = resolveUser(ctx, extra);
       const selectedNetwork = resolveNetwork(ctx, network);
       const state = await walletState(ctx, user.userId, selectedNetwork);
+      ctx.analytics.record("balance_view", "server", { userId: user.userId, network: selectedNetwork });
       return data("AiFinPay wallet summary loaded.", { view: "wallet", summary: { ...state.summary, address: undefined }, connection: state.connection, networks: runtimeNetworks(ctx) });
     } catch (error) { return failure(error, ctx); }
   });
@@ -250,7 +252,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     description: "Use this when the user asks for the balance of a supported token in their AiFinPay wallet.",
     inputSchema: { token: tokenSchema, network: networkSchema }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta()
   }, async ({ token, network }, extra) => {
-    try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
+    try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); ctx.analytics.record("balance_view", "server", { userId: user.userId, network: selectedNetwork, asset: token }); return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
     catch (error) { return failure(error, ctx); }
   });
 
@@ -455,7 +457,7 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
     description: "Use this after wallet data is requested to render the interactive AiFinPay wallet widget inside ChatGPT.",
     inputSchema: { network: networkSchema.optional() }, outputSchema: toolOutputSchema, annotations: readOnly, _meta: oauthMeta(true)
   }, async ({ network }, extra) => {
-    try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); const state = await walletState(ctx, user.userId, selectedNetwork); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Live read-only balances across all 13 mainnet networks." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...state.summary, address: undefined }, connection: state.connection, networks: runtimeNetworks(ctx) }); }
+    try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); const state = await walletState(ctx, user.userId, selectedNetwork); ctx.analytics.record("wallet_opened", "server", { userId: user.userId, network: selectedNetwork, widgetVersion: WIDGET_URI }); return rendered(ctx.config.walletMode === "mainnet" ? "AiFinPay wallet opened. Live read-only balances across all 13 mainnet networks." : "AiFinPay wallet opened.", { view: "wallet", summary: { ...state.summary, address: undefined }, connection: state.connection, networks: runtimeNetworks(ctx) }); }
     catch (error) { return failure(error, ctx); }
   });
 
@@ -475,5 +477,32 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   }, async ({ transferIntentId }, extra) => {
     try { const user = resolveUser(ctx, extra); const intent = ctx.payments.requireIntent(transferIntentId, user.userId); return rendered("Transaction receipt opened.", { view: "receipt", intent: publicIntent(intent), explorerUrl: intent.transactionHash ? `${networkMeta(intent.network).explorerBaseUrl}/tx/${intent.transactionHash}` : null }); }
     catch (error) { return failure(error, ctx); }
+  });
+
+  // UI telemetry from the widget. Deliberately non-authoritative: it describes
+  // what the interface showed (platform, selected network, form opens), never
+  // whether a transaction happened — the server records that itself. Hidden
+  // from model selection; only the widget calls it.
+  registerAppTool(server, "track_ui_event", {
+    title: "Record wallet UI telemetry",
+    description: "Internal wallet-widget telemetry. Not for model use.",
+    inputSchema: {
+      event: z.enum(["widget_loaded", "wallet_viewed", "network_selected", "balance_viewed", "transfer_form_opened"]),
+      network: networkSchema.optional(),
+      platform: z.enum(["desktop", "web", "android", "ios", "unknown"]).optional()
+    },
+    outputSchema: toolOutputSchema, annotations: readOnly,
+    _meta: { ...oauthMeta(), ui: { visibility: ["app"] } }
+  }, async ({ event, network, platform }, extra) => {
+    try {
+      const user = resolveUser(ctx, extra);
+      ctx.analytics.record(event, "ui", {
+        userId: user.userId,
+        ...(network ? { network } : {}),
+        ...(platform ? { platform } : {}),
+        widgetVersion: WIDGET_URI
+      });
+    } catch { /* telemetry must never surface an error to the widget */ }
+    return data("Recorded.", { view: "tracked" });
   });
 }

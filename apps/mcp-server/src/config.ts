@@ -16,6 +16,8 @@ export interface AppConfig {
   mainnetRpcAuth: Record<string, string>;
   signingNetworks: NetworkId[];
   changeNowApiKey?: string;
+  /** Bearer token for the internal analytics dashboard; unset disables it. */
+  analyticsDashboardToken?: string;
 }
 
 function parseRpcList(raw: string | undefined): string[] {
@@ -73,6 +75,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls),
     mainnetRpcAuth: loadMainnetRpcAuth(env),
     signingNetworks: loadSigningNetworks(env),
-    ...(env.CHANGENOW_API_KEY?.trim() ? { changeNowApiKey: env.CHANGENOW_API_KEY.trim() } : {})
+    ...(env.CHANGENOW_API_KEY?.trim() ? { changeNowApiKey: env.CHANGENOW_API_KEY.trim() } : {}),
+    ...(env.ANALYTICS_DASHBOARD_TOKEN?.trim() && env.ANALYTICS_DASHBOARD_TOKEN.trim().length >= 16
+      ? { analyticsDashboardToken: env.ANALYTICS_DASHBOARD_TOKEN.trim() } : {})
   };
 }

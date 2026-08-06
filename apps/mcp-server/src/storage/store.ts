@@ -139,6 +139,12 @@ export class Store {
     this.db.prepare("INSERT INTO wallet_pairings (token_hash,user_id,expires_at,consumed) VALUES (?,?,?,0)").run(tokenHash, userId, expiresAt);
   }
 
+  /** The user a pairing token belongs to, for analytics — does not consume it. */
+  pairingUserId(tokenHash: string): string | null {
+    const row = this.db.prepare("SELECT user_id FROM wallet_pairings WHERE token_hash=?").get(tokenHash) as { user_id: string } | undefined;
+    return row?.user_id ?? null;
+  }
+
   completeWalletPairing(tokenHash: string, addresses: StoredWalletAddresses): WalletPairingResult {
     const now = new Date().toISOString();
     const row = this.db.prepare("SELECT user_id,expires_at,consumed FROM wallet_pairings WHERE token_hash=?").get(tokenHash) as { user_id: string; expires_at: string; consumed: number } | undefined;
