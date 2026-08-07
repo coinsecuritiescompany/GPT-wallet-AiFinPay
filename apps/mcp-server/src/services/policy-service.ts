@@ -23,13 +23,18 @@ export class PolicyService {
   create(userId: string, draft: PolicyDraft, token: string, expiresAt: string): AgentPolicy {
     const subject = `policy:${this.hash(draft)}`;
     if (new Date(expiresAt) <= new Date() || !this.confirmations.verify(token, subject, userId, expiresAt)) throw new AppError("CONFIRMATION_REQUIRED", "A valid explicit policy confirmation is required.");
+    if (new Date(draft.validUntil) <= new Date()) throw new AppError("POLICY_BLOCKED", "Policy validUntil must be in the future.");
+
     const now = new Date().toISOString();
     const policy: AgentPolicy = {
       policyId: `policy_${this.hash(`${userId}:${draft.agentId}:${draft.name}`).slice(0, 18)}`,
       ownerUserId: userId, agentId: draft.agentId, name: draft.name, enabled: true,
-      dailyLimit: draft.dailyLimit, perTransactionLimit: draft.perTransactionLimit, tokenAllowlist: draft.tokenAllowlist,
-      networkAllowlist: draft.networkAllowlist, allowedRecipients: draft.allowedRecipients.map((v) => v.toLowerCase()),
-      allowedMerchantCategories: draft.allowedMerchantCategories, merchantAllowlist: draft.merchantAllowlist,
+      dailyLimit: draft.dailyLimit, perTransactionLimit: draft.perTransactionLimit, tokenAllowlist: [...new Set(draft.tokenAllowlist)],
+      networkAllowlist: [...new Set(draft.networkAllowlist)],
+      // Do not lowercase here: Solana base58 addresses are case-sensitive.
+      // The policy engine compares addresses according to each network family.
+      allowedRecipients: [...new Set(draft.allowedRecipients)],
+      allowedMerchantCategories: [...new Set(draft.allowedMerchantCategories)], merchantAllowlist: [...new Set(draft.merchantAllowlist)],
       approvalThreshold: draft.approvalThreshold, validFrom: now, validUntil: draft.validUntil, createdAt: now, updatedAt: now
     };
     this.store.savePolicy(policy);
