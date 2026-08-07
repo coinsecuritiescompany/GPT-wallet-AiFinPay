@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { z } from "zod";
 import {
-  AppError, LIVE_NETWORKS, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkMeta, networkSchema, safeError, tokenSchema,
+  AppError, LIVE_NETWORKS, MAINNET_NETWORKS, decimalAmountSchema, idempotencyKeySchema, networkMeta, networkSchema, safeError, tokenSchema,
   type LiveNetworkSpec, type NetworkId, type PaymentIntent, type SwapAsset, type WalletSummary
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
@@ -147,7 +147,7 @@ function buildSignUrl(ctx: AppContext, userId: string, intent: PaymentIntent): s
 }
 
 const prepareSchema = {
-  recipient: evmAddressSchema,
+  recipient: z.string().min(1).max(256),
   amount: decimalAmountSchema,
   token: tokenSchema,
   network: networkSchema,
@@ -166,7 +166,7 @@ const policyDraftSchema = {
   perTransactionLimit: decimalAmountSchema,
   tokenAllowlist: z.array(tokenSchema).min(1),
   networkAllowlist: z.array(networkSchema).min(1),
-  allowedRecipients: z.array(evmAddressSchema).default([]),
+  allowedRecipients: z.array(z.string().min(1).max(256)).default([]),
   allowedMerchantCategories: z.array(z.string().min(2).max(80)).default([]),
   merchantAllowlist: z.array(z.string().min(2).max(120)).default([]),
   approvalThreshold: decimalAmountSchema,
