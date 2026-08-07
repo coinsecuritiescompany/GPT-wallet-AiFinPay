@@ -1,4 +1,4 @@
-import { paymentAssetSpec, parseBaseUnits, type AgentPolicy, type NetworkId, type PolicyDecision, type PolicyReasonCode, type TokenSymbol } from "@aifinpay/shared";
+import { LIVE_NETWORKS, paymentAssetSpec, parseBaseUnits, type AgentPolicy, type LiveNetworkSpec, type NetworkId, type PolicyDecision, type PolicyReasonCode, type TokenSymbol } from "@aifinpay/shared";
 
 export interface PolicyContext {
   agentId?: string;
@@ -26,6 +26,17 @@ function blocked(code: PolicyReasonCode, explanation: string, policy?: AgentPoli
   return { decision: "BLOCKED", reasonCodes: [code], explanation, ...(policy ? { policyId: policy.policyId } : {}) };
 }
 
+/**
+ * Address comparison must follow the chain's address semantics.
+ * EVM/Aptos/Casper hex and NEAR account IDs are normalized case-insensitively;
+ * Solana base58 public keys are case-sensitive and must never be lower-cased.
+ */
+export function recipientMatches(network: NetworkId, allowed: string, actual: string): boolean {
+  const spec = (LIVE_NETWORKS as Record<string, LiveNetworkSpec>)[network];
+  if (spec?.family === "SOLANA") return allowed === actual;
+  return allowed.toLowerCase() === actual.toLowerCase();
+}
+
 export function evaluatePolicy(context: PolicyContext, policies: AgentPolicy[]): PolicyResult {
   const asset = paymentAssetSpec(context.network, context.token);
   if (!asset) return blocked("TOKEN_NOT_ALLOWED", `${context.token} is not available on ${context.network}.`);
@@ -44,7 +55,7 @@ export function evaluatePolicy(context: PolicyContext, policies: AgentPolicy[]):
   if (context.now < new Date(policy.validFrom) || context.now > new Date(policy.validUntil)) return blocked("POLICY_EXPIRED", "The agent policy is outside its validity period.", policy);
   if (!policy.tokenAllowlist.includes(context.token)) return blocked("TOKEN_NOT_ALLOWED", `${context.token} is not allowed by the agent policy.`, policy);
   if (!policy.networkAllowlist.includes(context.network)) return blocked("NETWORK_NOT_ALLOWED", `${context.network} is not allowed by the agent policy.`, policy);
-  if (policy.allowedRecipients.length && !policy.allowedRecipients.map((v) => v.toLowerCase()).includes(context.recipient.toLowerCase())) {
+  if (policy.allowedRecipients.length && !policy.allowedRecipients.some((candidate) => recipientMatches(context.network, candidate, context.recipient))) {
     return blocked("RECIPIENT_NOT_ALLOWED", "The destination is not on the policy allowlist.", policy);
   }
   if (policy.merchantAllowlist.length && (!context.merchantId || !policy.merchantAllowlist.includes(context.merchantId))) {
