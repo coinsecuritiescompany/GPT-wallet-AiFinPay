@@ -185,7 +185,11 @@ export class Store {
       this.db.exec("COMMIT");
       return "connected";
     } catch (error) {
-      try { this.db.exec("ROLLBACK"); } catch {}
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // Best-effort rollback only; preserve the original failure.
+      }
       throw error;
     }
   }
