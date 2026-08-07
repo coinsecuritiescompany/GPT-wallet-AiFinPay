@@ -107,10 +107,15 @@ export class SwapService {
     const canonicalFrom = await this.activeAsset(fromAsset);
     const canonicalTo = await this.activeAsset(toAsset);
     if (canonicalFrom.ticker === canonicalTo.ticker && canonicalFrom.network === canonicalTo.network) throw new AppError("INVALID_AMOUNT", "Choose two different assets or networks.");
+    // useRateId belongs to the fixed-rate flow. Sending it alongside
+    // flow=standard&type=direct makes ChangeNOW reject the request outright
+    // with "standard flow and direct type is unsupported if useRateId flag is
+    // true", so every quote failed for every pair and every amount. A standard
+    // flow simply has no rate id; createOrder already treats it as optional.
     const query = new URLSearchParams({
       fromCurrency: canonicalFrom.ticker, toCurrency: canonicalTo.ticker,
       fromNetwork: canonicalFrom.network, toNetwork: canonicalTo.network,
-      fromAmount, flow: "standard", type: "direct", useRateId: "true"
+      fromAmount, flow: "standard", type: "direct"
     });
     const body = await this.request(`/exchange/estimated-amount?${query}`) as Record<string, unknown>;
     const estimatedAmount = typeof body.estimatedAmount === "number" || typeof body.estimatedAmount === "string" ? String(body.estimatedAmount) : "";
