@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SwapService } from "../src/services/swap-service.js";
+import { SwapService, providerFailureMessage } from "../src/services/swap-service.js";
 
 const cspr = { ticker: "cspr", name: "Casper", network: "cspr" };
 const pol = { ticker: "pol", name: "Polygon Ecosystem Token", network: "matic" };
@@ -63,6 +63,34 @@ describe("SwapService", () => {
     const service = new SwapService("private-provider-key", "a-secret-that-is-long-enough-for-tests");
     await expect(service.quote("user-1", cspr, pol, "140")).resolves.toMatchObject({
       quote: { estimatedAmount: "0.0031855" }
+    });
+  });
+
+  it("surfaces the real reason when the provider sends an empty message", async () => {
+    // {"error":"pair_is_inactive","message":""} — an empty string passes a
+    // typeof check, so reading message alone produced an empty error and the
+    // widget showed its generic fallback instead of the actual cause.
+    expect(providerFailureMessage({ error: "pair_is_inactive", message: "" }))
+      .toContain("cannot be swapped");
+    expect(providerFailureMessage({ error: "deposit_too_small", message: "" }))
+      .toContain("minimum");
+    // A real message from the provider always wins.
+    expect(providerFailureMessage({ error: "not_valid_params", message: "Currency pol is not supported" }))
+      .toBe("Currency pol is not supported");
+    // An unknown code is still better than silence.
+    expect(providerFailureMessage({ error: "some_new_code", message: "" }))
+      .toContain("some_new_code");
+    expect(providerFailureMessage(null)).toBe("The swap provider rejected this request.");
+  });
+
+  it("passes the provider's refusal through to the caller", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(json([cspr, pol]))
+      .mockResolvedValueOnce(json({ error: "pair_is_inactive", message: "" }, 422)));
+    const service = new SwapService("private-provider-key", "a-secret-that-is-long-enough-for-tests");
+    await expect(service.quote("user-1", cspr, pol, "10")).rejects.toMatchObject({
+      code: "SWAP_UNAVAILABLE",
+      message: expect.stringContaining("cannot be swapped")
     });
   });
 
