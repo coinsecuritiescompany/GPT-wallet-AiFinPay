@@ -19,6 +19,6 @@
   },
   "dependencies": {
     "zod": "^4.4.3",
-    "@noble/hashes": "^1.7.1"
+    "@noble/hashes": "^2.2.0"
   }
 }
