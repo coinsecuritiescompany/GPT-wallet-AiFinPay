@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { AppError, type SwapAsset, type SwapOrder, type SwapQuote } from "@aifinpay/shared";
+import { PairAvailabilityCache, curatedAssets } from "./verified-pairs.js";
 
 const API_BASE = "https://api.changenow.io/v2";
 const QUOTE_TTL_MS = 4 * 60_000;
@@ -56,6 +57,7 @@ function encode(value: unknown): string {
 }
 
 export class SwapService {
+  private readonly availability = new PairAvailabilityCache();
   private assetCache: { expiresAt: number; assets: SwapAsset[] } | null = null;
 
   constructor(private readonly apiKey: string | undefined, private readonly secret: string) {}
@@ -101,6 +103,16 @@ export class SwapService {
     catch { throw new AppError("QUOTE_EXPIRED", "This swap quote is invalid or expired.", 410); }
   }
 
+  /**
+   * The curated default: only assets a live-verified pair actually needs.
+   * `showAll` returns the provider's full list, which is explicitly NOT a
+   * pair-availability list — most of those pairs cannot be quoted.
+   */
+  async listCuratedAssets(showAll = false): Promise<{ assets: SwapAsset[]; verified: boolean }> {
+    const all = await this.listAssets();
+    return showAll ? { assets: all, verified: false } : { assets: curatedAssets(all), verified: true };
+  }
+
   async listAssets(): Promise<SwapAsset[]> {
     if (this.assetCache && this.assetCache.expiresAt > Date.now()) return this.assetCache.assets;
     const body = await this.request("/exchange/currencies?active=true&flow=standard");
@@ -141,7 +153,20 @@ export class SwapService {
       fromNetwork: canonicalFrom.network, toNetwork: canonicalTo.network,
       fromAmount, flow: "standard", type: "direct"
     });
-    const body = await this.request(`/exchange/estimated-amount?${query}`) as Record<string, unknown>;
+    const known = this.availability.recentlyFailed(canonicalFrom, canonicalTo);
+    if (known) {
+      // Already refused moments ago. Repeat the provider's reason rather than
+      // asking again on every keystroke. This never marks a pair verified.
+      throw new AppError("SWAP_UNAVAILABLE", known.reason ?? "This pair cannot be swapped right now. Choose a different pair.", 502);
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = await this.request(`/exchange/estimated-amount?${query}`) as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof AppError) this.availability.record(canonicalFrom, canonicalTo, false, error.message);
+      throw error;
+    }
+    this.availability.record(canonicalFrom, canonicalTo, true);
     const estimatedAmount = typeof body.estimatedAmount === "number" || typeof body.estimatedAmount === "string" ? String(body.estimatedAmount) : "";
     if (!AMOUNT.test(estimatedAmount)) throw new AppError("SWAP_UNAVAILABLE", "The swap provider could not return a valid quote.", 502);
     const validUntil = new Date(Date.now() + QUOTE_TTL_MS).toISOString();

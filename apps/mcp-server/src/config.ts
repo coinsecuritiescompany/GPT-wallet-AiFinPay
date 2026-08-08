@@ -55,9 +55,22 @@ function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const demoMode = env.AIFINPAY_DEMO_MODE !== "false";
-  const sessionSecret = env.SESSION_SECRET ?? (demoMode ? "demo-only-session-secret-change-before-production" : "");
-  if (!sessionSecret || sessionSecret.length < 32) throw new Error("SESSION_SECRET must contain at least 32 characters");
+  // Security invariant: demo authentication is opt-in, never the default.
+  // The old `!== "false"` default silently enabled the shared DEMO_USER_ID
+  // whenever AIFINPAY_DEMO_MODE was omitted, including alongside mainnet mode.
+  const demoMode = env.AIFINPAY_DEMO_MODE === "true";
+  const walletMode: "demo" | "mainnet" = env.AIFINPAY_WALLET_MODE === "demo" ? "demo" : "mainnet";
+  if (demoMode && walletMode !== "demo") {
+    throw new Error("AIFINPAY_DEMO_MODE=true is forbidden while AIFINPAY_WALLET_MODE is mainnet");
+  }
+
+  const sessionSecret = env.SESSION_SECRET ?? (demoMode && walletMode === "demo"
+    ? "demo-only-session-secret-change-before-production"
+    : "");
+  if (!sessionSecret || sessionSecret.length < 32) {
+    throw new Error("SESSION_SECRET must contain at least 32 characters");
+  }
+
   const renderOrigin = env.RENDER_EXTERNAL_URL?.replace(/\/$/, "")
     ?? (env.RENDER_EXTERNAL_HOSTNAME ? `https://${env.RENDER_EXTERNAL_HOSTNAME}` : undefined);
   const localOrigin = `http://localhost:${env.PORT ?? 8787}`;
@@ -70,13 +83,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     publicUrl: env.MCP_PUBLIC_URL ?? (renderOrigin ? `${renderOrigin}/mcp` : `${localOrigin}/mcp`),
     widgetDomain: env.WIDGET_PUBLIC_URL ?? renderOrigin ?? localOrigin,
     logLevel: env.LOG_LEVEL ?? "info",
-    walletMode: env.AIFINPAY_WALLET_MODE === "demo" ? "demo" : "mainnet",
+    walletMode,
     polygonRpcUrls,
     mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls),
     mainnetRpcAuth: loadMainnetRpcAuth(env),
     signingNetworks: loadSigningNetworks(env),
     ...(env.CHANGENOW_API_KEY?.trim() ? { changeNowApiKey: env.CHANGENOW_API_KEY.trim() } : {}),
-    ...(env.ANALYTICS_DASHBOARD_TOKEN?.trim() && env.ANALYTICS_DASHBOARD_TOKEN.trim().length >= 16
+    ...(env.ANALYTICS_DASHBOARD_TOKEN?.trim() && env.ANALYTICS_DASHBOARD_TOKEN.trim().length >= 32
       ? { analyticsDashboardToken: env.ANALYTICS_DASHBOARD_TOKEN.trim() } : {})
   };
 }

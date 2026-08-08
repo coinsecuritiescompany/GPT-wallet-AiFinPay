@@ -147,23 +147,49 @@ export class Store {
 
   completeWalletPairing(tokenHash: string, addresses: StoredWalletAddresses): WalletPairingResult {
     const now = new Date().toISOString();
-    const row = this.db.prepare("SELECT user_id,expires_at,consumed FROM wallet_pairings WHERE token_hash=?").get(tokenHash) as { user_id: string; expires_at: string; consumed: number } | undefined;
-    if (!row) return "invalid";
-    if (row.consumed) {
-      const connection = this.getWalletConnection(row.user_id);
-      return connection && sameAddresses(connection.addresses, addresses) ? "already_connected" : "invalid";
-    }
-    if (row.expires_at <= now) return "invalid";
+
+    // Acquire the write lock before observing `consumed`. Previously the row was
+    // read first and only then BEGIN IMMEDIATE was issued; two concurrent callers
+    // could both observe consumed=0, and the loser would ignore an UPDATE with
+    // changes=0 and overwrite the winner's wallet connection.
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.db.prepare("UPDATE wallet_pairings SET consumed=1 WHERE token_hash=? AND consumed=0").run(tokenHash);
+      const row = this.db.prepare(
+        "SELECT user_id,expires_at,consumed FROM wallet_pairings WHERE token_hash=?"
+      ).get(tokenHash) as { user_id: string; expires_at: string; consumed: number } | undefined;
+
+      if (!row || row.expires_at <= now) {
+        this.db.exec("ROLLBACK");
+        return "invalid";
+      }
+
+      if (row.consumed) {
+        const connection = this.getWalletConnection(row.user_id);
+        this.db.exec("COMMIT");
+        return connection && sameAddresses(connection.addresses, addresses)
+          ? "already_connected"
+          : "invalid";
+      }
+
+      const consumed = this.db.prepare(
+        "UPDATE wallet_pairings SET consumed=1 WHERE token_hash=? AND consumed=0 AND expires_at>?"
+      ).run(tokenHash, now);
+      if (Number(consumed.changes) !== 1) {
+        this.db.exec("ROLLBACK");
+        return "invalid";
+      }
+
       this.db.prepare(`INSERT INTO wallet_connections (user_id,addresses_json,connected_at) VALUES (?,?,?)
         ON CONFLICT(user_id) DO UPDATE SET addresses_json=excluded.addresses_json,connected_at=excluded.connected_at`)
         .run(row.user_id, JSON.stringify(addresses), now);
       this.db.exec("COMMIT");
       return "connected";
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // Best-effort rollback only; preserve the original failure.
+      }
       throw error;
     }
   }

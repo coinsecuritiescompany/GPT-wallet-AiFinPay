@@ -395,23 +395,54 @@ function SwapForm({ data, onBack }: { data: WidgetData; onBack: () => void }) {
     const rank = (item: SwapAsset) => item.ticker === "cspr" && item.network === "cspr" ? 0 : item.network === "matic" ? 1 : 2;
     return rank(a) - rank(b) || a.name.localeCompare(b.name);
   }), [data.assets]);
-  const defaultFrom = assets.find((item) => item.ticker === "cspr" && item.network === "cspr") ?? assets[0];
-  const defaultTo = assets.find((item) => item.network === "matic" && item.ticker !== defaultFrom?.ticker) ?? assets.find((item) => swapKey(item) !== (defaultFrom ? swapKey(defaultFrom) : ""));
+  // Curated mode is the default. The server sends the routes it verified; the
+  // receive list is built from those routes, not from every other asset, so a
+  // user cannot select a combination the provider will refuse.
+  const verifiedOnly = data.verifiedOnly !== false;
+  const verifiedPairs = useMemo(() => data.verifiedPairs ?? [], [data.verifiedPairs]);
+  const routesFrom = (source: SwapAsset | undefined) => {
+    if (!source) return [] as SwapAsset[];
+    if (!verifiedOnly) return assets.filter((item) => swapKey(item) !== swapKey(source));
+    const allowed = new Set(verifiedPairs
+      .filter((pair) => swapKey(pair.from as SwapAsset) === swapKey(source))
+      .map((pair) => swapKey(pair.to as SwapAsset)));
+    return assets.filter((item) => allowed.has(swapKey(item)));
+  };
+  const sendable = verifiedOnly
+    ? assets.filter((item) => verifiedPairs.some((pair) => swapKey(pair.from as SwapAsset) === swapKey(item)))
+    : assets;
+  const defaultFrom = sendable.find((item) => item.ticker === "cspr" && item.network === "cspr") ?? sendable[0];
+  const defaultTo = routesFrom(defaultFrom).find((item) => item.network === "matic") ?? routesFrom(defaultFrom)[0];
   const [fromKey, setFromKey] = useState("");
   const [toKey, setToKey] = useState("");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     if (!assets.length && !loadingRequested.current) {
       loadingRequested.current = true;
       void bridge.callTool("list_swap_assets", {}).catch(() => setError("Live swap is not configured yet."));
     }
   }, [assets.length]);
-  const from = assets.find((item) => swapKey(item) === fromKey) ?? defaultFrom;
-  const to = assets.find((item) => swapKey(item) === toKey) ?? defaultTo;
+  const from = sendable.find((item) => swapKey(item) === fromKey) ?? defaultFrom;
+  const receivable = routesFrom(from);
+  // A stale selection from the previous "from" asset must not survive.
+  const to = receivable.find((item) => swapKey(item) === toKey) ?? (swapKey(from ?? ({} as SwapAsset)) === swapKey(defaultFrom ?? ({} as SwapAsset)) ? defaultTo : receivable[0]);
+  const loadAll = () => {
+    setShowAll(true);
+    setToKey("");
+    void bridge.callTool("list_swap_assets", { show_all: true })
+      .catch(() => setError("Could not load the full provider list."));
+  };
   const reverse = () => {
     if (!from || !to) return;
+    // Only swap the direction if the reverse route is itself offered.
+    if (verifiedOnly && !routesFrom(to).some((item) => swapKey(item) === swapKey(from))) {
+      setError(`${to.ticker.toUpperCase()} → ${from.ticker.toUpperCase()} is not an available route.`);
+      return;
+    }
+    setError("");
     setFromKey(swapKey(to));
     setToKey(swapKey(from));
   };
@@ -430,11 +461,14 @@ function SwapForm({ data, onBack }: { data: WidgetData; onBack: () => void }) {
   return <main className="card"><Header label="Swap" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="hero-icon">⇄</section><div className="center"><h2>Cross-chain swap</h2><p>Live non-custodial quotes. Output is sent only to an address controlled by your connected Vault.</p></div>
     {!assets.length ? <div className="empty compact"><strong>{error || "Loading swap assets…"}</strong><span>Live swap requires a server-side ChangeNOW partner key. No key is ever exposed to this widget.</span></div> :
       <form className="form swap-form" onSubmit={submit}>
-        <label>You send<select aria-label="Swap from asset" value={from ? swapKey(from) : ""} onChange={(event) => setFromKey(event.target.value)}>{assets.map((item) => <option key={swapKey(item)} value={swapKey(item)}>{item.ticker.toUpperCase()} · {item.network}</option>)}</select></label>
+        <label>You send<select aria-label="Swap from asset" value={from ? swapKey(from) : ""} onChange={(event) => { setFromKey(event.target.value); setToKey(""); setError(""); }}>{sendable.map((item) => <option key={swapKey(item)} value={swapKey(item)}>{item.ticker.toUpperCase()} · {item.network}</option>)}</select></label>
         <label>Amount<div className="amount-input"><input aria-label="Swap amount" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.0" inputMode="decimal" /><span>{from?.ticker.toUpperCase()}</span></div></label>
         <button className="swap-reverse" type="button" aria-label="Reverse swap direction" onClick={reverse}>⇅</button>
-        <label>You receive<select aria-label="Swap to asset" value={to ? swapKey(to) : ""} onChange={(event) => setToKey(event.target.value)}>{assets.filter((item) => !from || swapKey(item) !== swapKey(from)).map((item) => <option key={swapKey(item)} value={swapKey(item)}>{item.ticker.toUpperCase()} · {item.network}</option>)}</select></label>
-        {error && <p className="vault-error">{error}</p>}<button className="primary" disabled={busy}>{busy ? "Loading live quote…" : "Review swap"}</button>
+        <label>You receive<select aria-label="Swap to asset" value={to ? swapKey(to) : ""} onChange={(event) => setToKey(event.target.value)}>{receivable.map((item) => <option key={swapKey(item)} value={swapKey(item)}>{item.ticker.toUpperCase()} · {item.network}</option>)}</select></label>
+        {error && <p className="vault-error">{error}</p>}<button className="primary" disabled={busy || !from || !to}>{busy ? "Loading live quote…" : "Review swap"}</button>
+        {verifiedOnly
+          ? <button className="link-button" type="button" onClick={loadAll} disabled={showAll}>{showAll ? "Loading full provider list…" : "Show all provider assets (unverified)"}</button>
+          : <p className="mainnet-warning">Showing every asset the provider lists. These pairs have not been tested — many combinations cannot be swapped and will be refused at quote time.</p>}
       </form>}
     <p className="disclaimer">Rates can change until the provider receives your deposit. Network and provider fees are reflected in the estimated output.</p>
   </main>;
