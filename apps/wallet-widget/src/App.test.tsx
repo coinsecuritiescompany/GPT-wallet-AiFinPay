@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 import { bridge } from "./bridge/mcp-bridge.js";
 import { browserDemoData } from "./demo-data.js";
 
 describe("AiFinPay wallet widget", () => {
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
   it("renders wallet overview", () => {
     render(<App initialData={browserDemoData} />);
     expect(screen.getByText("2,543.68")).toBeInTheDocument();
@@ -137,21 +137,77 @@ describe("AiFinPay wallet widget", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Copied ✓" })).toBeInTheDocument());
   });
 
-  it("builds a Casper-to-Polygon quote request from live provider assets", async () => {
-    const assets = [
-      { ticker: "pol", name: "Polygon", network: "matic" },
-      { ticker: "cspr", name: "Casper", network: "cspr" },
-      { ticker: "usdc", name: "USD Coin", network: "matic" }
-    ];
+  const CURATED_ASSETS = [
+    { ticker: "usdt", name: "Tether", network: "matic" },
+    { ticker: "cspr", name: "Casper", network: "cspr" },
+    { ticker: "usdc", name: "USD Coin", network: "base" }
+  ];
+  const CURATED_PAIRS = [
+    { from: { ticker: "cspr", network: "cspr" }, to: { ticker: "usdt", network: "matic" }, minimumTestAmount: "150" },
+    { from: { ticker: "cspr", network: "cspr" }, to: { ticker: "usdc", network: "base" }, minimumTestAmount: "150" },
+    { from: { ticker: "usdt", network: "matic" }, to: { ticker: "cspr", network: "cspr" }, minimumTestAmount: "20" }
+  ];
+
+  it("builds a quote request along a verified route", async () => {
     const call = vi.spyOn(bridge, "callTool").mockResolvedValue({ view: "swap-quote" });
-    render(<App initialData={{ view: "swap-form", assets }} />);
+    render(<App initialData={{ view: "swap-form", assets: CURATED_ASSETS, verifiedPairs: CURATED_PAIRS, verifiedOnly: true }} />);
     expect(screen.getByRole("combobox", { name: "Swap from asset" })).toHaveValue("cspr:cspr");
     fireEvent.change(screen.getByRole("textbox", { name: "Swap amount" }), { target: { value: "10" } });
     fireEvent.click(screen.getByRole("button", { name: "Review swap" }));
     await waitFor(() => expect(call).toHaveBeenCalledWith("get_swap_quote", {
-      fromAsset: assets[1], toAsset: assets[0], fromAmount: "10"
+      fromAsset: CURATED_ASSETS[1], toAsset: CURATED_ASSETS[0], fromAmount: "10"
     }));
     call.mockRestore();
+  });
+
+  it("offers only verified destinations for the selected source asset", () => {
+    // POL is deliberately absent: the provider does not recognise the ticker.
+    render(<App initialData={{
+      view: "swap-form",
+      assets: [...CURATED_ASSETS, { ticker: "pol", name: "Polygon", network: "matic" }],
+      verifiedPairs: CURATED_PAIRS, verifiedOnly: true
+    }} />);
+    const destinations = within(screen.getByRole("combobox", { name: "Swap to asset" }))
+      .getAllByRole("option").map((option) => (option as HTMLOptionElement).value);
+    expect(destinations).toEqual(["usdt:matic", "usdc:base"]);
+    expect(destinations).not.toContain("pol:matic");
+    const sources = within(screen.getByRole("combobox", { name: "Swap from asset" }))
+      .getAllByRole("option").map((option) => (option as HTMLOptionElement).value);
+    expect(sources).not.toContain("pol:matic");
+  });
+
+  it("resets the destination when the source changes so a stale route cannot be quoted", () => {
+    render(<App initialData={{ view: "swap-form", assets: CURATED_ASSETS, verifiedPairs: CURATED_PAIRS, verifiedOnly: true }} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Swap to asset" }), { target: { value: "usdc:base" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Swap from asset" }), { target: { value: "usdt:matic" } });
+    // USDT only routes back to CSPR; the previously chosen USDC must be gone.
+    const destinations = within(screen.getByRole("combobox", { name: "Swap to asset" }))
+      .getAllByRole("option").map((option) => (option as HTMLOptionElement).value);
+    expect(destinations).toEqual(["cspr:cspr"]);
+    expect(screen.getByRole("combobox", { name: "Swap to asset" })).toHaveValue("cspr:cspr");
+  });
+
+  it("asks the server for the full list only when the user opts in", async () => {
+    const call = vi.spyOn(bridge, "callTool").mockResolvedValue({ view: "swap-form" });
+    render(<App initialData={{ view: "swap-form", assets: CURATED_ASSETS, verifiedPairs: CURATED_PAIRS, verifiedOnly: true }} />);
+    expect(call).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Show all provider assets/ }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("list_swap_assets", { show_all: true }));
+  });
+
+  it("warns that the advanced list is unverified and never presents it as supported", () => {
+    render(<App initialData={{
+      view: "swap-form",
+      assets: [...CURATED_ASSETS, { ticker: "pol", name: "Polygon", network: "matic" }],
+      verifiedPairs: [], verifiedOnly: false
+    }} />);
+    expect(screen.getByText(/have not been tested/)).toBeInTheDocument();
+    // No opt-in control once already in advanced mode, and nothing here may
+    // imply the extra assets are supported routes.
+    expect(screen.queryByRole("button", { name: /Show all provider assets/ })).not.toBeInTheDocument();
+    const destinations = within(screen.getByRole("combobox", { name: "Swap to asset" }))
+      .getAllByRole("option").map((option) => (option as HTMLOptionElement).value);
+    expect(destinations).toContain("pol:matic");
   });
 
   it("requires explicit quote confirmation before creating a swap order", async () => {

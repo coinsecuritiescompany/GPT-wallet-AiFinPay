@@ -27,6 +27,10 @@ export interface WidgetData {
   connection?: { addresses: Record<string, string>; connectedAt: string } | null;
   networks?: Record<string, MainnetNetwork>;
   assets?: SwapAsset[];
+  /** Routes confirmed to quote against the provider. Empty in advanced mode. */
+  verifiedPairs?: { from: { ticker: string; network: string }; to: { ticker: string; network: string }; minimumTestAmount: string }[];
+  /** True when `assets` is the curated set rather than the provider's full list. */
+  verifiedOnly?: boolean;
   quote?: SwapQuote;
   quoteToken?: string;
   order?: SwapOrder;

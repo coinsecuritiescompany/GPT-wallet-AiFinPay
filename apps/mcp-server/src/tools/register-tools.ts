@@ -7,6 +7,7 @@ import {
   AppError, LIVE_NETWORKS, MAINNET_NETWORKS, decimalAmountSchema, idempotencyKeySchema, networkMeta, networkSchema, safeError, tokenSchema,
   type LiveNetworkSpec, type NetworkId, type PaymentIntent, type SwapAsset, type WalletSummary
 } from "@aifinpay/shared";
+import { VERIFIED_PAIRS } from "../services/verified-pairs.js";
 import type { AppContext } from "../context.js";
 
 // Treat the resource URI as a release cache key. ChatGPT can cache an earlier
@@ -258,13 +259,22 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
 
   registerAppTool(server, "list_swap_assets", {
     title: "List available swap assets",
-    description: "Use this before quoting a swap. Returns only active ChangeNOW assets on networks whose payout addresses are controlled by the connected AiFinPay Vault.",
-    inputSchema: {}, outputSchema: toolOutputSchema, annotations: openRead, _meta: oauthMeta()
-  }, async (_args, extra) => {
+    description: "Use this before quoting a swap. By default returns only the curated set of pairs verified to quote against the provider. Set show_all to list every asset the provider supports on Vault-controlled networks — that list is NOT a guarantee that a given pair can be swapped.",
+    inputSchema: { show_all: z.boolean().optional() },
+    outputSchema: toolOutputSchema, annotations: openRead, _meta: oauthMeta()
+  }, async ({ show_all }, extra) => {
     try {
       resolveUser(ctx, extra);
-      const assets = (await ctx.swaps.listAssets()).filter((item) => Boolean(swapAddressField[item.network]));
-      return data(`${assets.length} swap assets are available.`, { view: "swap-form", assets });
+      const { assets: listed, verified } = await ctx.swaps.listCuratedAssets(show_all === true);
+      const assets = listed.filter((item) => Boolean(swapAddressField[item.network]));
+      // The verified pair list travels with the assets so the widget can offer
+      // only real routes rather than every combination of the two dropdowns.
+      return data(
+        verified
+          ? `${assets.length} assets across ${VERIFIED_PAIRS.length} verified swap pairs.`
+          : `${assets.length} provider assets. Availability is not guaranteed until a pair is quoted.`,
+        { view: "swap-form", assets, verifiedPairs: verified ? VERIFIED_PAIRS : [], verifiedOnly: verified }
+      );
     } catch (error) { return failure(error, ctx); }
   });
 
