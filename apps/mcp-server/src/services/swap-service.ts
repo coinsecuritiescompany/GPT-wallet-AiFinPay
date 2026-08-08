@@ -7,6 +7,29 @@ const ASSET_CACHE_TTL_MS = 5 * 60_000;
 const AMOUNT = /^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/;
 const SAFE_ID = /^[A-Za-z0-9_-]{6,160}$/;
 
+// ChangeNOW reports some refusals as {"error":"pair_is_inactive","message":""}.
+// An empty string still satisfies a typeof check, so reading `message` alone
+// produced an empty error and the widget fell back to "Could not load a live
+// quote" — hiding the actual reason from the user. Prefer a usable message,
+// then translate the error code, and only then give up.
+const PROVIDER_ERRORS: Record<string, string> = {
+  pair_is_inactive: "This pair cannot be swapped right now. Choose a different pair.",
+  not_valid_params: "The swap provider rejected these parameters.",
+  deposit_too_small: "That amount is below the provider's minimum for this pair.",
+  out_of_range: "That amount is outside the provider's allowed range for this pair.",
+  pair_not_found: "The provider does not offer this pair."
+};
+
+export function providerFailureMessage(body: unknown): string {
+  if (!body || typeof body !== "object") return "The swap provider rejected this request.";
+  const record = body as Record<string, unknown>;
+  const message = typeof record.message === "string" ? record.message.trim() : "";
+  if (message) return message.slice(0, 180);
+  const code = typeof record.error === "string" ? record.error.trim() : "";
+  if (code) return PROVIDER_ERRORS[code] ?? `The swap provider refused this request (${code.slice(0, 60)}).`;
+  return "The swap provider rejected this request.";
+}
+
 interface QuotePayload extends SwapQuote {
   userId: string;
   rateId?: string;
@@ -53,10 +76,11 @@ export class SwapService {
     }).catch(() => { throw new AppError("SWAP_UNAVAILABLE", "The swap provider is temporarily unavailable.", 503); });
     const body = await response.json().catch(() => null) as unknown;
     if (!response.ok) {
-      const providerMessage = body && typeof body === "object" && typeof (body as Record<string, unknown>).message === "string"
-        ? String((body as Record<string, unknown>).message).slice(0, 180)
-        : "The swap provider rejected this request.";
-      throw new AppError(response.status === 429 ? "RATE_LIMITED" : "SWAP_UNAVAILABLE", providerMessage, response.status === 429 ? 429 : 502);
+      throw new AppError(
+        response.status === 429 ? "RATE_LIMITED" : "SWAP_UNAVAILABLE",
+        providerFailureMessage(body),
+        response.status === 429 ? 429 : 502
+      );
     }
     return body;
   }
@@ -107,10 +131,15 @@ export class SwapService {
     const canonicalFrom = await this.activeAsset(fromAsset);
     const canonicalTo = await this.activeAsset(toAsset);
     if (canonicalFrom.ticker === canonicalTo.ticker && canonicalFrom.network === canonicalTo.network) throw new AppError("INVALID_AMOUNT", "Choose two different assets or networks.");
+    // useRateId belongs to the fixed-rate flow. Sending it alongside
+    // flow=standard&type=direct makes ChangeNOW reject the request outright
+    // with "standard flow and direct type is unsupported if useRateId flag is
+    // true", so every quote failed for every pair and every amount. A standard
+    // flow simply has no rate id; createOrder already treats it as optional.
     const query = new URLSearchParams({
       fromCurrency: canonicalFrom.ticker, toCurrency: canonicalTo.ticker,
       fromNetwork: canonicalFrom.network, toNetwork: canonicalTo.network,
-      fromAmount, flow: "standard", type: "direct", useRateId: "true"
+      fromAmount, flow: "standard", type: "direct"
     });
     const body = await this.request(`/exchange/estimated-amount?${query}`) as Record<string, unknown>;
     const estimatedAmount = typeof body.estimatedAmount === "number" || typeof body.estimatedAmount === "string" ? String(body.estimatedAmount) : "";
