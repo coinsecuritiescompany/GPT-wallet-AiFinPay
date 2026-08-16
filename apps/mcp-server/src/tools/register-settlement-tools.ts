@@ -3,18 +3,24 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
+import { PaymentRouteSelector } from "../services/payment-route-selector.js";
 
 const routeSchema = z.enum(["AIFP-1", "AIFP-2"]);
 const chainSchema = z.enum([
   "polygon", "avalanche", "arbitrum", "bnb", "base", "unichain", "optimism", "botchain", "xrplevm",
   "solana", "near", "aptos", "casper"
 ]);
-const stableSchema = z.enum(["USDC", "USDT"]);
 const assetSchema = z.string().min(2).max(16).regex(/^[A-Za-z0-9]+$/).optional();
 const amountSchema = z.string().regex(/^[1-9]\d*$/, "Use an integer amount in the asset's base units");
-const decimalAmountSchema = z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d+)?$/).refine((v) => Number(v) > 0, "Amount must be positive");
 const orderSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9_.:-]+$/);
 const sessionSchema = z.string().regex(/^stl_[0-9a-f]{32}$/);
+const candidateSchema = z.object({
+  chain: chainSchema,
+  merchantWallet: z.string().min(2).max(128),
+  grossAmount: amountSchema,
+  asset: assetSchema,
+  orderId: orderSchema,
+});
 
 function result(message: string, structuredContent: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text: message }], structuredContent };
@@ -58,6 +64,36 @@ export function registerSettlementTools(server: McpServer, ctx: AppContext): voi
     const query = routeClass ? `?route_class=${encodeURIComponent(routeClass)}` : "";
     const payload = await jsonRequest(ctx.config.settlementApiOrigin, `/v1/settlement/routes${query}`) as Record<string, unknown>;
     return result(payload.ok === true ? "AiFinPay settlement readiness loaded." : "AiFinPay settlement readiness is currently unavailable.", { view: "settlement-routes", ...payload });
+  });
+
+  registerAppTool(server, "select_aifinpay_payment_route", {
+    title: "Select funded AiFinPay payment route",
+    description: "Selects the first merchant-supported AiFinPay route that is live and funded in the connected Vault. It never calls an exchange, swap service or cross-chain bridge.",
+    inputSchema: { routeClass: routeSchema, candidates: z.array(candidateSchema).min(1).max(13) },
+    outputSchema: z.object({ view: z.literal("settlement-route-selection") }).passthrough(),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true, idempotentHint: true },
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: ["wallet:read"] }] }
+  }, async ({ routeClass, candidates }, extra: { authInfo?: AuthInfo }) => {
+    try {
+      const user = ctx.auth.resolve(extra.authInfo);
+      const connection = ctx.store.getWalletConnection(user.userId);
+      if (!connection) return result("Connect AiFinPay Wallet before selecting a funded payment route.", { view: "settlement-route-selection", ok: false, error: "wallet_not_connected" });
+      const payload = await jsonRequest(ctx.config.settlementApiOrigin, `/v1/settlement/routes?route_class=${encodeURIComponent(routeClass)}`) as Record<string, unknown>;
+      const rows = Array.isArray(payload.routes) ? payload.routes : [];
+      if (payload.ok !== true || rows.length === 0) {
+        return result("AiFinPay route readiness is unavailable; no payment route was selected.", { view: "settlement-route-selection", ok: false, externalSwapOrBridgeUsed: false, error: payload.error ?? "routes_unavailable" });
+      }
+      const selector = new PaymentRouteSelector(ctx.adapter);
+      const selection = await selector.select({ userId: user.userId, routeClass, candidates, backendRoutes: rows });
+      return result(
+        selection.selected
+          ? `Funded AiFinPay route selected: ${selection.selected.chain} ${selection.selected.asset}. No external swap or bridge is used.`
+          : "No merchant-supported AiFinPay route is both live and sufficiently funded. Fund one of the listed local-chain routes; AiFinPay will not route through an external swap or bridge.",
+        { view: "settlement-route-selection", ok: Boolean(selection.selected), ...selection }
+      );
+    } catch (error) {
+      return result("AiFinPay payment route selection failed closed.", { view: "settlement-route-selection", ok: false, externalSwapOrBridgeUsed: false, error: error instanceof Error ? error.message : "route_selection_failed" });
+    }
   });
 
   registerAppTool(server, "prepare_aifinpay_settlement", {
@@ -115,25 +151,6 @@ export function registerSettlementTools(server: McpServer, ctx: AppContext): voi
       return result(`Settlement session is ${session.status}.`, { view: "settlement-status", ok: true, session: publicSession(session), ...(nextAction ? { nextAction } : {}) });
     } catch (error) {
       return result("Settlement status could not be loaded.", { view: "settlement-status", ok: false, error: error instanceof Error ? error.message : "settlement_status_failed" });
-    }
-  });
-
-  registerAppTool(server, "quote_aifinpay_settlement_swap", {
-    title: "Quote stablecoin for AiFinPay settlement",
-    description: "Routes an existing wallet asset toward an issuer-verified USDC/USDT settlement target. AiFinPay validates the target, while ChangeNOW currently supplies external swap liquidity. A quote never moves funds.",
-    inputSchema: { sourceNetwork: chainSchema, sourceTicker: z.string().min(2).max(30).regex(/^[A-Za-z0-9-]+$/), fromAmount: decimalAmountSchema, stable: stableSchema.optional(), targetNetwork: chainSchema.optional() },
-    outputSchema: z.object({ view: z.literal("settlement-swap-quote") }).passthrough(),
-    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true, idempotentHint: true },
-    _meta: { securitySchemes: [{ type: "oauth2", scopes: ["wallet:read"] }] }
-  }, async ({ sourceNetwork, sourceTicker, fromAmount, stable, targetNetwork }, extra: { authInfo?: AuthInfo }) => {
-    const user = ctx.auth.resolve(extra.authInfo);
-    const connection = ctx.store.getWalletConnection(user.userId);
-    if (!connection) return result("Connect AiFinPay Wallet before requesting a settlement swap quote.", { view: "settlement-swap-quote", ok: false, error: "wallet_not_connected" });
-    try {
-      const quote = await ctx.settlementSwaps.quoteToStable(user.userId, { sourceNetwork, sourceTicker: sourceTicker.toLowerCase(), fromAmount, ...(stable ? { stable } : {}), ...(targetNetwork ? { targetNetwork } : {}) });
-      return result(`Settlement swap quote prepared: ${quote.settlementAsset} on ${quote.settlementNetwork}. Liquidity is provided externally by ChangeNOW; no funds moved.`, { view: "settlement-swap-quote", ok: true, ...quote });
-    } catch (error) {
-      return result("No reviewed automatic settlement swap route is currently available for that request.", { view: "settlement-swap-quote", ok: false, error: error instanceof Error ? error.message : "settlement_swap_unavailable" });
     }
   });
 }
