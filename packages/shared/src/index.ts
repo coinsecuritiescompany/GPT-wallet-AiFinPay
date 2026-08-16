@@ -9,4 +9,5 @@ export * from "./settlement-assets.js";
 export * from "./settlement-execution.js";
 export * from "./solana-program.js";
 export * from "./solana-transfer.js";
+export * from "./treasury-policy.js";
 export * from "./types.js";
