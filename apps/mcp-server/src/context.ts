@@ -12,8 +12,9 @@ import { PaymentService } from "./services/payment-service.js";
 import { PolicyService } from "./services/policy-service.js";
 import { SettlementExecutionService } from "./services/settlement-execution-service.js";
 import { SettlementSwapRouter } from "./services/settlement-swap-router.js";
-import { UniversalMainnetAdapter } from "./services/universal-mainnet-adapter.js";
 import { SwapService } from "./services/swap-service.js";
+import { TreasuryAccountingService } from "./services/treasury-accounting-service.js";
+import { UniversalMainnetAdapter } from "./services/universal-mainnet-adapter.js";
 import { Store } from "./storage/store.js";
 
 export class AppContext {
@@ -27,9 +28,14 @@ export class AppContext {
   readonly adapter: WalletAdapter;
   readonly payments: PaymentService;
   readonly policies: PolicyService;
-  readonly swaps: SwapService;
-  readonly settlementSwaps: SettlementSwapRouter;
   readonly settlementExecution: SettlementExecutionService;
+  /** Compatibility only for old cached tool descriptors. Always disabled. */
+  readonly swaps: SwapService;
+  /** Compatibility only; underlying SwapService cannot make provider requests. */
+  readonly settlementSwaps: SettlementSwapRouter;
+  readonly treasury?: TreasuryAccountingService;
+  private treasuryTimer?: NodeJS.Timeout;
+  private treasuryStarted = false;
 
   constructor(readonly config: AppConfig) {
     this.store = new Store(config.databaseUrl);
@@ -48,16 +54,62 @@ export class AppContext {
     this.audit = new AuditService(this.store);
     this.confirmations = new ConfirmationService(config.sessionSecret);
     this.signing = new SigningRequestService(config.sessionSecret);
-    this.adapter = config.walletMode === "mainnet"
+
+    const mainnetAdapter = config.walletMode === "mainnet"
       ? new UniversalMainnetAdapter(this.store, config.mainnetRpcUrls, config.mainnetRpcAuth)
-      : new DemoLedgerAdapter();
+      : undefined;
+    this.adapter = mainnetAdapter ?? new DemoLedgerAdapter();
     this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter, this.analytics);
     this.policies = new PolicyService(this.store, this.audit, this.confirmations);
-    this.swaps = new SwapService(config.changeNowApiKey, config.sessionSecret);
-    this.settlementSwaps = new SettlementSwapRouter(this.swaps);
     this.settlementExecution = new SettlementExecutionService(this.store, config, this.adapter);
+
+    // No provider key exists in AppConfig. These compatibility objects can
+    // never contact an exchange or bridge and fail closed on every swap call.
+    this.swaps = new SwapService(undefined, config.sessionSecret);
+    this.settlementSwaps = new SettlementSwapRouter(this.swaps);
+
+    // Treasury is read-only accounting. It never owns a signing key and never
+    // swaps, bridges, forwards or otherwise moves protocol funds.
+    if (config.treasury?.enabled) {
+      if (!mainnetAdapter) throw new Error("Treasury accounting requires mainnet RPC mode");
+      this.treasury = new TreasuryAccountingService(this.store, config);
+      this.startTreasuryAccounting();
+    }
     if (config.walletMode === "demo" && config.demoMode && this.store.listPolicies(DEMO_USER_ID).length === 0) this.store.savePolicy(DEMO_POLICY);
   }
 
-  close(): void { this.store.close(); }
+  private startTreasuryAccounting(): void {
+    if (!this.treasury || this.treasuryStarted) return;
+    this.treasuryStarted = true;
+    const run = async () => {
+      try {
+        const snapshot = await this.treasury!.snapshotAll();
+        console.log(JSON.stringify({
+          level: snapshot.errors.length ? "warn" : "info",
+          event: "TREASURY_ACCOUNTING_SNAPSHOT",
+          observed: snapshot.observed.length,
+          errors: snapshot.errors,
+        }));
+      } catch (error) {
+        console.error(JSON.stringify({
+          level: "error", event: "TREASURY_ACCOUNTING_ERROR",
+          error: error instanceof Error ? error.message : String(error),
+        }));
+      }
+    };
+    const intervalSeconds = this.config.treasury?.intervalSeconds ?? 900;
+    void this.treasury.verifyReadiness().then(() => run()).catch((error) => {
+      console.error(JSON.stringify({
+        level: "error", event: "TREASURY_ACCOUNTING_NOT_READY",
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    });
+    this.treasuryTimer = setInterval(() => { void run(); }, intervalSeconds * 1000);
+    this.treasuryTimer.unref();
+  }
+
+  close(): void {
+    if (this.treasuryTimer) clearInterval(this.treasuryTimer);
+    this.store.close();
+  }
 }
