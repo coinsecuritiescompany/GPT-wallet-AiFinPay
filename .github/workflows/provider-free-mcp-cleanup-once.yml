@@ -1,0 +1,73 @@
+name: provider-free-mcp-cleanup-once
+
+on:
+  push:
+    branches: [release/provider-free-payment-rc-rebuild]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/provider-free-payment-rc-rebuild
+          fetch-depth: 0
+      - name: Remove only legacy external swap tool surface
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('apps/mcp-server/src/tools/register-tools.ts')
+          s = p.read_text()
+
+          old = '  type LiveNetworkSpec, type NetworkId, type PaymentIntent, type SwapAsset, type WalletSummary\n'
+          new = '  type LiveNetworkSpec, type NetworkId, type PaymentIntent, type WalletSummary\n'
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one SwapAsset import anchor, got {s.count(old)}')
+          s = s.replace(old, new)
+
+          for line in [
+              'const openRead = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };\n',
+              'const openWrite = { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false };\n',
+          ]:
+              if s.count(line) != 1:
+                  raise SystemExit(f'expected one annotations anchor, got {s.count(line)}')
+              s = s.replace(line, '')
+
+          start = s.index('const swapAssetSchema = z.object({')
+          end = s.index('// The device link that opens the intent in the Vault for local signing.')
+          s = s[:start] + s[end:]
+
+          start = s.index('  registerAppTool(server, "list_swap_assets", {')
+          end = s.index('  registerAppTool(server, "prepare_transfer", {')
+          s = s[:start] + s[end:]
+
+          forbidden = ['list_swap_assets', 'get_swap_quote', 'create_swap_order', 'get_swap_status', 'ChangeNOW', 'swapAddressField', 'swapAssetSchema']
+          for word in forbidden:
+              if word in s:
+                  raise SystemExit(f'legacy provider surface still present in register-tools.ts: {word}')
+          p.write_text(s)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w @aifinpay/mcp-server
+      - run: npm test -w @aifinpay/mcp-server
+      - name: Remove one-shot files and commit exact cleanup
+        run: |
+          rm -f .github/provider-free-mcp-cleanup.trigger
+          git rm .github/workflows/provider-free-mcp-cleanup-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/mcp-server/src/tools/register-tools.ts .github
+          changed="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' '.github/provider-free-mcp-cleanup.trigger' '.github/workflows/provider-free-mcp-cleanup-once.yml' 'apps/mcp-server/src/tools/register-tools.ts' | sort)"
+          test "$changed" = "$expected" || { echo "Unexpected staged paths:"; echo "$changed"; exit 1; }
+          git commit -m 'remove(mcp): delete external swap tool surface'
+          git push origin HEAD:release/provider-free-payment-rc-rebuild
