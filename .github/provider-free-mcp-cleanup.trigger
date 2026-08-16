@@ -1,1 +1,1 @@
-trigger provider-free MCP cleanup
+trigger provider-free MCP cleanup v2
