@@ -14,11 +14,14 @@ export interface CanonicalSettlementAsset {
 }
 
 /**
- * Canonical payment assets, intentionally stricter than the historical
- * read-only balance registry. This registry is allowed to drive VALUE MOVEMENT.
+ * Exact payment assets that may drive AiFinPay value movement. This registry is
+ * deliberately stricter than display/balance metadata: no bridged,
+ * Binance-Peg, lookalike or guessed token is promoted by ticker alone.
  *
- * Verified for the 2026-08-16 production RC from issuer documentation.
- * No bridged, Binance-Peg or guessed token is promoted here automatically.
+ * Issuer identity is evidence about the asset itself; it does NOT mean Circle,
+ * Tether, an exchange or a bridge participates in AiFinPay payment execution.
+ * AiFinPay settlement contracts transfer these assets directly on their native
+ * network and no external swap/bridge provider is part of the money path.
  */
 export const CANONICAL_SETTLEMENT_STABLES: Readonly<Record<AiFinPayMainnet, readonly CanonicalSettlementAsset[]>> = {
   polygon: [
@@ -52,27 +55,9 @@ export const CANONICAL_SETTLEMENT_STABLES: Readonly<Record<AiFinPayMainnet, read
   ],
   aptos: [
     { symbol: "USDC", network: "aptos", address: "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b", decimals: 6, issuer: "Circle", evidence: "Circle USDC contract-address registry; verified 2026-08-16" }
-    // USD₮ exists on Aptos, but its exact canonical identifier is not hard-coded
-    // here until the deployment review records and verifies the issuer address.
   ],
   casper: []
 } as const;
-
-/** ChangeNOW provider network codes. Absence means no automatic provider route. */
-export const CHANGENOW_NETWORK_CODE: Readonly<Partial<Record<AiFinPayMainnet, string>>> = {
-  polygon: "matic",
-  avalanche: "avaxc",
-  arbitrum: "arbitrum",
-  bnb: "bsc",
-  base: "base",
-  unichain: "unichain",
-  optimism: "op",
-  solana: "sol",
-  near: "near",
-  aptos: "apt",
-  casper: "cspr"
-  // BOT Chain and XRPL EVM have no reviewed ChangeNOW address/network mapping.
-};
 
 export function canonicalSettlementAsset(
   network: AiFinPayMainnet,
@@ -83,19 +68,6 @@ export function canonicalSettlementAsset(
 
 export function canonicalSettlementSymbols(network: AiFinPayMainnet): SettlementStableSymbol[] {
   return CANONICAL_SETTLEMENT_STABLES[network].map((asset) => asset.symbol);
-}
-
-/**
- * Pick a conservative settlement target for a source network.
- * Prefer same-chain issuer-backed USDC. If that chain has no approved stable,
- * fall back to Polygon USDC ONLY when the source has a reviewed ChangeNOW code.
- * The provider must still confirm the actual pair at quote time.
- */
-export function preferredSettlementTarget(source: AiFinPayMainnet): CanonicalSettlementAsset | null {
-  const same = canonicalSettlementAsset(source, "USDC");
-  if (same) return same;
-  if (!CHANGENOW_NETWORK_CODE[source]) return null;
-  return canonicalSettlementAsset("polygon", "USDC");
 }
 
 export function assertCanonicalSettlementAsset(
