@@ -38,6 +38,10 @@ function borshString(value: string): Uint8Array {
   return concatBytes(u32le(bytes.length), bytes);
 }
 
+function borshBytes(value: Uint8Array): Uint8Array {
+  return concatBytes(u32le(value.length), value);
+}
+
 function hexBytes(value: string): Uint8Array {
   if (!/^[0-9a-f]{64}$/.test(value)) throw new Error("Expected a 32-byte NEAR Ed25519 public key.");
   const output = new Uint8Array(32);
@@ -47,10 +51,31 @@ function hexBytes(value: string): Uint8Array {
   return output;
 }
 
-/**
- * Serialize a legacy NEAR Transaction with one native Transfer action.
- * Borsh enum indexes follow nearcore: Ed25519 key = 0, Transfer action = 3.
- */
+function transactionPrefix(
+  signerId: string,
+  publicKeyHex: string,
+  nonce: bigint,
+  receiverId: string,
+  blockHashBase58: string
+): Uint8Array {
+  if (!/^[a-z0-9._-]{2,64}$/.test(signerId)) throw new Error("Invalid NEAR signer account.");
+  if (!/^[a-z0-9._-]{2,64}$/.test(receiverId)) throw new Error("Invalid NEAR receiver account.");
+  if (nonce <= 0n) throw new Error("NEAR nonce must be positive.");
+  const publicKey = hexBytes(publicKeyHex);
+  const blockHash = decodeBase58(blockHashBase58);
+  if (blockHash.length !== 32) throw new Error("Expected a 32-byte NEAR block hash.");
+  return concatBytes(
+    borshString(signerId),
+    Uint8Array.of(0), // PublicKey::ED25519
+    publicKey,
+    u64le(nonce),
+    borshString(receiverId),
+    blockHash,
+    u32le(1) // one Action
+  );
+}
+
+/** Serialize a NEAR Transaction with one native Transfer action. */
 export function buildNearTransferTransaction(
   signerId: string,
   publicKeyHex: string,
@@ -59,22 +84,40 @@ export function buildNearTransferTransaction(
   blockHashBase58: string,
   depositYocto: bigint
 ): Uint8Array {
-  if (!/^[a-z0-9._-]{2,64}$/.test(signerId)) throw new Error("Invalid NEAR signer account.");
-  if (!/^[a-z0-9._-]{2,64}$/.test(receiverId)) throw new Error("Invalid NEAR receiver account.");
-  if (nonce <= 0n) throw new Error("NEAR nonce must be positive.");
   if (depositYocto <= 0n) throw new Error("Transfer amount must be positive.");
-  const publicKey = hexBytes(publicKeyHex);
-  const blockHash = decodeBase58(blockHashBase58);
-  if (blockHash.length !== 32) throw new Error("Expected a 32-byte NEAR block hash.");
   return concatBytes(
-    borshString(signerId),
-    Uint8Array.of(0),
-    publicKey,
-    u64le(nonce),
-    borshString(receiverId),
-    blockHash,
-    u32le(1),
-    Uint8Array.of(3),
+    transactionPrefix(signerId, publicKeyHex, nonce, receiverId, blockHashBase58),
+    Uint8Array.of(3), // Action::Transfer
+    u128le(depositYocto)
+  );
+}
+
+/**
+ * Serialize a legacy NEAR Transaction with one FunctionCall action.
+ * nearcore Action enum index: FunctionCall = 2. FunctionCallAction is
+ * method_name:String, args:Vec<u8>, gas:u64, deposit:u128.
+ */
+export function buildNearFunctionCallTransaction(
+  signerId: string,
+  publicKeyHex: string,
+  nonce: bigint,
+  receiverId: string,
+  blockHashBase58: string,
+  methodName: string,
+  args: Uint8Array,
+  gas: bigint,
+  depositYocto: bigint
+): Uint8Array {
+  if (!/^[A-Za-z0-9_]{1,64}$/.test(methodName)) throw new Error("Invalid NEAR method name.");
+  if (args.length > 16_384) throw new Error("NEAR function-call args are too large.");
+  if (gas <= 0n) throw new Error("NEAR function-call gas must be positive.");
+  if (depositYocto < 0n) throw new Error("NEAR deposit cannot be negative.");
+  return concatBytes(
+    transactionPrefix(signerId, publicKeyHex, nonce, receiverId, blockHashBase58),
+    Uint8Array.of(2), // Action::FunctionCall
+    borshString(methodName),
+    borshBytes(args),
+    u64le(gas),
     u128le(depositYocto)
   );
 }
