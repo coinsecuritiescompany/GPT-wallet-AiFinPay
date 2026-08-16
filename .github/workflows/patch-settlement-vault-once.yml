@@ -1,0 +1,141 @@
+name: patch-settlement-vault-once
+on:
+  push:
+    branches: [release/settlement-swap-passport-rc]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/settlement-swap-passport-rc
+      - name: Patch Vault signing endpoints
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/mcp-server/src/index.ts')
+          s = p.read_text()
+          start = s.index('app.post("/api/vault/sign-request"')
+          end = s.index('// Internal analytics dashboard.', start)
+          replacement = r'''app.post("/api/vault/sign-request", rateLimit("sign-request", 30, 10 * 60_000), express.json({ limit: "16kb", type: "application/json" }), async (req, res) => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token : "";
+    const claims = context.signing.verify(token);
+    if (!claims) { res.status(410).set("cache-control", "no-store").json({ error: "SIGN_REQUEST_EXPIRED_OR_INVALID" }); return; }
+
+    // Settlement sessions reuse the same device signer, but never masquerade as
+    // ordinary PaymentIntent transfers. The transaction was built and pinned at
+    // prepare time; reopening the Vault must not rebuild different bytes.
+    const settlement = context.settlementExecution.getSession(claims.userId, claims.intentId);
+    if (settlement) {
+      if (settlement.status !== "PREPARED") throw new AppError("DUPLICATE_REQUEST", `Settlement session is already ${settlement.status}.`);
+      if (!signingEnabledFor(settlement.network)) throw new AppError("SIGNING_FAILED", `Signing on ${settlement.network} is not enabled.`, 403);
+      const spec = (LIVE_NETWORKS as Record<string, { label: string }>)[settlement.network];
+      const payload: VaultSignRequest = {
+        intentId: settlement.id,
+        submissionToken: context.signing.issueSubmission({ intentId: settlement.id, userId: claims.userId, expiresAt: settlement.expiresAt, transaction: settlement.transaction }),
+        transaction: settlement.transaction,
+        display: {
+          recipient: settlement.invoice.merchant_wallet,
+          amount: settlement.invoice.breakdown.gross_amount,
+          token: settlement.invoice.asset,
+          network: settlement.network,
+          networkLabel: spec?.label ?? settlement.network
+        },
+        expiresAt: settlement.expiresAt
+      };
+      context.analytics.record("signing_request_opened", "server", { userId: claims.userId, intentId: settlement.id, network: settlement.network, asset: settlement.invoice.asset, amount: settlement.invoice.breakdown.gross_amount, stage: `settlement:${settlement.stage}` });
+      res.status(200).set("cache-control", "no-store").json(payload);
+      return;
+    }
+
+    const intent = context.payments.intentForSigning(claims.userId, claims.intentId);
+    if (!signingEnabledFor(intent.network)) throw new AppError("SIGNING_FAILED", `Signing on ${intent.network} is not enabled.`, 403);
+    if (!context.adapter.buildTransferTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot build signing requests.", 501);
+    const transaction = await context.adapter.buildTransferTransaction(claims.userId, intent);
+    const spec = (LIVE_NETWORKS as Record<string, { label: string }>)[intent.network];
+    const asset = paymentAssetSpec(intent.network, intent.token);
+    const payload: VaultSignRequest = {
+      intentId: intent.id,
+      submissionToken: context.signing.issueSubmission({ intentId: intent.id, userId: claims.userId, expiresAt: intent.expiresAt, transaction }),
+      transaction,
+      display: { recipient: intent.recipient, amount: intent.amount, token: asset?.symbol ?? intent.token, network: intent.network, networkLabel: spec?.label ?? intent.network },
+      expiresAt: intent.expiresAt
+    };
+    context.analytics.record("signing_request_opened", "server", { userId: claims.userId, intentId: intent.id, network: intent.network, asset: intent.token, amount: intent.amount });
+    res.status(200).set("cache-control", "no-store").json(payload);
+  } catch (error) {
+    const safe = safeError(error);
+    context.analytics.record("stage_error", "server", { stage: "sign_request", errorCode: safe.code });
+    respondSigningError(res, error);
+  }
+});
+
+app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000), express.json({ limit: "32kb", type: "application/json" }), async (req, res) => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token : "";
+    const signedTransaction = typeof req.body?.signedTransaction === "string" ? req.body.signedTransaction : "";
+    const claims = context.signing.verifySubmission(token);
+    if (!claims) { res.status(410).set("cache-control", "no-store").json({ error: "SIGN_REQUEST_EXPIRED_OR_INVALID" }); return; }
+    const settlement = context.settlementExecution.getSession(claims.userId, claims.intentId);
+    const intent = settlement ? null : context.payments.intentForSigning(claims.userId, claims.intentId);
+    const network = settlement?.network ?? intent!.network;
+    if (!signingEnabledFor(network)) throw new AppError("SIGNING_FAILED", `Signing on ${network} is not enabled.`, 403);
+    const connection = context.store.getWalletConnection(claims.userId);
+    if (!connection) throw new AppError("WALLET_NOT_FOUND", "Connect your wallet before signing.", 404);
+
+    if (claims.transaction.kind === "SOLANA") {
+      if (network !== "SOLANA") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      validateSignedSolanaTransaction(connection.addresses.solana, signedTransaction, claims.transaction);
+    } else if (claims.transaction.kind === "NEAR") {
+      if (network !== "NEAR") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      validateSignedNearTransaction(connection.addresses.near, signedTransaction, claims.transaction);
+    } else if (claims.transaction.kind === "APTOS") {
+      if (network !== "APTOS") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      validateSignedAptosTransaction(connection.addresses.aptos, signedTransaction, claims.transaction);
+    } else if (claims.transaction.kind === "CASPER") {
+      if (network !== "CASPER") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      validateSignedCasperTransaction(connection.addresses.casper, signedTransaction, claims.transaction);
+    } else {
+      if (["SOLANA", "NEAR", "APTOS", "CASPER"].includes(network)) throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (!/^0x[0-9a-fA-F]{2,}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is missing or malformed.");
+      await validateSignedEvmTransaction(connection.addresses.evm, signedTransaction, claims.transaction);
+    }
+
+    context.analytics.record("transaction_signed", "server", settlement
+      ? { userId: claims.userId, intentId: settlement.id, network, asset: settlement.invoice.asset, amount: settlement.invoice.breakdown.gross_amount, stage: `settlement:${settlement.stage}` }
+      : { userId: claims.userId, intentId: intent!.id, network, asset: intent!.token, amount: intent!.amount });
+
+    if (!context.adapter.broadcastRawTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot broadcast transactions.", 501);
+    const execution = await context.adapter.broadcastRawTransaction(network, signedTransaction);
+    if (settlement) {
+      const session = context.settlementExecution.finalizeBroadcast(claims.userId, settlement.id, execution);
+      res.status(200).set("cache-control", "no-store").json({ transactionHash: execution.transactionHash, explorerUrl: session.explorerUrl, status: session.status, settlementSessionId: session.id, stage: session.stage });
+      return;
+    }
+    const result = context.payments.finalizeVaultBroadcast(claims.userId, claims.intentId, execution);
+    res.status(200).set("cache-control", "no-store").json({ transactionHash: execution.transactionHash, explorerUrl: result.explorerUrl, status: result.intent.status });
+  } catch (error) {
+    const safe = safeError(error);
+    context.analytics.record("stage_error", "server", { stage: "submit_signed", errorCode: safe.code });
+    respondSigningError(res, error);
+  }
+});
+
+'''
+          p.write_text(s[:start] + replacement + s[end:])
+          PY
+      - name: Typecheck before commit
+        run: npm run build:packages && npm run typecheck -w @aifinpay/mcp-server
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/mcp-server/src/index.ts
+          git commit -m "feat(wallet): sign canonical settlement sessions in Vault"
+          git push origin HEAD:release/settlement-swap-passport-rc
