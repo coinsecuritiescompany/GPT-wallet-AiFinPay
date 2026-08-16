@@ -34,9 +34,15 @@ describe("deployment config", () => {
     expect(config.walletMode).toBe("demo");
   });
 
-  it("keeps the swap provider key server-side and optional", () => {
-    expect(loadConfig({}).changeNowApiKey).toBeUndefined();
-    expect(loadConfig({ CHANGENOW_API_KEY: "partner-secret" }).changeNowApiKey).toBe("partner-secret");
+  it("ignores legacy external swap/bridge provider credentials", () => {
+    const config = loadConfig({
+      CHANGENOW_API_KEY: "must-not-enable",
+      SQUID_INTEGRATOR_ID: "must-not-enable",
+      CIRCLE_API_KEY: "must-not-enable",
+    });
+    expect("changeNowApiKey" in config).toBe(false);
+    expect("squidIntegratorId" in config).toBe(false);
+    expect("circleApiKey" in config).toBe(false);
   });
 
   it("loads independent route pins separately from the settlement API", () => {
