@@ -17,10 +17,11 @@ jobs:
         with:
           ref: release/provider-free-payment-rc-rebuild
           fetch-depth: 0
-      - name: Remove only legacy external swap tool surface
+      - name: Remove only legacy external provider surfaces
         run: |
           python - <<'PY'
           from pathlib import Path
+
           p = Path('apps/mcp-server/src/tools/register-tools.ts')
           s = p.read_text()
           old = '  type LiveNetworkSpec, type NetworkId, type PaymentIntent, type SwapAsset, type WalletSummary\n'
@@ -42,6 +43,13 @@ jobs:
           for word in ['list_swap_assets','get_swap_quote','create_swap_order','get_swap_status','ChangeNOW','swapAddressField','swapAssetSchema']:
               if word in s: raise SystemExit(f'legacy provider surface still present: {word}')
           p.write_text(s)
+
+          p = Path('apps/mcp-server/src/index.ts')
+          s = p.read_text()
+          old = '    swapProvider: context.swaps.enabled ? "configured" : "not_configured",\n'
+          new = '    paymentArchitecture: "aifinpay-native-routes-no-external-swap-bridge",\n'
+          if s.count(old) != 1: raise SystemExit(f'expected one swapProvider health anchor, got {s.count(old)}')
+          p.write_text(s.replace(old, new))
           PY
       - uses: actions/setup-node@v4
         with:
@@ -55,9 +63,9 @@ jobs:
           git rm .github/workflows/provider-free-mcp-cleanup-once.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/mcp-server/src/tools/register-tools.ts .github
+          git add apps/mcp-server/src/tools/register-tools.ts apps/mcp-server/src/index.ts .github
           changed="$(git diff --cached --name-only | sort)"
-          expected="$(printf '%s\n' '.github/provider-free-mcp-cleanup.trigger' '.github/workflows/provider-free-mcp-cleanup-once.yml' 'apps/mcp-server/src/tools/register-tools.ts' | sort)"
+          expected="$(printf '%s\n' '.github/provider-free-mcp-cleanup.trigger' '.github/workflows/provider-free-mcp-cleanup-once.yml' 'apps/mcp-server/src/index.ts' 'apps/mcp-server/src/tools/register-tools.ts' | sort)"
           test "$changed" = "$expected" || { echo "Unexpected staged paths:"; echo "$changed"; exit 1; }
-          git commit -m 'remove(mcp): delete external swap tool surface'
+          git commit -m 'remove(mcp): delete external provider tool surface'
           git push origin HEAD:release/provider-free-payment-rc-rebuild
