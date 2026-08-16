@@ -1,4 +1,7 @@
-import type { Balance, NetworkId, PaymentIntent, TransactionRecord, UnsignedWalletTransaction, WalletSummary } from "@aifinpay/shared";
+import type {
+  Balance, NetworkId, PaymentIntent, SettlementInvoice, TransactionRecord,
+  UnsignedWalletTransaction, WalletSummary
+} from "@aifinpay/shared";
 
 export interface ExecutionResult {
   status: "PENDING" | "CONFIRMED" | "FAILED";
@@ -8,6 +11,13 @@ export interface ExecutionResult {
   confirmations: number;
 }
 
+export interface SettlementBuildResult {
+  transaction: UnsignedWalletTransaction;
+  /** ERC-20 allowance can require one explicit approval transaction before the
+   * settlement call. Every signing request remains a single unambiguous tx. */
+  stage: "APPROVAL" | "SETTLEMENT";
+}
+
 export interface WalletAdapter {
   readonly kind: "DEMO" | "TESTNET" | "MAINNET";
   getWalletSummary(userId: string, network?: NetworkId): Promise<WalletSummary>;
@@ -15,9 +25,9 @@ export interface WalletAdapter {
   listTransactions(userId: string): Promise<TransactionRecord[]>;
   execute(intent: PaymentIntent): Promise<ExecutionResult>;
   getTransactionStatus(transactionHash: string): Promise<ExecutionResult | null>;
-  // Non-custodial signing pair, implemented only by the mainnet adapter. The
-  // server builds exact chain-specific bytes for the on-device Vault to sign,
-  // then validates and broadcasts the signed payload it returns.
   buildTransferTransaction?(userId: string, intent: PaymentIntent): Promise<UnsignedWalletTransaction>;
+  /** Build bytes for the exact canonical settlement invoice returned by the
+   * AiFinPay control plane. Implementations must fail closed on any mismatch. */
+  buildSettlementTransaction?(userId: string, invoice: SettlementInvoice): Promise<SettlementBuildResult>;
   broadcastRawTransaction?(network: NetworkId, rawTransaction: string): Promise<ExecutionResult>;
 }
