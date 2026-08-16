@@ -15,6 +15,7 @@ export interface AppConfig {
   mainnetRpcUrls: Record<string, string[]>;
   mainnetRpcAuth: Record<string, string>;
   signingNetworks: NetworkId[];
+  settlementApiOrigin: string;
   changeNowApiKey?: string;
   /** Bearer token for the internal analytics dashboard; unset disables it. */
   analyticsDashboardToken?: string;
@@ -44,7 +45,8 @@ function loadMainnetRpcAuth(env: NodeJS.ProcessEnv): Record<string, string> {
 }
 
 // Only chain families with a complete local signer, exact validator and
-// broadcaster may be enabled. Casper remains ignored until its deploy codec is complete.
+// broadcaster may be enabled. The list remains an explicit production gate;
+// having signer code does not make a network live by itself.
 function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
   const registry = LIVE_NETWORKS as Record<string, LiveNetworkSpec>;
   const requested = parseRpcList(env.AIFINPAY_SIGNING_NETWORKS);
@@ -52,6 +54,15 @@ function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
     const family = registry[id]?.family;
     return family === "EVM" || family === "SOLANA" || family === "NEAR" || family === "APTOS" || family === "CASPER";
   });
+}
+
+function origin(raw: string | undefined, fallback: string): string {
+  const value = (raw?.trim() || fallback).replace(/\/$/, "");
+  const parsed = new URL(value);
+  if (parsed.protocol !== "https:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
+    throw new Error("AIFINPAY_SETTLEMENT_API_ORIGIN must use HTTPS outside localhost");
+  }
+  return parsed.origin;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -75,6 +86,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls),
     mainnetRpcAuth: loadMainnetRpcAuth(env),
     signingNetworks: loadSigningNetworks(env),
+    settlementApiOrigin: origin(env.AIFINPAY_SETTLEMENT_API_ORIGIN, "https://api.aifinpay.io"),
     ...(env.CHANGENOW_API_KEY?.trim() ? { changeNowApiKey: env.CHANGENOW_API_KEY.trim() } : {}),
     ...(env.ANALYTICS_DASHBOARD_TOKEN?.trim() && env.ANALYTICS_DASHBOARD_TOKEN.trim().length >= 16
       ? { analyticsDashboardToken: env.ANALYTICS_DASHBOARD_TOKEN.trim() } : {})
