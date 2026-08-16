@@ -39,8 +39,10 @@ async function jsonRequest(base: string, path: string, init?: RequestInit): Prom
   }
 }
 
-function publicSession(session: ReturnType<AppContext["settlementExecution"]["getSession"]> extends infer T ? Exclude<T, null> : never) {
-  const { ownerUserId: _ownerUserId, transaction: _transaction, ...safe } = session;
+function publicSession(session: NonNullable<ReturnType<AppContext["settlementExecution"]["getSession"]>>) {
+  const safe = { ...session } as Record<string, unknown>;
+  delete safe.ownerUserId;
+  delete safe.transaction;
   return safe;
 }
 
