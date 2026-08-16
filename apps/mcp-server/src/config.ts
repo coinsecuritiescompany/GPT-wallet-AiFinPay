@@ -11,6 +11,21 @@ export interface SettlementTrustedPin {
 }
 export type SettlementTrustedPins = Record<string, SettlementTrustedPin>;
 
+export const TREASURY_NETWORK_KEYS = [
+  "polygon", "avalanche", "arbitrum", "bnb", "base", "unichain", "optimism",
+  "botchain", "xrplevm", "solana", "near", "aptos", "casper",
+] as const;
+export type TreasuryNetworkKey = typeof TREASURY_NETWORK_KEYS[number];
+export type TreasuryAddressPins = Record<TreasuryNetworkKey, string>;
+
+export interface TreasuryAccountingConfig {
+  enabled: boolean;
+  /** Exact AiFinPay-controlled local treasury address for every product network. */
+  addresses?: TreasuryAddressPins;
+  /** Read-only snapshot interval. This service never signs or moves funds. */
+  intervalSeconds: number;
+}
+
 export interface AppConfig {
   port: number;
   demoMode: boolean;
@@ -25,15 +40,14 @@ export interface AppConfig {
   mainnetRpcAuth: Record<string, string>;
   signingNetworks: NetworkId[];
   settlementApiOrigin: string;
-  /** Independent wallet-side trust anchors, keyed `chain:AIFP-1|AIFP-2`. The
-   * settlement API is not allowed to supply its own only trust anchor. */
+  /** Independent wallet-side trust anchors, keyed `chain:AIFP-1|AIFP-2`. */
   settlementPins?: SettlementTrustedPins;
   /** Explicit Casper execution payment. No guessed production gas budget. */
   casperSettlementPaymentMotes?: string;
   /** Maximum Aptos gas units the local wallet will sign for settlement. */
   aptosSettlementMaxGas?: string;
-  changeNowApiKey?: string;
   analyticsDashboardToken?: string;
+  treasury: TreasuryAccountingConfig;
 }
 
 function parseRpcList(raw: string | undefined): string[] {
@@ -106,6 +120,47 @@ function positiveInteger(raw: string | undefined, name: string): string | undefi
   return raw.trim();
 }
 
+function validEvm(value: string): boolean { return /^0x[a-fA-F0-9]{40}$/.test(value) && !/^0x0{40}$/i.test(value); }
+function validSolana(value: string): boolean { return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value); }
+function validNear(value: string): boolean { return /^[a-z0-9._-]{2,64}$/.test(value) || /^[a-f0-9]{64}$/.test(value); }
+function validAptos(value: string): boolean { return /^0x[a-fA-F0-9]{64}$/.test(value); }
+function validCasper(value: string): boolean { return /^0(1[a-fA-F0-9]{64}|2[a-fA-F0-9]{66})$/.test(value); }
+
+function loadTreasuryAddresses(raw: string | undefined): TreasuryAddressPins | undefined {
+  if (!raw?.trim()) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch { throw new Error("AIFINPAY_TREASURY_ADDRESSES_JSON must be valid JSON"); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Treasury addresses must be an object");
+  const input = parsed as Record<string, unknown>;
+  const allowed = new Set<string>(TREASURY_NETWORK_KEYS);
+  for (const key of Object.keys(input)) if (!allowed.has(key)) throw new Error(`Unknown treasury network key: ${key}`);
+  const out = {} as TreasuryAddressPins;
+  for (const network of TREASURY_NETWORK_KEYS) {
+    const value = String(input[network] ?? "").trim();
+    if (!value) throw new Error(`Missing local treasury address for ${network}`);
+    const valid = network === "solana" ? validSolana(value)
+      : network === "near" ? validNear(value)
+      : network === "aptos" ? validAptos(value)
+      : network === "casper" ? validCasper(value)
+      : validEvm(value);
+    if (!valid) throw new Error(`Invalid local treasury address for ${network}`);
+    out[network] = value;
+  }
+  return out;
+}
+
+function loadTreasuryConfig(env: NodeJS.ProcessEnv): TreasuryAccountingConfig {
+  const enabled = env.AIFINPAY_TREASURY_ACCOUNTING_ENABLED === "true";
+  const addresses = loadTreasuryAddresses(env.AIFINPAY_TREASURY_ADDRESSES_JSON);
+  const intervalSeconds = Number(env.AIFINPAY_TREASURY_ACCOUNTING_INTERVAL_SECONDS ?? 900);
+  if (!Number.isInteger(intervalSeconds) || intervalSeconds < 60 || intervalSeconds > 86_400) {
+    throw new Error("AIFINPAY_TREASURY_ACCOUNTING_INTERVAL_SECONDS must be 60..86400");
+  }
+  if (enabled && !addresses) throw new Error("Treasury accounting requires AIFINPAY_TREASURY_ADDRESSES_JSON with all 13 local treasuries");
+  return { enabled, ...(addresses ? { addresses } : {}), intervalSeconds };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const demoMode = env.AIFINPAY_DEMO_MODE !== "false";
   const sessionSecret = env.SESSION_SECRET ?? (demoMode ? "demo-only-session-secret-change-before-production" : "");
@@ -114,6 +169,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ?? (env.RENDER_EXTERNAL_HOSTNAME ? `https://${env.RENDER_EXTERNAL_HOSTNAME}` : undefined);
   const localOrigin = `http://localhost:${env.PORT ?? 8787}`;
   const polygonRpcUrls = parseRpcList(env.POLYGON_RPC_URLS ?? "https://polygon.drpc.org,https://polygon.publicnode.com");
+  const settlementPins = loadSettlementPins(env.AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON);
+  const casperPayment = positiveInteger(env.CASPER_SETTLEMENT_PAYMENT_MOTES, "CASPER_SETTLEMENT_PAYMENT_MOTES");
+  const aptosGas = positiveInteger(env.APTOS_SETTLEMENT_MAX_GAS, "APTOS_SETTLEMENT_MAX_GAS");
   return {
     port: Number(env.PORT ?? 8787),
     demoMode,
@@ -128,11 +186,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     mainnetRpcAuth: loadMainnetRpcAuth(env),
     signingNetworks: loadSigningNetworks(env),
     settlementApiOrigin: origin(env.AIFINPAY_SETTLEMENT_API_ORIGIN, "https://api.aifinpay.io"),
-    ...(loadSettlementPins(env.AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON) ? { settlementPins: loadSettlementPins(env.AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON) } : {}),
-    ...(positiveInteger(env.CASPER_SETTLEMENT_PAYMENT_MOTES, "CASPER_SETTLEMENT_PAYMENT_MOTES") ? { casperSettlementPaymentMotes: positiveInteger(env.CASPER_SETTLEMENT_PAYMENT_MOTES, "CASPER_SETTLEMENT_PAYMENT_MOTES") } : {}),
-    ...(positiveInteger(env.APTOS_SETTLEMENT_MAX_GAS, "APTOS_SETTLEMENT_MAX_GAS") ? { aptosSettlementMaxGas: positiveInteger(env.APTOS_SETTLEMENT_MAX_GAS, "APTOS_SETTLEMENT_MAX_GAS") } : {}),
-    ...(env.CHANGENOW_API_KEY?.trim() ? { changeNowApiKey: env.CHANGENOW_API_KEY.trim() } : {}),
+    ...(settlementPins ? { settlementPins } : {}),
+    ...(casperPayment ? { casperSettlementPaymentMotes: casperPayment } : {}),
+    ...(aptosGas ? { aptosSettlementMaxGas: aptosGas } : {}),
     ...(env.ANALYTICS_DASHBOARD_TOKEN?.trim() && env.ANALYTICS_DASHBOARD_TOKEN.trim().length >= 16
-      ? { analyticsDashboardToken: env.ANALYTICS_DASHBOARD_TOKEN.trim() } : {})
+      ? { analyticsDashboardToken: env.ANALYTICS_DASHBOARD_TOKEN.trim() } : {}),
+    treasury: loadTreasuryConfig(env),
   };
 }
