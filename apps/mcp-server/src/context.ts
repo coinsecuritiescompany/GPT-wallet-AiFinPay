@@ -10,6 +10,7 @@ import { ConfirmationService } from "./services/confirmation-service.js";
 import { SigningRequestService } from "./services/signing-request-service.js";
 import { PaymentService } from "./services/payment-service.js";
 import { PolicyService } from "./services/policy-service.js";
+import { SettlementSwapRouter } from "./services/settlement-swap-router.js";
 import { UniversalMainnetAdapter } from "./services/universal-mainnet-adapter.js";
 import { SwapService } from "./services/swap-service.js";
 import { Store } from "./storage/store.js";
@@ -26,6 +27,7 @@ export class AppContext {
   readonly payments: PaymentService;
   readonly policies: PolicyService;
   readonly swaps: SwapService;
+  readonly settlementSwaps: SettlementSwapRouter;
 
   constructor(readonly config: AppConfig) {
     this.store = new Store(config.databaseUrl);
@@ -50,6 +52,7 @@ export class AppContext {
     this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter, this.analytics);
     this.policies = new PolicyService(this.store, this.audit, this.confirmations);
     this.swaps = new SwapService(config.changeNowApiKey, config.sessionSecret);
+    this.settlementSwaps = new SettlementSwapRouter(this.swaps);
     if (config.walletMode === "demo" && config.demoMode && this.store.listPolicies(DEMO_USER_ID).length === 0) this.store.savePolicy(DEMO_POLICY);
   }
 
