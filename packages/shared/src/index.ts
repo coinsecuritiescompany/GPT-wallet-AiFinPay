@@ -1,4 +1,5 @@
 export * from "./amounts.js";
+export * from "./casper-settlement.js";
 export * from "./casper-transfer.js";
 export * from "./constants.js";
 export * from "./errors.js";
