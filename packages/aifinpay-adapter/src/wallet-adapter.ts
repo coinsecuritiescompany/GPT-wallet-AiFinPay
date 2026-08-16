@@ -24,7 +24,9 @@ export interface WalletAdapter {
   getBalance(userId: string, token: "USDC" | "POL", network: NetworkId): Promise<Balance>;
   listTransactions(userId: string): Promise<TransactionRecord[]>;
   execute(intent: PaymentIntent): Promise<ExecutionResult>;
-  getTransactionStatus(transactionHash: string): Promise<ExecutionResult | null>;
+  /** Status lookups must carry the network for multichain transaction hashes.
+   * Existing adapters may omit it and preserve their historical default. */
+  getTransactionStatus(transactionHash: string, network?: NetworkId): Promise<ExecutionResult | null>;
   buildTransferTransaction?(userId: string, intent: PaymentIntent): Promise<UnsignedWalletTransaction>;
   /** Build bytes for the exact canonical settlement invoice returned by the
    * AiFinPay control plane. Implementations must fail closed on any mismatch. */
