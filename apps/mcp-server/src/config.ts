@@ -2,6 +2,15 @@ import { resolve } from "node:path";
 import { LIVE_NETWORKS } from "@aifinpay/shared";
 import type { LiveNetworkSpec, NetworkId } from "@aifinpay/shared";
 
+export interface SettlementTrustedPin {
+  target: string;
+  /** EVM runtime code hash, or non-EVM artifact hash. */
+  evidenceHash: string;
+  /** Frozen reviewed source commit, 40-64 hex. */
+  sourceCommit: string;
+}
+export type SettlementTrustedPins = Record<string, SettlementTrustedPin>;
+
 export interface AppConfig {
   port: number;
   demoMode: boolean;
@@ -15,8 +24,15 @@ export interface AppConfig {
   mainnetRpcUrls: Record<string, string[]>;
   mainnetRpcAuth: Record<string, string>;
   signingNetworks: NetworkId[];
+  settlementApiOrigin: string;
+  /** Independent wallet-side trust anchors, keyed `chain:AIFP-1|AIFP-2`. The
+   * settlement API is not allowed to supply its own only trust anchor. */
+  settlementPins?: SettlementTrustedPins;
+  /** Explicit Casper execution payment. No guessed production gas budget. */
+  casperSettlementPaymentMotes?: string;
+  /** Maximum Aptos gas units the local wallet will sign for settlement. */
+  aptosSettlementMaxGas?: string;
   changeNowApiKey?: string;
-  /** Bearer token for the internal analytics dashboard; unset disables it. */
   analyticsDashboardToken?: string;
 }
 
@@ -43,8 +59,6 @@ function loadMainnetRpcAuth(env: NodeJS.ProcessEnv): Record<string, string> {
   return auth;
 }
 
-// Only chain families with a complete local signer, exact validator and
-// broadcaster may be enabled. Casper remains ignored until its deploy codec is complete.
 function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
   const registry = LIVE_NETWORKS as Record<string, LiveNetworkSpec>;
   const requested = parseRpcList(env.AIFINPAY_SIGNING_NETWORKS);
@@ -52,6 +66,44 @@ function loadSigningNetworks(env: NodeJS.ProcessEnv): NetworkId[] {
     const family = registry[id]?.family;
     return family === "EVM" || family === "SOLANA" || family === "NEAR" || family === "APTOS" || family === "CASPER";
   });
+}
+
+function origin(raw: string | undefined, fallback: string): string {
+  const value = (raw?.trim() || fallback).replace(/\/$/, "");
+  const parsed = new URL(value);
+  if (parsed.protocol !== "https:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
+    throw new Error("AIFINPAY_SETTLEMENT_API_ORIGIN must use HTTPS outside localhost");
+  }
+  return parsed.origin;
+}
+
+function loadSettlementPins(raw: string | undefined): SettlementTrustedPins | undefined {
+  if (!raw?.trim()) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch { throw new Error("AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON must be valid JSON"); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Settlement pins must be an object");
+  const out: SettlementTrustedPins = {};
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!/^[a-z0-9-]+:AIFP-[12]$/.test(key) || !value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error(`Invalid settlement pin entry: ${key}`);
+    }
+    const pin = value as Record<string, unknown>;
+    const target = String(pin.target ?? "").trim();
+    const evidenceHash = String(pin.evidenceHash ?? "").replace(/^0x/, "").toLowerCase();
+    const sourceCommit = String(pin.sourceCommit ?? "").toLowerCase();
+    if (!target || !/^[0-9a-f]{64}$/.test(evidenceHash) || !/^[0-9a-f]{40,64}$/.test(sourceCommit)) {
+      throw new Error(`Incomplete settlement pin: ${key}`);
+    }
+    out[key] = { target, evidenceHash, sourceCommit };
+  }
+  return out;
+}
+
+function positiveInteger(raw: string | undefined, name: string): string | undefined {
+  if (!raw?.trim()) return undefined;
+  if (!/^[1-9]\d*$/.test(raw.trim())) throw new Error(`${name} must be a positive integer`);
+  return raw.trim();
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -75,6 +127,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     mainnetRpcUrls: loadMainnetRpcUrls(env, polygonRpcUrls),
     mainnetRpcAuth: loadMainnetRpcAuth(env),
     signingNetworks: loadSigningNetworks(env),
+    settlementApiOrigin: origin(env.AIFINPAY_SETTLEMENT_API_ORIGIN, "https://api.aifinpay.io"),
+    ...(loadSettlementPins(env.AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON) ? { settlementPins: loadSettlementPins(env.AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON) } : {}),
+    ...(positiveInteger(env.CASPER_SETTLEMENT_PAYMENT_MOTES, "CASPER_SETTLEMENT_PAYMENT_MOTES") ? { casperSettlementPaymentMotes: positiveInteger(env.CASPER_SETTLEMENT_PAYMENT_MOTES, "CASPER_SETTLEMENT_PAYMENT_MOTES") } : {}),
+    ...(positiveInteger(env.APTOS_SETTLEMENT_MAX_GAS, "APTOS_SETTLEMENT_MAX_GAS") ? { aptosSettlementMaxGas: positiveInteger(env.APTOS_SETTLEMENT_MAX_GAS, "APTOS_SETTLEMENT_MAX_GAS") } : {}),
     ...(env.CHANGENOW_API_KEY?.trim() ? { changeNowApiKey: env.CHANGENOW_API_KEY.trim() } : {}),
     ...(env.ANALYTICS_DASHBOARD_TOKEN?.trim() && env.ANALYTICS_DASHBOARD_TOKEN.trim().length >= 16
       ? { analyticsDashboardToken: env.ANALYTICS_DASHBOARD_TOKEN.trim() } : {})

@@ -123,9 +123,6 @@ app.get("/icon.png", (_req, res) => {
   res.status(200).set({ "content-type": "image/png", "content-length": String(icon.byteLength), "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" }).send(icon);
 });
 
-// Referral attribution: a campaign link like /?src=casper-community sets a
-// first-party cookie which the OAuth approval later reads, so community-driven
-// installs are attributable without tracking anything else about the browser.
 function referralFromCookie(req: Request): string | undefined {
   const match = /(?:^|;\s*)afp_src=([A-Za-z0-9_-]{1,40})(?:;|$)/.exec(req.headers.cookie ?? "");
   return match?.[1];
@@ -183,6 +180,30 @@ app.post("/api/vault/sign-request", rateLimit("sign-request", 30, 10 * 60_000), 
     const token = typeof req.body?.token === "string" ? req.body.token : "";
     const claims = context.signing.verify(token);
     if (!claims) { res.status(410).set("cache-control", "no-store").json({ error: "SIGN_REQUEST_EXPIRED_OR_INVALID" }); return; }
+
+    const settlement = context.settlementExecution.getSession(claims.userId, claims.intentId);
+    if (settlement) {
+      if (settlement.status !== "PREPARED") throw new AppError("DUPLICATE_REQUEST", `Settlement session is already ${settlement.status}.`);
+      if (!signingEnabledFor(settlement.network)) throw new AppError("SIGNING_FAILED", `Signing on ${settlement.network} is not enabled.`, 403);
+      const spec = (LIVE_NETWORKS as Record<string, { label: string }>)[settlement.network];
+      const payload: VaultSignRequest = {
+        intentId: settlement.id,
+        submissionToken: context.signing.issueSubmission({ intentId: settlement.id, userId: claims.userId, expiresAt: settlement.expiresAt, transaction: settlement.transaction }),
+        transaction: settlement.transaction,
+        display: {
+          recipient: settlement.invoice.merchant_wallet,
+          amount: settlement.invoice.breakdown.gross_amount,
+          token: settlement.invoice.asset,
+          network: settlement.network,
+          networkLabel: spec?.label ?? settlement.network
+        },
+        expiresAt: settlement.expiresAt
+      };
+      context.analytics.record("signing_request_opened", "server", { userId: claims.userId, intentId: settlement.id, network: settlement.network, asset: settlement.invoice.asset, amount: settlement.invoice.breakdown.gross_amount, stage: `settlement:${settlement.stage}` });
+      res.status(200).set("cache-control", "no-store").json(payload);
+      return;
+    }
+
     const intent = context.payments.intentForSigning(claims.userId, claims.intentId);
     if (!signingEnabledFor(intent.network)) throw new AppError("SIGNING_FAILED", `Signing on ${intent.network} is not enabled.`, 403);
     if (!context.adapter.buildTransferTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot build signing requests.", 501);
@@ -196,8 +217,7 @@ app.post("/api/vault/sign-request", rateLimit("sign-request", 30, 10 * 60_000), 
       display: { recipient: intent.recipient, amount: intent.amount, token: asset?.symbol ?? intent.token, network: intent.network, networkLabel: spec?.label ?? intent.network },
       expiresAt: intent.expiresAt
     };
-    context.analytics.record("signing_request_opened", "server",
-      { userId: claims.userId, intentId: intent.id, network: intent.network, asset: intent.token, amount: intent.amount });
+    context.analytics.record("signing_request_opened", "server", { userId: claims.userId, intentId: intent.id, network: intent.network, asset: intent.token, amount: intent.amount });
     res.status(200).set("cache-control", "no-store").json(payload);
   } catch (error) {
     const safe = safeError(error);
@@ -212,37 +232,42 @@ app.post("/api/vault/submit-signed", rateLimit("submit-signed", 10, 10 * 60_000)
     const signedTransaction = typeof req.body?.signedTransaction === "string" ? req.body.signedTransaction : "";
     const claims = context.signing.verifySubmission(token);
     if (!claims) { res.status(410).set("cache-control", "no-store").json({ error: "SIGN_REQUEST_EXPIRED_OR_INVALID" }); return; }
-    const intent = context.payments.intentForSigning(claims.userId, claims.intentId);
-    if (!signingEnabledFor(intent.network)) throw new AppError("SIGNING_FAILED", `Signing on ${intent.network} is not enabled.`, 403);
+    const settlement = context.settlementExecution.getSession(claims.userId, claims.intentId);
+    const intent = settlement ? null : context.payments.intentForSigning(claims.userId, claims.intentId);
+    const network = settlement?.network ?? intent!.network;
+    if (!signingEnabledFor(network)) throw new AppError("SIGNING_FAILED", `Signing on ${network} is not enabled.`, 403);
     const connection = context.store.getWalletConnection(claims.userId);
     if (!connection) throw new AppError("WALLET_NOT_FOUND", "Connect your wallet before signing.", 404);
 
     if (claims.transaction.kind === "SOLANA") {
-      if (intent.network !== "SOLANA") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (network !== "SOLANA") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
       validateSignedSolanaTransaction(connection.addresses.solana, signedTransaction, claims.transaction);
     } else if (claims.transaction.kind === "NEAR") {
-      if (intent.network !== "NEAR") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (network !== "NEAR") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
       validateSignedNearTransaction(connection.addresses.near, signedTransaction, claims.transaction);
     } else if (claims.transaction.kind === "APTOS") {
-      if (intent.network !== "APTOS") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (network !== "APTOS") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
       validateSignedAptosTransaction(connection.addresses.aptos, signedTransaction, claims.transaction);
     } else if (claims.transaction.kind === "CASPER") {
-      if (intent.network !== "CASPER") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (network !== "CASPER") throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
       validateSignedCasperTransaction(connection.addresses.casper, signedTransaction, claims.transaction);
     } else {
-      if (["SOLANA", "NEAR", "APTOS", "CASPER"].includes(intent.network)) throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
+      if (["SOLANA", "NEAR", "APTOS", "CASPER"].includes(network)) throw new AppError("SIGNING_FAILED", "The signing payload does not match the intent network.");
       if (!/^0x[0-9a-fA-F]{2,}$/.test(signedTransaction)) throw new AppError("SIGNING_FAILED", "Signed transaction is missing or malformed.");
       await validateSignedEvmTransaction(connection.addresses.evm, signedTransaction, claims.transaction);
     }
 
-    // The signature has passed validation against the connected wallet's own
-    // key — record "signed" before broadcast so a network rejection is still
-    // visible as its own funnel stage.
-    context.analytics.record("transaction_signed", "server",
-      { userId: claims.userId, intentId: intent.id, network: intent.network, asset: intent.token, amount: intent.amount });
+    context.analytics.record("transaction_signed", "server", settlement
+      ? { userId: claims.userId, intentId: settlement.id, network, asset: settlement.invoice.asset, amount: settlement.invoice.breakdown.gross_amount, stage: `settlement:${settlement.stage}` }
+      : { userId: claims.userId, intentId: intent!.id, network, asset: intent!.token, amount: intent!.amount });
 
     if (!context.adapter.broadcastRawTransaction) throw new AppError("SIGNING_FAILED", "This deployment cannot broadcast transactions.", 501);
-    const execution = await context.adapter.broadcastRawTransaction(intent.network, signedTransaction);
+    const execution = await context.adapter.broadcastRawTransaction(network, signedTransaction);
+    if (settlement) {
+      const session = context.settlementExecution.finalizeBroadcast(claims.userId, settlement.id, execution);
+      res.status(200).set("cache-control", "no-store").json({ transactionHash: execution.transactionHash, explorerUrl: session.explorerUrl, status: session.status, settlementSessionId: session.id, stage: session.stage });
+      return;
+    }
     const result = context.payments.finalizeVaultBroadcast(claims.userId, claims.intentId, execution);
     res.status(200).set("cache-control", "no-store").json({ transactionHash: execution.transactionHash, explorerUrl: result.explorerUrl, status: result.intent.status });
   } catch (error) {
@@ -315,12 +340,6 @@ app.get("/internal/analytics", rateLimit("analytics", 60, 60_000), (req, res) =>
 app.all("/mcp", rateLimit("mcp", 180, 60_000), async (req: Request & { auth?: AuthInfo }, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
-  // Record that a request arrived and how it was answered. The MCP transport
-  // consumes the raw body itself — this route deliberately has no JSON parser —
-  // so the tool name is not available here and is not worth breaking the stream
-  // for. Arrival, auth state and status still answer the question that matters:
-  // whether a press reached the server at all, which is the difference between
-  // a server bug and a client one. No body, no arguments, no addresses.
   const startedAt = Date.now();
   res.on("finish", () => console.log(JSON.stringify({
     level: "info", event: "MCP_REQUEST", method: req.method,
@@ -346,8 +365,6 @@ app.all("/mcp", rateLimit("mcp", 180, 60_000), async (req: Request & { auth?: Au
 
 app.use((_req, res) => res.status(404).type("text/plain").send("Not Found"));
 
-// Documented retention: raw analytics events are kept for 180 days; the
-// dashboard's aggregates are computed live so nothing else needs deleting.
 context.analytics.pruneOldEvents();
 const analyticsPruneTimer = setInterval(() => context.analytics.pruneOldEvents(), 24 * 60 * 60 * 1000);
 analyticsPruneTimer.unref();

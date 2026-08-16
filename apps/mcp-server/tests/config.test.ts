@@ -38,4 +38,36 @@ describe("deployment config", () => {
     expect(loadConfig({}).changeNowApiKey).toBeUndefined();
     expect(loadConfig({ CHANGENOW_API_KEY: "partner-secret" }).changeNowApiKey).toBe("partner-secret");
   });
+
+  it("loads independent route pins separately from the settlement API", () => {
+    const pins = {
+      "polygon:AIFP-2": {
+        target: "0x1111111111111111111111111111111111111111",
+        evidenceHash: "ab".repeat(32),
+        sourceCommit: "cd".repeat(20)
+      }
+    };
+    const config = loadConfig({ AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON: JSON.stringify(pins) });
+    expect(config.settlementPins).toEqual(pins);
+  });
+
+  it("rejects malformed or incomplete trusted settlement pins", () => {
+    expect(() => loadConfig({ AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON: "{" })).toThrow(/valid JSON/);
+    expect(() => loadConfig({ AIFINPAY_TRUSTED_SETTLEMENT_PINS_JSON: JSON.stringify({
+      "polygon:AIFP-1": { target: "0x1", evidenceHash: "bad", sourceCommit: "deadbeef" }
+    }) })).toThrow(/Incomplete settlement pin/);
+  });
+
+  it("refuses insecure remote settlement API origins", () => {
+    expect(() => loadConfig({ AIFINPAY_SETTLEMENT_API_ORIGIN: "http://api.example.com" })).toThrow(/must use HTTPS/);
+    expect(loadConfig({ AIFINPAY_SETTLEMENT_API_ORIGIN: "http://localhost:3000" }).settlementApiOrigin).toBe("http://localhost:3000");
+  });
+
+  it("requires explicit positive execution caps instead of guessing malformed values", () => {
+    expect(() => loadConfig({ CASPER_SETTLEMENT_PAYMENT_MOTES: "0" })).toThrow(/positive integer/);
+    expect(() => loadConfig({ APTOS_SETTLEMENT_MAX_GAS: "-1" })).toThrow(/positive integer/);
+    const config = loadConfig({ CASPER_SETTLEMENT_PAYMENT_MOTES: "3000000000", APTOS_SETTLEMENT_MAX_GAS: "5000" });
+    expect(config.casperSettlementPaymentMotes).toBe("3000000000");
+    expect(config.aptosSettlementMaxGas).toBe("5000");
+  });
 });
