@@ -11,8 +11,6 @@ import { SigningRequestService } from "./services/signing-request-service.js";
 import { PaymentService } from "./services/payment-service.js";
 import { PolicyService } from "./services/policy-service.js";
 import { SettlementExecutionService } from "./services/settlement-execution-service.js";
-import { SettlementSwapRouter } from "./services/settlement-swap-router.js";
-import { SwapService } from "./services/swap-service.js";
 import { TreasuryAccountingService } from "./services/treasury-accounting-service.js";
 import { UniversalMainnetAdapter } from "./services/universal-mainnet-adapter.js";
 import { Store } from "./storage/store.js";
@@ -29,10 +27,6 @@ export class AppContext {
   readonly payments: PaymentService;
   readonly policies: PolicyService;
   readonly settlementExecution: SettlementExecutionService;
-  /** Compatibility only for old cached tool descriptors. Always disabled. */
-  readonly swaps: SwapService;
-  /** Compatibility only; underlying SwapService cannot make provider requests. */
-  readonly settlementSwaps: SettlementSwapRouter;
   readonly treasury?: TreasuryAccountingService;
   private treasuryTimer?: NodeJS.Timeout;
   private treasuryStarted = false;
@@ -62,11 +56,6 @@ export class AppContext {
     this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter, this.analytics);
     this.policies = new PolicyService(this.store, this.audit, this.confirmations);
     this.settlementExecution = new SettlementExecutionService(this.store, config, this.adapter);
-
-    // No provider key exists in AppConfig. These compatibility objects can
-    // never contact an exchange or bridge and fail closed on every swap call.
-    this.swaps = new SwapService(undefined, config.sessionSecret);
-    this.settlementSwaps = new SettlementSwapRouter(this.swaps);
 
     // Treasury is read-only accounting. It never owns a signing key and never
     // swaps, bridges, forwards or otherwise moves protocol funds.
