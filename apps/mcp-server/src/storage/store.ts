@@ -6,6 +6,18 @@ import type { AgentPolicy, AuditEvent, PaymentIntent } from "@aifinpay/shared";
 export type WalletPairingResult = "connected" | "already_connected" | "invalid";
 export interface StoredWalletAddresses extends Record<string, string> { evm: string; solana: string; near: string; aptos: string; casper: string }
 
+export interface TreasuryBalanceSnapshot {
+  id: string;
+  network: string;
+  address: string;
+  asset: string;
+  symbol: string;
+  raw: string;
+  decimals: number;
+  tokenAddress: string | null;
+  observedAt: string;
+}
+
 function sameAddresses(left: StoredWalletAddresses, right: StoredWalletAddresses): boolean {
   return (["evm", "solana", "near", "aptos", "casper"] as const).every((key) => {
     const a = left[key];
@@ -45,6 +57,20 @@ export class Store {
       CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
         code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL, consumed_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS treasury_balance_snapshots (
+        id TEXT PRIMARY KEY,
+        network TEXT NOT NULL,
+        address TEXT NOT NULL,
+        asset TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        raw TEXT NOT NULL,
+        decimals INTEGER NOT NULL,
+        token_address TEXT,
+        observed_at TEXT NOT NULL,
+        json TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_treasury_balance_network_asset_time
+        ON treasury_balance_snapshots(network, asset, observed_at DESC);
     `);
   }
 
@@ -139,7 +165,6 @@ export class Store {
     this.db.prepare("INSERT INTO wallet_pairings (token_hash,user_id,expires_at,consumed) VALUES (?,?,?,0)").run(tokenHash, userId, expiresAt);
   }
 
-  /** The user a pairing token belongs to, for analytics — does not consume it. */
   pairingUserId(tokenHash: string): string | null {
     const row = this.db.prepare("SELECT user_id FROM wallet_pairings WHERE token_hash=?").get(tokenHash) as { user_id: string } | undefined;
     return row?.user_id ?? null;
@@ -177,5 +202,30 @@ export class Store {
     this.db.prepare(`INSERT INTO wallet_connections (user_id,addresses_json,connected_at) VALUES (?,?,?)
       ON CONFLICT(user_id) DO UPDATE SET addresses_json=excluded.addresses_json,connected_at=excluded.connected_at`)
       .run(userId, JSON.stringify(addresses), connectedAt);
+  }
+
+  saveTreasuryBalanceSnapshot(snapshot: TreasuryBalanceSnapshot): void {
+    this.db.prepare(`INSERT INTO treasury_balance_snapshots
+      (id,network,address,asset,symbol,raw,decimals,token_address,observed_at,json)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(snapshot.id, snapshot.network, snapshot.address, snapshot.asset, snapshot.symbol,
+        snapshot.raw, snapshot.decimals, snapshot.tokenAddress, snapshot.observedAt, JSON.stringify(snapshot));
+  }
+
+  listTreasuryBalanceSnapshots(limit = 250): TreasuryBalanceSnapshot[] {
+    const safeLimit = Math.max(1, Math.min(2000, Math.trunc(limit)));
+    const rows = this.db.prepare("SELECT json FROM treasury_balance_snapshots ORDER BY rowid DESC LIMIT ?")
+      .all(safeLimit) as Array<{ json: string }>;
+    return rows.map((row) => JSON.parse(row.json) as TreasuryBalanceSnapshot);
+  }
+
+  latestTreasuryBalances(): TreasuryBalanceSnapshot[] {
+    const rows = this.db.prepare(`SELECT s.json FROM treasury_balance_snapshots s
+      JOIN (
+        SELECT network, asset, MAX(rowid) AS max_rowid
+        FROM treasury_balance_snapshots GROUP BY network, asset
+      ) latest ON latest.max_rowid=s.rowid
+      ORDER BY s.network, s.asset`).all() as Array<{ json: string }>;
+    return rows.map((row) => JSON.parse(row.json) as TreasuryBalanceSnapshot);
   }
 }
