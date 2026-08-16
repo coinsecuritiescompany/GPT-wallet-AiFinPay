@@ -111,7 +111,7 @@ app.get("/health", (_req, res) => {
     tokenData: "public-addresses-only",
     database: "ok",
     blockchainAdapter: context.adapter.kind,
-    swapProvider: context.swaps.enabled ? "configured" : "not_configured",
+    paymentArchitecture: "aifinpay-native-routes-no-external-swap-bridge",
     widgetResource: WIDGET_URI,
     release: process.env.RENDER_GIT_COMMIT?.slice(0, 12) ?? "local"
   });
