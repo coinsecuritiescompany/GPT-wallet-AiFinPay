@@ -20,14 +20,17 @@ const config: AppConfig = {
   mainnetRpcUrls: {},
   mainnetRpcAuth: {},
   signingNetworks: [],
-  settlementApiOrigin: "https://api.aifinpay.io"
+  settlementApiOrigin: "https://api.aifinpay.io",
+  treasury: { enabled: false, intervalSeconds: 900 }
 };
 
 const nativeTools = ["prepare_solana_transfer", "prepare_near_transfer", "prepare_aptos_transfer", "prepare_casper_transfer"];
 const settlementTools = [
-  "list_aifinpay_settlement_routes", "prepare_aifinpay_settlement",
-  "prepare_aifinpay_settlement_for_vault", "get_aifinpay_settlement_status",
-  "quote_aifinpay_settlement_swap"
+  "list_aifinpay_settlement_routes", "select_aifinpay_payment_route", "prepare_aifinpay_settlement",
+  "prepare_aifinpay_settlement_for_vault", "get_aifinpay_settlement_status"
+];
+const forbiddenProviderTools = [
+  "list_swap_assets", "get_swap_quote", "create_swap_order", "get_swap_status", "quote_aifinpay_settlement_swap"
 ];
 
 describe("MCP tool registration", () => {
@@ -37,7 +40,7 @@ describe("MCP tool registration", () => {
     vi.unstubAllGlobals();
   });
 
-  it("registers all required tools and serves wallet summary", async () => {
+  it("registers the provider-free AiFinPay payment surface and serves wallet summary", async () => {
     const ctx = new AppContext(config); contexts.push(ctx); const server = createMcpServer(ctx);
     const client = new Client({ name: "test-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -51,11 +54,13 @@ describe("MCP tool registration", () => {
     const names = tools.tools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining([
       "list_supported_mainnets", "open_wallet", "open_wallet_current", "create_wallet_pairing",
-      "get_wallet_connection", "get_wallet_summary", "prepare_transfer", ...nativeTools, "confirm_transfer",
-      "list_swap_assets", "get_swap_quote", "create_swap_order", "get_swap_status", "create_agent_policy",
-      "evaluate_payment_request", "render_wallet", "track_ui_event", ...settlementTools
+      "get_wallet_connection", "get_wallet_summary", "get_token_balance", "prepare_transfer", ...nativeTools,
+      "confirm_transfer", "cancel_transfer", "get_transaction_status", "list_transactions", "create_agent_policy",
+      "list_agent_policies", "update_agent_policy", "revoke_agent_policy", "evaluate_payment_request", "get_audit_log",
+      "render_wallet", "render_transfer_preview", "render_transaction_receipt", "track_ui_event", ...settlementTools
     ]));
-    expect(names).toHaveLength(35);
+    expect(names).toHaveLength(31);
+    for (const forbidden of forbiddenProviderTools) expect(names).not.toContain(forbidden);
     for (const tool of tools.tools) {
       expect(tool.annotations).toMatchObject({
         readOnlyHint: expect.any(Boolean),
@@ -73,7 +78,7 @@ describe("MCP tool registration", () => {
     }
     expect(tools.tools.find((tool) => tool.name === "render_wallet")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
     const openTool = (name: string) => tools.tools.find((tool) => tool.name === name);
-    for (const name of ["open_wallet", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "render_wallet", "list_transactions", "list_agent_policies", "get_audit_log"]) {
+    for (const name of ["open_wallet", "create_wallet_pairing", "get_wallet_connection", "get_wallet_summary", "render_wallet", "list_transactions", "list_agent_policies", "get_audit_log", "select_aifinpay_payment_route"]) {
       expect(openTool(name)?.annotations).toMatchObject({ readOnlyHint: true });
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
     }
@@ -85,12 +90,9 @@ describe("MCP tool registration", () => {
     for (const name of ["prepare_transfer", ...nativeTools, "confirm_transfer", "create_agent_policy", "update_agent_policy", "revoke_agent_policy", "prepare_aifinpay_settlement_for_vault"]) {
       expect(openTool(name)?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:write"] }]);
     }
-    expect(openTool("create_swap_order")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:write"] }]);
-    expect(openTool("create_swap_order")?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, openWorldHint: true });
     expect(openTool("list_aifinpay_settlement_routes")?._meta?.securitySchemes).toEqual([{ type: "noauth" }]);
     expect(openTool("prepare_aifinpay_settlement")?._meta?.securitySchemes).toEqual([{ type: "noauth" }]);
     expect(openTool("get_aifinpay_settlement_status")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
-    expect(openTool("quote_aifinpay_settlement_swap")?._meta?.securitySchemes).toEqual([{ type: "oauth2", scopes: ["wallet:read"] }]);
     const resource = await client.readResource({ uri: WIDGET_URI });
     expect(resource.contents[0]).toMatchObject({
       uri: WIDGET_URI,
