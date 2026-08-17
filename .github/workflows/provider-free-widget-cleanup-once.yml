@@ -1,0 +1,114 @@
+name: Provider-free widget cleanup once
+
+on:
+  push:
+    branches:
+      - release/treasury-consolidation-rc
+    paths:
+      - ".github/workflows/provider-free-widget-cleanup-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/treasury-consolidation-rc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Remove stale external-swap widget surface
+        shell: python
+        run: |
+          from pathlib import Path
+
+          app_path = Path('apps/wallet-widget/src/App.tsx')
+          app = app_path.read_text()
+
+          app = app.replace(
+              'import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type SwapAsset, type TransactionRecord } from "@aifinpay/shared";',
+              'import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type TransactionRecord } from "@aifinpay/shared";'
+          )
+          app = app.replace('      <button onClick={() => onNavigate("swap-form")}><b>⇄</b>Swap</button>\n', '')
+
+          start = app.find('const swapKey = (asset: SwapAsset)')
+          end = app.find('// The MCP tools resolve with')
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit('expected stale swap UI block anchors not found')
+          app = app[:start] + app[end:]
+
+          stale_view_lines = [
+              '  "swap-quote": "quote",          // SwapQuoteView: data.quote!\n',
+              '  "swap-order": "order",          // SwapOrderView: data.order!\n',
+              '  "swap-status": "swapStatus",    // SwapStatusView: data.swapStatus!\n',
+              '  if (data.view === "swap-form") return <SwapForm data={data} onBack={back} />;\n',
+              '  if (data.view === "swap-quote") return <SwapQuoteView data={data} onBack={() => setData({ view: "swap-form" })} />;\n',
+              '  if (data.view === "swap-order") return <SwapOrderView data={data} onBack={back} />;\n',
+              '  if (data.view === "swap-status") return <SwapStatusView data={data} onBack={back} />;\n',
+          ]
+          for line in stale_view_lines:
+              if line not in app:
+                  raise SystemExit(f'expected stale line not found: {line.strip()}')
+              app = app.replace(line, '')
+
+          forbidden_app = [
+              'SwapAsset', 'swapFundingRoute', 'list_swap_assets', 'get_swap_quote',
+              'create_swap_order', 'get_swap_status', 'swap-form', 'swap-quote',
+              'swap-order', 'swap-status', 'ChangeNOW partner key', 'Cross-chain swap'
+          ]
+          remaining = [item for item in forbidden_app if item in app]
+          if remaining:
+              raise SystemExit(f'stale swap UI tokens remain in App.tsx: {remaining}')
+          app_path.write_text(app)
+
+          types_path = Path('apps/wallet-widget/src/types.ts')
+          types = types_path.read_text()
+          types = types.replace(
+              'import type { AgentPolicy, AuditEvent, MainnetNetwork, PaymentIntent, SwapAsset, SwapOrder, SwapQuote, TransactionRecord, WalletSummary } from "@aifinpay/shared";',
+              'import type { AgentPolicy, AuditEvent, MainnetNetwork, PaymentIntent, TransactionRecord, WalletSummary } from "@aifinpay/shared";'
+          )
+          types = types.replace(
+              '  "receive" | "mainnet-signing-locked" | "swap-form" | "swap-quote" | "swap-order" | "swap-status";',
+              '  "receive" | "mainnet-signing-locked";'
+          )
+          for line in [
+              '  assets?: SwapAsset[];\n', '  quote?: SwapQuote;\n', '  quoteToken?: string;\n',
+              '  order?: SwapOrder;\n', '  orderReference?: string;\n',
+              '  swapStatus?: { id: string; status: string; payinHash?: string; payoutHash?: string; updatedAt: string };\n'
+          ]:
+              types = types.replace(line, '')
+          forbidden_types = ['SwapAsset', 'SwapOrder', 'SwapQuote', 'swap-form', 'swap-quote', 'swap-order', 'swap-status']
+          remaining = [item for item in forbidden_types if item in types]
+          if remaining:
+              raise SystemExit(f'stale swap widget types remain: {remaining}')
+          types_path.write_text(types)
+
+          test_path = Path('apps/wallet-widget/src/swap-funding.test.ts')
+          if test_path.exists():
+              test_path.unlink()
+      - name: Install exact dependencies
+        run: npm ci
+      - name: Full monorepo check
+        run: npm run check
+      - name: Production dependency audit
+        run: npm audit --audit-level=high --omit=dev
+      - name: Assert provider tools are absent from production widget/runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -RInE 'list_swap_assets|get_swap_quote|create_swap_order|get_swap_status|ChangeNOW partner key|Cross-chain swap' apps/wallet-widget/src apps/mcp-server/src
+      - name: Commit cleanup and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/provider-free-widget-cleanup-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(wallet): remove stale external swap UI surface"
+          git push origin HEAD:release/treasury-consolidation-rc
