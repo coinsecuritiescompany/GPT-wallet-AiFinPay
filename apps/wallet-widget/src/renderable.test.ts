@@ -12,16 +12,12 @@ describe("restored payloads that would crash the widget", () => {
   it("rejects views whose required data did not survive the round trip", () => {
     expect(isRenderable({ view: "receipt" } as never)).toBe(false);
     expect(isRenderable({ view: "transfer-preview" } as never)).toBe(false);
-    expect(isRenderable({ view: "swap-quote" } as never)).toBe(false);
-    expect(isRenderable({ view: "swap-order" } as never)).toBe(false);
-    expect(isRenderable({ view: "swap-status" } as never)).toBe(false);
     expect(isRenderable({ view: "wallet" } as never)).toBe(false);
   });
 
   it("accepts the same views once their data is present", () => {
     expect(isRenderable({ view: "receipt", intent: { id: "i" } } as never)).toBe(true);
     expect(isRenderable({ view: "wallet", summary: { mode: "MAINNET" } } as never)).toBe(true);
-    expect(isRenderable({ view: "swap-quote", quote: { fromAmount: "1" } } as never)).toBe(true);
   });
 
   it("accepts views that need no extra data, including blocked", () => {

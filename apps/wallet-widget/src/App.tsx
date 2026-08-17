@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type SwapAsset, type TransactionRecord } from "@aifinpay/shared";
+import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type TransactionRecord } from "@aifinpay/shared";
 import { QRCodeSVG } from "qrcode.react";
 import { bridge } from "./bridge/mcp-bridge.js";
 import { WidgetErrorBoundary } from "./error-boundary.js";
@@ -231,7 +231,6 @@ function Wallet({ data, onNavigate }: { data: WidgetData; onNavigate: (view: Wid
     <nav className="actions">
       <button onClick={() => onNavigate(canSend ? "transfer-form" : "mainnet-signing-locked")}><b>↗</b>Send</button>
       <button onClick={() => onNavigate("receive")}><b>↙</b>Receive</button>
-      <button onClick={() => onNavigate("swap-form")}><b>⇄</b>Swap</button>
       <button onClick={() => void bridge.callTool("list_agent_policies", {}).catch(reportToolFailure)}><b>⌁</b>Agent limits</button>
       <button onClick={() => void bridge.callTool("get_audit_log", { limit: 30 }).catch(reportToolFailure)}><b>≡</b>Audit log</button>
     </nav>
@@ -337,159 +336,6 @@ function Receive({ data, onBack }: { data: WidgetData; onBack: () => void }) {
 function MainnetSigningLocked({ onBack }: { onBack: () => void }) {
   return <main className="card"><Header label="Network capability" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="blocked-icon">!</section><div className="center"><h2>Sending is not enabled on this network yet</h2><p>You can view live balances and receive assets. Choose a network marked “Send + balance” to prepare a locally signed transfer.</p></div><div className="policy-result"><div className="shield">✓</div><div><strong>YOUR KEYS STAY LOCAL</strong><span>Every enabled transfer still requires review and signing inside your encrypted Vault.</span></div></div><button className="primary" onClick={onBack}>Return to wallet</button></main>;
 }
-
-const swapKey = (asset: SwapAsset) => `${asset.ticker}:${asset.network}`;
-
-// The current local signing path can fund Polygon native POL and Polygon USDC
-// deposits. Never substitute POL for an arbitrary Polygon token: sending the
-// wrong asset to an exchange deposit address can permanently lose funds.
-interface SwapFundingRoute {
-  network: string;
-  token: "NATIVE" | "USDC";
-  /** The transfer tool that accepts this chain's address format. */
-  tool: string;
-}
-
-// A swap deposit is an ordinary transfer to the provider's address, so it can be
-// funded from any chain the Vault signs for — not only Polygon. The provider's
-// network name is mapped to ours, and each chain uses the transfer tool that
-// accepts its address format, exactly as the send form does.
-const SWAP_FUNDING_NETWORKS: Record<string, { network: string; tool: string }> = {
-  cspr: { network: "CASPER", tool: "prepare_casper_transfer" },
-  sol: { network: "SOLANA", tool: "prepare_solana_transfer" },
-  near: { network: "NEAR", tool: "prepare_near_transfer" },
-  aptos: { network: "APTOS", tool: "prepare_aptos_transfer" },
-  matic: { network: "POLYGON", tool: "prepare_transfer" },
-  arbitrum: { network: "ARBITRUM", tool: "prepare_transfer" },
-  base: { network: "BASE", tool: "prepare_transfer" },
-  op: { network: "OPTIMISM", tool: "prepare_transfer" },
-  bsc: { network: "BNB", tool: "prepare_transfer" },
-  avaxc: { network: "AVALANCHE", tool: "prepare_transfer" }
-};
-
-// Only the chain's own native asset, or USDC on an EVM chain. Never substitute
-// one token for another: sending the wrong asset to an exchange deposit address
-// can permanently lose the funds.
-const NATIVE_TICKERS: Record<string, string[]> = {
-  cspr: ["cspr"], sol: ["sol"], near: ["near"], aptos: ["apt"],
-  matic: ["pol", "matic"], arbitrum: ["eth"], base: ["eth"],
-  op: ["eth"], bsc: ["bnb"], avaxc: ["avax"]
-};
-
-export function swapFundingRoute(asset: SwapAsset): SwapFundingRoute | null {
-  const chain = SWAP_FUNDING_NETWORKS[asset.network];
-  if (!chain) return null;
-  if (NATIVE_TICKERS[asset.network]?.includes(asset.ticker)) {
-    return { network: chain.network, token: "NATIVE", tool: chain.tool };
-  }
-  // USDC only where the generic EVM transfer tool can carry a token argument.
-  if (asset.ticker === "usdc" && chain.tool === "prepare_transfer") {
-    return { network: chain.network, token: "USDC", tool: chain.tool };
-  }
-  return null;
-}
-
-function SwapForm({ data, onBack }: { data: WidgetData; onBack: () => void }) {
-  const loadingRequested = useRef(false);
-  const assets = useMemo(() => [...(data.assets ?? [])].sort((a, b) => {
-    const rank = (item: SwapAsset) => item.ticker === "cspr" && item.network === "cspr" ? 0 : item.network === "matic" ? 1 : 2;
-    return rank(a) - rank(b) || a.name.localeCompare(b.name);
-  }), [data.assets]);
-  const defaultFrom = assets.find((item) => item.ticker === "cspr" && item.network === "cspr") ?? assets[0];
-  const defaultTo = assets.find((item) => item.network === "matic" && item.ticker !== defaultFrom?.ticker) ?? assets.find((item) => swapKey(item) !== (defaultFrom ? swapKey(defaultFrom) : ""));
-  const [fromKey, setFromKey] = useState("");
-  const [toKey, setToKey] = useState("");
-  const [amount, setAmount] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    if (!assets.length && !loadingRequested.current) {
-      loadingRequested.current = true;
-      void bridge.callTool("list_swap_assets", {}).catch(() => setError("Live swap is not configured yet."));
-    }
-  }, [assets.length]);
-  const from = assets.find((item) => swapKey(item) === fromKey) ?? defaultFrom;
-  const to = assets.find((item) => swapKey(item) === toKey) ?? defaultTo;
-  const reverse = () => {
-    if (!from || !to) return;
-    setFromKey(swapKey(to));
-    setToKey(swapKey(from));
-  };
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!from || !to || !amount.trim()) { setError("Choose two assets and enter an amount."); return; }
-    setBusy(true); setError("");
-    try {
-      const result = await bridge.callTool("get_swap_quote", { fromAsset: from, toAsset: to, fromAmount: amount.trim() });
-      const message = toolErrorMessage(result, "Could not load a live quote. Check the amount or try again.");
-      if (message) setError(message);
-    }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load a live quote. Check the amount or try again."); }
-    finally { setBusy(false); }
-  };
-  return <main className="card"><Header label="Swap" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="hero-icon">⇄</section><div className="center"><h2>Cross-chain swap</h2><p>Live non-custodial quotes. Output is sent only to an address controlled by your connected Vault.</p></div>
-    {!assets.length ? <div className="empty compact"><strong>{error || "Loading swap assets…"}</strong><span>Live swap requires a server-side ChangeNOW partner key. No key is ever exposed to this widget.</span></div> :
-      <form className="form swap-form" onSubmit={submit}>
-        <label>You send<select aria-label="Swap from asset" value={from ? swapKey(from) : ""} onChange={(event) => setFromKey(event.target.value)}>{assets.map((item) => <option key={swapKey(item)} value={swapKey(item)}>{item.ticker.toUpperCase()} · {item.network}</option>)}</select></label>
-        <label>Amount<div className="amount-input"><input aria-label="Swap amount" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.0" inputMode="decimal" /><span>{from?.ticker.toUpperCase()}</span></div></label>
-        <button className="swap-reverse" type="button" aria-label="Reverse swap direction" onClick={reverse}>⇅</button>
-        <label>You receive<select aria-label="Swap to asset" value={to ? swapKey(to) : ""} onChange={(event) => setToKey(event.target.value)}>{assets.filter((item) => !from || swapKey(item) !== swapKey(from)).map((item) => <option key={swapKey(item)} value={swapKey(item)}>{item.ticker.toUpperCase()} · {item.network}</option>)}</select></label>
-        {error && <p className="vault-error">{error}</p>}<button className="primary" disabled={busy}>{busy ? "Loading live quote…" : "Review swap"}</button>
-      </form>}
-    <p className="disclaimer">Rates can change until the provider receives your deposit. Network and provider fees are reflected in the estimated output.</p>
-  </main>;
-}
-
-function SwapQuoteView({ data, onBack }: { data: WidgetData; onBack: () => void }) {
-  const quote = data.quote!; const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  const confirm = async () => {
-    setBusy(true); setError("");
-    try { await bridge.callTool("create_swap_order", { quoteToken: data.quoteToken!, confirmed: true }); }
-    catch { setError("The quote expired or the order could not be created. Request a fresh quote."); }
-    finally { setBusy(false); }
-  };
-  return <main className="card"><Header label="Review swap" badge="MAINNET" /><button className="back" onClick={onBack}>← Swap</button><section className="hero-icon">⇄</section><div className="center"><span className="eyebrow">Estimated exchange</span><h1>{quote.estimatedAmount} <small>{quote.toAsset.ticker.toUpperCase()}</small></h1></div>
-    <div className="details"><div><span>You send</span><strong>{quote.fromAmount} {quote.fromAsset.ticker.toUpperCase()}</strong></div><div><span>From network</span><strong>{quote.fromAsset.network}</strong></div><div><span>You receive</span><strong>≈ {quote.estimatedAmount} {quote.toAsset.ticker.toUpperCase()}</strong></div><div><span>To network</span><strong>{quote.toAsset.network}</strong></div></div>
-    <div className="policy-result"><div className="shield">✓</div><div><strong>VAULT ADDRESS LOCKED</strong><span>The provider payout and refund addresses are derived from your connected wallet, not supplied by the model.</span></div></div>
-    {error && <p className="vault-error">{error}</p>}<button className="primary" disabled={busy} onClick={() => void confirm()}>{busy ? "Creating order…" : `Confirm swap of ${quote.fromAmount} ${quote.fromAsset.ticker.toUpperCase()}`}</button><p className="disclaimer">This creates a deposit order. Funds move only after you separately sign and send the exact deposit.</p>
-  </main>;
-}
-
-function SwapOrderView({ data, onBack }: { data: WidgetData; onBack: () => void }) {
-  const order = data.order!; const [copied, setCopied] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  const funding = swapFundingRoute(order.fromAsset);
-  const copy = async () => { try { await navigator.clipboard.writeText(order.payinAddress); } catch { /* address remains selectable */ } setCopied(true); };
-  const fundFromVault = async () => {
-    if (!funding) return;
-    setBusy(true); setError("");
-    try {
-      // Non-EVM chains have their own tool and take no token argument.
-      const args = funding.tool === "prepare_transfer"
-        ? { recipient: order.payinAddress, amount: order.fromAmount, token: funding.token, network: funding.network, idempotencyKey: `swap-${order.id}` }
-        : { recipient: order.payinAddress, amount: order.fromAmount, idempotencyKey: `swap-${order.id}` };
-      const result = await bridge.callTool(funding.tool, args);
-      const message = toolErrorMessage(result, "The deposit could not be prepared. Check the balance and request a fresh swap order if needed.");
-      if (message) setError(message);
-    }
-    catch { setError("The deposit could not be prepared. Check the balance and request a fresh swap order if needed."); }
-    finally { setBusy(false); }
-  };
-  return <main className="card"><Header label="Swap deposit" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><div className="center"><span className="eyebrow">Order {short(order.id)}</span><h2>Deposit exactly {order.fromAmount} {order.fromAsset.ticker.toUpperCase()}</h2><p>Use only the {order.fromAsset.network} network. A different asset or network can be permanently lost.</p></div>
-    <section className="receive-card swap-deposit"><div className="qr-shell"><QRCodeSVG value={order.payinAddress} size={196} level="M" marginSize={2} title="Swap deposit address QR code" /></div><code className="receive-address">{order.payinAddress}</code><button className="secondary copy-address" onClick={() => void copy()}>{copied ? "Copied ✓" : "Copy deposit address"}</button></section>
-    {error && <p className="vault-error">{error}</p>}
-    {funding
-      ? <button className="primary" disabled={busy} onClick={() => void fundFromVault()}>{busy ? "Preparing transfer…" : "Review deposit in AiFinPay Vault"}</button>
-      : <p className="mainnet-warning">Send only {order.fromAsset.ticker.toUpperCase()} on {order.fromAsset.network} from a compatible wallet. AiFinPay will never substitute another asset.</p>}
-    <button className="secondary" onClick={() => void bridge.callTool("get_swap_status", { orderReference: data.orderReference! }).catch(reportToolFailure)}>Refresh swap status</button>
-    <p className="disclaimer">Expected output: ≈ {order.expectedAmount} {order.toAsset.ticker.toUpperCase()} to {short(order.payoutAddress)}. Keep this screen until the swap completes.</p>
-  </main>;
-}
-
-function SwapStatusView({ data, onBack }: { data: WidgetData; onBack: () => void }) {
-  const status = data.swapStatus!;
-  return <main className="card"><Header label="Swap status" badge="MAINNET" /><button className="back" onClick={onBack}>← Wallet</button><section className="hero-icon">⇄</section><div className="center"><span className="eyebrow">ORDER {short(status.id)}</span><h2>{status.status.replaceAll("_", " ").toUpperCase()}</h2><p>Provider status updated {date(status.updatedAt)}.</p></div><div className="details">{status.payinHash && <div><span>Deposit transaction</span><strong>{short(status.payinHash)}</strong></div>}{status.payoutHash && <div><span>Payout transaction</span><strong>{short(status.payoutHash)}</strong></div>}</div><button className="primary" onClick={() => void bridge.callTool("get_swap_status", { orderReference: data.orderReference! }).catch(reportToolFailure)}>Refresh status</button><button className="secondary" onClick={onBack}>Return to wallet</button></main>;
-}
-
 
 // The MCP tools resolve with { view: "error", error } instead of throwing, so a
 // rejected transfer looks like a successful call. Without checking the payload a
@@ -758,9 +604,6 @@ function Networks({ data, onBack }: { data: WidgetData; onBack: () => void }) {
 const REQUIRED_BY_VIEW: Record<string, keyof WidgetData> = {
   "receipt": "intent",            // Receipt: data.intent!
   "transfer-preview": "intent",   // TransferPreview: data.intent!
-  "swap-quote": "quote",          // SwapQuoteView: data.quote!
-  "swap-order": "order",          // SwapOrderView: data.order!
-  "swap-status": "swapStatus",    // SwapStatusView: data.swapStatus!
   "wallet": "summary"             // Wallet: data.summary!
 };
 
@@ -814,10 +657,6 @@ function WalletApp({ initialData }: { initialData?: WidgetData }) {
   if (data.view === "networks") return <Networks data={data} onBack={back} />;
   if (data.view === "wallet") return <Wallet data={data} onNavigate={(view) => setData({ view })} />;
   if (data.view === "receive") return <Receive data={wallet} onBack={back} />;
-  if (data.view === "swap-form") return <SwapForm data={data} onBack={back} />;
-  if (data.view === "swap-quote") return <SwapQuoteView data={data} onBack={() => setData({ view: "swap-form" })} />;
-  if (data.view === "swap-order") return <SwapOrderView data={data} onBack={back} />;
-  if (data.view === "swap-status") return <SwapStatusView data={data} onBack={back} />;
   if (data.view === "mainnet-signing-locked") return <MainnetSigningLocked onBack={back} />;
   if (data.view === "transfer-form") return <TransferForm data={wallet} onBack={back} />;
   if (data.view === "transfer-preview") return <TransferPreview data={data} onBack={back} />;
