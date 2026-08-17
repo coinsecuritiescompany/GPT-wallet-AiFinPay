@@ -1,5 +1,7 @@
 name: Provider-free widget cleanup once
 
+# Human-authored trigger commit: this helper exists only on PR #41's feature
+# branch and deletes itself after the provider-free widget passes all gates.
 on:
   push:
     branches:
