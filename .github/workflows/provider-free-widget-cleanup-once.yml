@@ -1,7 +1,7 @@
 name: Provider-free widget cleanup once
 
-# Human-authored trigger commit: this helper exists only on PR #41's feature
-# branch and deletes itself after the provider-free widget passes all gates.
+# Branch-only remediation helper. It deletes itself only after the provider-free
+# widget passes the same monorepo checks and production audit as the PR.
 on:
   push:
     branches:
@@ -21,16 +21,15 @@ jobs:
           ref: release/treasury-consolidation-rc
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
-      - name: Remove stale external-swap widget surface
+      - name: Remove stale external-swap widget surface and tests
         shell: python
         run: |
           from pathlib import Path
 
           app_path = Path('apps/wallet-widget/src/App.tsx')
           app = app_path.read_text()
-
           app = app.replace(
               'import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type SwapAsset, type TransactionRecord } from "@aifinpay/shared";',
               'import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type TransactionRecord } from "@aifinpay/shared";'
@@ -43,7 +42,7 @@ jobs:
               raise SystemExit('expected stale swap UI block anchors not found')
           app = app[:start] + app[end:]
 
-          stale_view_lines = [
+          for line in [
               '  "swap-quote": "quote",          // SwapQuoteView: data.quote!\n',
               '  "swap-order": "order",          // SwapOrderView: data.order!\n',
               '  "swap-status": "swapStatus",    // SwapStatusView: data.swapStatus!\n',
@@ -51,10 +50,9 @@ jobs:
               '  if (data.view === "swap-quote") return <SwapQuoteView data={data} onBack={() => setData({ view: "swap-form" })} />;\n',
               '  if (data.view === "swap-order") return <SwapOrderView data={data} onBack={back} />;\n',
               '  if (data.view === "swap-status") return <SwapStatusView data={data} onBack={back} />;\n',
-          ]
-          for line in stale_view_lines:
+          ]:
               if line not in app:
-                  raise SystemExit(f'expected stale line not found: {line.strip()}')
+                  raise SystemExit(f'expected stale App.tsx line not found: {line.strip()}')
               app = app.replace(line, '')
 
           forbidden_app = [
@@ -89,16 +87,29 @@ jobs:
               raise SystemExit(f'stale swap widget types remain: {remaining}')
           types_path.write_text(types)
 
-          test_path = Path('apps/wallet-widget/src/swap-funding.test.ts')
-          if test_path.exists():
-              test_path.unlink()
+          # Remove the obsolete provider-swap tests from the general App suite.
+          test_path = Path('apps/wallet-widget/src/App.test.tsx')
+          tests = test_path.read_text()
+          start = tests.find('  it("builds a Casper-to-Polygon quote request from live provider assets"')
+          suite_end = tests.rfind('\n});')
+          if start < 0 or suite_end < 0 or suite_end <= start:
+              raise SystemExit('expected stale swap test block anchors not found')
+          tests = tests[:start] + tests[suite_end:]
+          for forbidden in ['get_swap_quote', 'create_swap_order', 'swap-quote', 'swap-order', 'CHANGENOW', 'Swap deposit address QR code']:
+              if forbidden in tests:
+                  raise SystemExit(f'stale swap test token remains: {forbidden}')
+          test_path.write_text(tests)
+
+          stale_funding = Path('apps/wallet-widget/src/swap-funding.test.ts')
+          if stale_funding.exists():
+              stale_funding.unlink()
       - name: Install exact dependencies
         run: npm ci
       - name: Full monorepo check
         run: npm run check
       - name: Production dependency audit
         run: npm audit --audit-level=high --omit=dev
-      - name: Assert provider tools are absent from production widget/runtime
+      - name: Assert external provider surface is absent
         shell: bash
         run: |
           set -euo pipefail
