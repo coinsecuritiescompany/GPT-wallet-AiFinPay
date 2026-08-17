@@ -173,11 +173,14 @@ export interface UnsignedNearTransaction {
   feeReserveYocto: string;
 }
 
+/** Generic Aptos entry-function payload. The settlement execution service is
+ * responsible for whitelisting the exact canonical function and arguments
+ * before this reaches the local signer. */
 export interface AptosEntryFunctionPayload {
   type: "entry_function_payload";
-  function: "0x1::aptos_account::transfer";
-  type_arguments: [];
-  arguments: [string, string];
+  function: string;
+  type_arguments: string[];
+  arguments: string[];
 }
 
 export interface AptosUnsignedRequest {

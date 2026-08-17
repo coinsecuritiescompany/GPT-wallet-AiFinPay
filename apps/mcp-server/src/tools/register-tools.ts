@@ -5,7 +5,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { z } from "zod";
 import {
   AppError, LIVE_NETWORKS, MAINNET_NETWORKS, decimalAmountSchema, evmAddressSchema, idempotencyKeySchema, networkMeta, networkSchema, safeError, tokenSchema,
-  type LiveNetworkSpec, type NetworkId, type PaymentIntent, type SwapAsset, type WalletSummary
+  type LiveNetworkSpec, type NetworkId, type PaymentIntent, type WalletSummary
 } from "@aifinpay/shared";
 import type { AppContext } from "../context.js";
 
@@ -23,8 +23,6 @@ export const LEGACY_WIDGET_URIS = Array.from(
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true };
-const openRead = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
-const openWrite = { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false };
 // Every tool returns a discriminated structured-content envelope. Individual
 // views add their own typed fields; passthrough keeps those fields visible while
 // giving MCP hosts a truthful, machine-checkable output contract.
@@ -115,27 +113,6 @@ async function walletState(ctx: AppContext, userId: string, network: NetworkId) 
     };
     return { summary, connection };
   }
-}
-
-const swapAssetSchema = z.object({
-  ticker: z.string().regex(/^[a-z0-9-]{1,30}$/),
-  name: z.string().min(1).max(100),
-  network: z.string().regex(/^[a-z0-9-]{1,30}$/),
-  image: z.string().url().optional()
-});
-
-// ChangeNOW network codes that map unambiguously to an address controlled by
-// this Vault. Assets on any other provider network stay hidden and fail closed.
-const swapAddressField: Record<string, "evm" | "solana" | "near" | "aptos" | "casper"> = {
-  cspr: "casper", matic: "evm", avaxc: "evm", arbitrum: "evm", bsc: "evm",
-  base: "evm", unichain: "evm", op: "evm", sol: "solana", near: "near", apt: "aptos"
-};
-
-function swapAddress(addresses: Record<string, string>, asset: SwapAsset): string {
-  const field = swapAddressField[asset.network];
-  const value = field ? addresses[field] : undefined;
-  if (!value) throw new AppError("NETWORK_UNSUPPORTED", `Swap address mapping is not available for ${asset.network}.`, 400);
-  return value;
 }
 
 // The device link that opens the intent in the Vault for local signing.
@@ -254,61 +231,6 @@ export function registerTools(server: McpServer, ctx: AppContext): void {
   }, async ({ token, network }, extra) => {
     try { const user = resolveUser(ctx, extra); const selectedNetwork = resolveNetwork(ctx, network); ctx.analytics.record("balance_view", "server", { userId: user.userId, network: selectedNetwork, asset: token }); return data(`${token} balance loaded.`, { view: "balance", balance: await ctx.adapter.getBalance(user.userId, token, selectedNetwork) }); }
     catch (error) { return failure(error, ctx); }
-  });
-
-  registerAppTool(server, "list_swap_assets", {
-    title: "List available swap assets",
-    description: "Use this before quoting a swap. Returns only active ChangeNOW assets on networks whose payout addresses are controlled by the connected AiFinPay Vault.",
-    inputSchema: {}, outputSchema: toolOutputSchema, annotations: openRead, _meta: oauthMeta()
-  }, async (_args, extra) => {
-    try {
-      resolveUser(ctx, extra);
-      const assets = (await ctx.swaps.listAssets()).filter((item) => Boolean(swapAddressField[item.network]));
-      return data(`${assets.length} swap assets are available.`, { view: "swap-form", assets });
-    } catch (error) { return failure(error, ctx); }
-  });
-
-  registerAppTool(server, "get_swap_quote", {
-    title: "Get a swap quote",
-    description: "Use this to preview an estimated non-custodial cross-chain swap. A quote does not create an order or move funds.",
-    inputSchema: { fromAsset: swapAssetSchema, toAsset: swapAssetSchema, fromAmount: decimalAmountSchema }, outputSchema: toolOutputSchema,
-    annotations: openRead, _meta: oauthMeta()
-  }, async ({ fromAsset, toAsset, fromAmount }, extra) => {
-    try {
-      const user = resolveUser(ctx, extra);
-      const connection = ctx.store.getWalletConnection(user.userId);
-      if (!connection) throw new AppError("AUTH_REQUIRED", "Connect AiFinPay Wallet before requesting a swap quote.", 401);
-      swapAddress(connection.addresses, fromAsset);
-      swapAddress(connection.addresses, toAsset);
-      const result = await ctx.swaps.quote(user.userId, fromAsset, toAsset, fromAmount);
-      return data(`Estimated output: ${result.quote.estimatedAmount} ${result.quote.toAsset.ticker.toUpperCase()}. No funds have moved.`, { view: "swap-quote", ...result });
-    } catch (error) { return failure(error, ctx); }
-  });
-
-  registerAppTool(server, "create_swap_order", {
-    title: "Create a confirmed swap order",
-    description: "Use only after the user explicitly confirms the exact input asset, amount, destination asset, and current quote. Creates a ChangeNOW deposit order addressed back to the connected Vault, but does not transfer funds automatically.",
-    inputSchema: { quoteToken: z.string().min(40).max(5000), confirmed: z.literal(true) }, outputSchema: toolOutputSchema,
-    annotations: openWrite, _meta: oauthMeta(false, "wallet:write")
-  }, async ({ quoteToken }, extra) => {
-    try {
-      const user = resolveUser(ctx, extra, "wallet:write");
-      const connection = ctx.store.getWalletConnection(user.userId);
-      if (!connection) throw new AppError("AUTH_REQUIRED", "Connect AiFinPay Wallet before creating a swap.", 401);
-      const result = await ctx.swaps.createOrder(user.userId, quoteToken, (asset) => swapAddress(connection.addresses, asset));
-      return data(`Swap order created. Send exactly ${result.order.fromAmount} ${result.order.fromAsset.ticker.toUpperCase()} to the displayed deposit address.`, { view: "swap-order", ...result });
-    } catch (error) { return failure(error, ctx); }
-  });
-
-  registerAppTool(server, "get_swap_status", {
-    title: "Get swap order status",
-    description: "Use this to check a previously created swap order using its private signed order reference.",
-    inputSchema: { orderReference: z.string().min(40).max(5000) }, outputSchema: toolOutputSchema, annotations: openRead, _meta: oauthMeta()
-  }, async ({ orderReference }, extra) => {
-    try {
-      const user = resolveUser(ctx, extra);
-      return data("Swap status loaded.", { view: "swap-status", swapStatus: await ctx.swaps.status(user.userId, orderReference), orderReference });
-    } catch (error) { return failure(error, ctx); }
   });
 
   registerAppTool(server, "prepare_transfer", {
