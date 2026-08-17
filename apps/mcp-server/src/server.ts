@@ -5,6 +5,7 @@ import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MAINNET_NETWORKS } from "@aifinpay/shared";
 import type { AppContext } from "./context.js";
+import { registerSettlementTools } from "./tools/register-settlement-tools.js";
 import { registerSolanaTools } from "./tools/register-solana-tools.js";
 import { LEGACY_WIDGET_URIS, registerTools, WIDGET_URI } from "./tools/register-tools.js";
 
@@ -42,11 +43,11 @@ export function createMcpServer(ctx: AppContext): McpServer {
     name: "aifinpay-wallet",
     title: "AiFinPay Wallet",
     version: "0.3.0",
-    description: "Non-custodial AiFinPay wallet for live balances and receiving across 13 mainnets, with per-network local signing, agent limits, and audit trails.",
+    description: "Non-custodial AiFinPay wallet for live balances and receiving across 13 mainnets, canonical AIFP-1/AIFP-2 settlement discovery, per-network local signing, agent limits, and audit trails.",
     websiteUrl: appOrigin,
     icons: [{ src: `${appOrigin}/icon.png`, mimeType: "image/png", sizes: ["256x256"] }]
   }, {
-    instructions: "Never request or expose private keys, recovery phrases, or Vault passwords. User-specific tools require OAuth 2.1 with PKCE and receive public wallet addresses only. Open authenticated users directly in the wallet dashboard. Balances are read from live mainnet RPCs. Transfers are available only on networks explicitly marked signing-enabled and require review plus local Vault signing."
+    instructions: "Never request or expose private keys, recovery phrases, or Vault passwords. User-specific tools require OAuth 2.1 with PKCE and receive public wallet addresses only. Open authenticated users directly in the wallet dashboard. Balances are read from live mainnet RPCs. Canonical settlement invoices are read from the AiFinPay settlement API and never authorize value movement by themselves. Transfers are available only on networks explicitly marked signing-enabled and require review plus local Vault signing."
   });
   for (const [index, resourceUri] of [WIDGET_URI, ...LEGACY_WIDGET_URIS].entries()) {
     registerAppResource(server, `aifinpay-wallet-widget-${index}`, resourceUri, {}, async () => ({
@@ -60,7 +61,7 @@ export function createMcpServer(ctx: AppContext): McpServer {
             csp: { connectDomains: [], resourceDomains: [], redirectDomains: explorerOrigins },
             ...(ctx.config.widgetDomain.startsWith("https://") ? { domain: ctx.config.widgetDomain } : {})
           },
-          "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, plus locally approved transfers on enabled EVM networks and native Solana, NEAR, Aptos and Casper.",
+          "openai/widgetDescription": "Interactive non-custodial AiFinPay wallet showing live balances and receive addresses across 13 mainnets, canonical AIFP-1/AIFP-2 settlement readiness, and locally approved transfers on explicitly enabled networks.",
           "openai/widgetPrefersBorder": true,
           "openai/widgetCSP": { connect_domains: [], resource_domains: [], redirect_domains: [...explorerOrigins, "https://amoy.polygonscan.com"] }
         }
@@ -68,6 +69,7 @@ export function createMcpServer(ctx: AppContext): McpServer {
     }));
   }
   registerTools(server, ctx);
+  registerSettlementTools(server, ctx);
   registerSolanaTools(server, ctx);
   return server;
 }
