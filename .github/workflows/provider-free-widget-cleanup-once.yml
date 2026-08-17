@@ -35,13 +35,11 @@ jobs:
               'import { MAINNET_NETWORKS, type AgentPolicy, type PaymentIntent, type TransactionRecord } from "@aifinpay/shared";'
           )
           app = app.replace('      <button onClick={() => onNavigate("swap-form")}><b>⇄</b>Swap</button>\n', '')
-
           start = app.find('const swapKey = (asset: SwapAsset)')
           end = app.find('// The MCP tools resolve with')
           if start < 0 or end < 0 or end <= start:
               raise SystemExit('expected stale swap UI block anchors not found')
           app = app[:start] + app[end:]
-
           for line in [
               '  "swap-quote": "quote",          // SwapQuoteView: data.quote!\n',
               '  "swap-order": "order",          // SwapOrderView: data.order!\n',
@@ -54,7 +52,6 @@ jobs:
               if line not in app:
                   raise SystemExit(f'expected stale App.tsx line not found: {line.strip()}')
               app = app.replace(line, '')
-
           forbidden_app = [
               'SwapAsset', 'swapFundingRoute', 'list_swap_assets', 'get_swap_quote',
               'create_swap_order', 'get_swap_status', 'swap-form', 'swap-quote',
@@ -87,18 +84,33 @@ jobs:
               raise SystemExit(f'stale swap widget types remain: {remaining}')
           types_path.write_text(types)
 
-          # Remove the obsolete provider-swap tests from the general App suite.
-          test_path = Path('apps/wallet-widget/src/App.test.tsx')
-          tests = test_path.read_text()
+          app_test_path = Path('apps/wallet-widget/src/App.test.tsx')
+          tests = app_test_path.read_text()
           start = tests.find('  it("builds a Casper-to-Polygon quote request from live provider assets"')
           suite_end = tests.rfind('\n});')
           if start < 0 or suite_end < 0 or suite_end <= start:
-              raise SystemExit('expected stale swap test block anchors not found')
+              raise SystemExit('expected stale swap App.test block anchors not found')
           tests = tests[:start] + tests[suite_end:]
           for forbidden in ['get_swap_quote', 'create_swap_order', 'swap-quote', 'swap-order', 'CHANGENOW', 'Swap deposit address QR code']:
               if forbidden in tests:
-                  raise SystemExit(f'stale swap test token remains: {forbidden}')
-          test_path.write_text(tests)
+                  raise SystemExit(f'stale App.test swap token remains: {forbidden}')
+          app_test_path.write_text(tests)
+
+          renderable_path = Path('apps/wallet-widget/src/renderable.test.ts')
+          renderable = renderable_path.read_text()
+          for line in [
+              '    expect(isRenderable({ view: "swap-quote" } as never)).toBe(false);\n',
+              '    expect(isRenderable({ view: "swap-order" } as never)).toBe(false);\n',
+              '    expect(isRenderable({ view: "swap-status" } as never)).toBe(false);\n',
+              '    expect(isRenderable({ view: "swap-quote", quote: { fromAmount: "1" } } as never)).toBe(true);\n',
+          ]:
+              if line not in renderable:
+                  raise SystemExit(f'expected stale renderability assertion not found: {line.strip()}')
+              renderable = renderable.replace(line, '')
+          for forbidden in ['swap-quote', 'swap-order', 'swap-status']:
+              if forbidden in renderable:
+                  raise SystemExit(f'stale renderability swap token remains: {forbidden}')
+          renderable_path.write_text(renderable)
 
           stale_funding = Path('apps/wallet-widget/src/swap-funding.test.ts')
           if stale_funding.exists():
