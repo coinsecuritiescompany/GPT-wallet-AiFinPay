@@ -57,6 +57,25 @@ export interface AgentPolicy {
   updatedAt: string;
 }
 
+/** Exact AIFP-1 v1.3 settlement call approved by the server and later signed locally. */
+export interface Aifp1ContractCallIntent {
+  kind: "AIFP1_V13_NATIVE";
+  routeClass: "merchant-aifp1";
+  splitterVersion: "1.3";
+  economicsProfile: "AIFP-1:100/0:gross";
+  contract: string;
+  runtimeCodeHash: string;
+  selector: string;
+  data: string;
+  valueBaseUnits: string;
+  paymentId: string;
+  merchant: string;
+  ipCreator: string;
+  validUntil: number;
+  orderId: string;
+  grossUsd: string;
+}
+
 export interface PaymentIntent {
   id: string;
   ownerUserId: string;
@@ -85,6 +104,8 @@ export interface PaymentIntent {
   transactionHash?: string;
   idempotencyKey: string;
   auditReceiptId: string;
+  /** Present only for an independently pinned AIFP-1 settlement contract call. */
+  contractCall?: Aifp1ContractCallIntent;
 }
 
 export interface AuditEvent {

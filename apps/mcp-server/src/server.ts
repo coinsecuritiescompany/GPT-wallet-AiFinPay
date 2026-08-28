@@ -5,6 +5,7 @@ import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MAINNET_NETWORKS } from "@aifinpay/shared";
 import type { AppContext } from "./context.js";
+import { registerAifp1Tools } from "./tools/register-aifp1-tools.js";
 import { registerSolanaTools } from "./tools/register-solana-tools.js";
 import { LEGACY_WIDGET_URIS, registerTools, WIDGET_URI } from "./tools/register-tools.js";
 
@@ -46,7 +47,7 @@ export function createMcpServer(ctx: AppContext): McpServer {
     websiteUrl: appOrigin,
     icons: [{ src: `${appOrigin}/icon.png`, mimeType: "image/png", sizes: ["256x256"] }]
   }, {
-    instructions: "Never request or expose private keys, recovery phrases, or Vault passwords. User-specific tools require OAuth 2.1 with PKCE and receive public wallet addresses only. Open authenticated users directly in the wallet dashboard. Balances are read from live mainnet RPCs. Transfers are available only on networks explicitly marked signing-enabled and require review plus local Vault signing."
+    instructions: "Never request or expose private keys, recovery phrases, or Vault passwords. User-specific tools require OAuth 2.1 with PKCE and receive public wallet addresses only. Open authenticated users directly in the wallet dashboard. Balances are read from live mainnet RPCs. Transfers are available only on networks explicitly marked signing-enabled and require review plus local Vault signing. For AIFP-1 settlement_call use prepare_contract_call; never replace it with prepare_transfer or pay_to."
   });
   for (const [index, resourceUri] of [WIDGET_URI, ...LEGACY_WIDGET_URIS].entries()) {
     registerAppResource(server, `aifinpay-wallet-widget-${index}`, resourceUri, {}, async () => ({
@@ -68,6 +69,7 @@ export function createMcpServer(ctx: AppContext): McpServer {
     }));
   }
   registerTools(server, ctx);
+  registerAifp1Tools(server, ctx);
   registerSolanaTools(server, ctx);
   return server;
 }
