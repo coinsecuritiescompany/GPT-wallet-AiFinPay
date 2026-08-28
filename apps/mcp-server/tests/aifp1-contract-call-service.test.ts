@@ -84,7 +84,7 @@ describe("AIFP-1 contract-call intent", () => {
     store.close();
   });
 
-  it("blocks creator value on the AIFP-1 100\/0 profile", () => {
+  it("blocks creator value on the AIFP-1 100/0 profile", () => {
     const { data, route } = fixture("0x3333333333333333333333333333333333333333");
     const { store, value } = service([route]);
     expect(() => value.prepare("user-1", {
