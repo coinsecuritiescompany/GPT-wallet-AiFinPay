@@ -2,13 +2,64 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { generateMnemonic, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
 import type { VaultSignRequest } from "@aifinpay/shared";
+import { decodeFunctionData } from "viem";
 import { decryptVault, encryptVault, normalizeVaultPassword, parseEncryptedVault, signAptosTransaction, signCasperTransaction, signEvmTransaction, signNearTransaction, signSolanaTransaction, type EncryptedVault } from "./vault-crypto.js";
 
 const STORAGE_KEY = "aifinpay.vault.v1";
 type Step = "welcome" | "phrase" | "verify" | "password" | "restore" | "unlock" | "ready" | "sign" | "signed";
 
+const AIFP1_V13_ABI = [{
+  type: "function",
+  name: "payNative",
+  stateMutability: "payable",
+  inputs: [{
+    name: "_payment",
+    type: "tuple",
+    components: [
+      { name: "paymentId", type: "bytes32" },
+      { name: "merchant", type: "address" },
+      { name: "grossAmount", type: "uint256" },
+      { name: "ipCreator", type: "address" },
+      { name: "validUntil", type: "uint256" },
+      { name: "orderId", type: "string" }
+    ]
+  }],
+  outputs: []
+}] as const;
+
 const shuffled = <T,>(items: T[]) => items.map((item) => ({ item, sort: crypto.getRandomValues(new Uint32Array(1))[0] ?? 0 })).sort((a, b) => a.sort - b.sort).map(({ item }) => item);
 const short = (value: string) => `${value.slice(0, 8)}…${value.slice(-6)}`;
+
+function aifp1Review(request: VaultSignRequest | null) {
+  if (!request) return null;
+  const tx = request.transaction;
+  if (tx.kind && tx.kind !== "EVM") return null;
+  if (!("data" in tx) || !("to" in tx) || !tx.data || tx.data === "0x") return null;
+  try {
+    const decoded = decodeFunctionData({ abi: AIFP1_V13_ABI, data: tx.data as `0x${string}` });
+    if (decoded.functionName !== "payNative" || !decoded.args?.[0]) return null;
+    const payment = decoded.args[0] as {
+      paymentId: `0x${string}`;
+      merchant: `0x${string}`;
+      grossAmount: bigint;
+      ipCreator: `0x${string}`;
+      validUntil: bigint;
+      orderId: string;
+    };
+    return {
+      contract: tx.to,
+      functionName: "payNative" as const,
+      paymentId: payment.paymentId,
+      merchant: payment.merchant,
+      grossAmount: payment.grossAmount.toString(),
+      ipCreator: payment.ipCreator,
+      validUntil: Number(payment.validUntil),
+      orderId: payment.orderId
+    };
+  } catch {
+    return null;
+  }
+}
 
 export function VaultApp() {
   const stored = useMemo(() => { try { return parseEncryptedVault(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")); } catch { return null; } }, []);
@@ -31,6 +82,7 @@ export function VaultApp() {
   const signToken = useMemo(() => new URLSearchParams(window.location.search).get("sign"), []);
   const [signRequest, setSignRequest] = useState<VaultSignRequest | null>(null);
   const [signResult, setSignResult] = useState<{ transactionHash: string; explorerUrl: string } | null>(null);
+  const contractReview = useMemo(() => aifp1Review(signRequest), [signRequest]);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const confirmPasswordInputRef = useRef<HTMLInputElement>(null);
   const mnemonicRef = useRef("");
@@ -164,7 +216,7 @@ export function VaultApp() {
     {step === "restore" && <section className="vault-panel"><span className="vault-kicker">RESTORE</span><h2>Enter recovery phrase</h2><p>Words are processed locally and are never sent to AiFinPay or ChatGPT.</p><textarea className="restore-input" value={restoreText} onChange={(event) => setRestoreText(event.target.value)} placeholder="Enter 12 or 15 words separated by spaces" spellCheck={false} autoComplete="off" />{error && <p className="vault-error">{error}</p>}<button className="primary" onClick={restore}>Continue</button><button className="text-button" onClick={() => setStep("welcome")}>Back</button></section>}
     {step === "password" && <section className="vault-panel"><span className="vault-kicker">LOCAL ENCRYPTION</span><h2>Protect this device</h2><p>This password encrypts the recovery phrase with AES-256-GCM. It is never uploaded.</p><form onSubmit={(event) => { event.preventDefault(); void save(); }}><label className="vault-field">Password<input ref={passwordInputRef} name="new-password" type="password" value={password} onInput={(event) => setPassword(event.currentTarget.value)} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" autoCapitalize="none" spellCheck={false} /></label><label className="vault-field">Repeat password<input ref={confirmPasswordInputRef} name="confirm-password" type="password" value={confirmPassword} onInput={(event) => setConfirmPassword(event.currentTarget.value)} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" autoCapitalize="none" spellCheck={false} /></label>{error && <p className="vault-error">{error}</p>}<button className="primary" type="submit" disabled={busy}>{busy ? "Encrypting…" : "Create encrypted vault"}</button></form></section>}
     {step === "ready" && vault && <section className="vault-panel"><span className="vault-kicker success-text">✓ WALLET READY</span><h2>AiFinPay Wallet</h2><p>One protected vault controls five chain-family addresses across 13 mainnet networks.</p><div className="address-list"><div><span>EVM · one address on 9 networks</span><strong>{short(vault.addresses.evm)}</strong></div><div><span>Solana</span><strong>{short(vault.addresses.solana)}</strong></div><div><span>NEAR</span><strong>{short(vault.addresses.near)}</strong></div><div><span>Aptos</span><strong>{short(vault.addresses.aptos)}</strong></div><div><span>Casper</span><strong>{short(vault.addresses.casper)}</strong></div></div><div className="secure-note">Saved and verified on this device · PBKDF2-SHA256 · AES-256-GCM · keys never uploaded</div>{oauthRequest && <><div className="oauth-consent"><strong>Connect this wallet to ChatGPT?</strong><span>ChatGPT receives these public addresses only. Your password, recovery phrase and private keys never leave this device.</span></div><button className="primary" disabled={busy} onClick={() => void authorizeChatGPT()}>{busy ? "Authorizing…" : "Continue to ChatGPT"}</button></>}{!oauthRequest && pairToken && pairStatus === "idle" && <button className="primary" disabled={busy} onClick={() => void pair()}>{busy ? "Connecting…" : "Connect public addresses to ChatGPT"}</button>}{pairStatus === "connected" && <div className="pair-success">✓ Connected. You can return to ChatGPT.</div>}{error && <p className="vault-error">{error}</p>}<button className="secondary" onClick={() => { const blob = new Blob([JSON.stringify(vault, null, 2)], { type: "application/json" }); const href = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = href; anchor.download = "aifinpay-encrypted-vault.json"; anchor.click(); URL.revokeObjectURL(href); }}>Download encrypted backup</button><button className="danger-link" onClick={remove}>{removeArmed ? "Tap again to permanently remove" : "Remove vault from this device"}</button></section>}
-    {step === "sign" && signRequest && <section className="vault-panel"><span className="vault-kicker warning-text">APPROVE PAYMENT · {signRequest.display.networkLabel.toUpperCase()}</span><h2>Review &amp; sign</h2><p>Confirm the details. This transaction is signed on this device with your key and then broadcast. It cannot be reversed.</p><div className="address-list"><div><span>Amount</span><strong>{signRequest.display.amount} {signRequest.display.token}</strong></div><div><span>To</span><strong>{short(signRequest.display.recipient)}</strong></div><div><span>Network</span><strong>{signRequest.display.networkLabel}</strong></div></div><div className="secure-note">Signed locally · your key never leaves this device</div>{error && <p className="vault-error">{error}</p>}<button className="primary" disabled={busy} onClick={() => void signAndSubmit()}>{busy ? "Signing &amp; broadcasting…" : `Sign &amp; send ${signRequest.display.amount} ${signRequest.display.token}`}</button><button className="text-button" disabled={busy} onClick={rejectSign}>Reject</button></section>}
+    {step === "sign" && signRequest && <section className="vault-panel"><span className="vault-kicker warning-text">APPROVE PAYMENT · {signRequest.display.networkLabel.toUpperCase()}</span><h2>{contractReview ? "Review AIFP-1 settlement" : "Review & sign"}</h2><p>{contractReview ? "This is a smart-contract settlement. Review the decoded AIFP-1 fields below. The wallet will sign exactly the displayed to/value/data transaction." : "Confirm the details. This transaction is signed on this device with your key and then broadcast. It cannot be reversed."}</p><div className="address-list"><div><span>Amount</span><strong>{signRequest.display.amount} {signRequest.display.token}</strong></div>{contractReview ? <><div><span>Route</span><strong>AIFP-1 · merchant-aifp1 · v1.3</strong></div><div><span>Contract</span><strong>{short(contractReview.contract)}</strong></div><div><span>Function</span><strong>{contractReview.functionName}</strong></div><div><span>Merchant</span><strong>{short(contractReview.merchant)}</strong></div><div><span>Protocol fee</span><strong>1% gross-inclusive · creator 0%</strong></div><div><span>Payment ID</span><strong>{short(contractReview.paymentId)}</strong></div><div><span>Order ID</span><strong>{contractReview.orderId}</strong></div><div><span>Valid until</span><strong>{new Date(contractReview.validUntil * 1000).toLocaleString()}</strong></div></> : <div><span>To</span><strong>{short(signRequest.display.recipient)}</strong></div>}<div><span>Network</span><strong>{signRequest.display.networkLabel}</strong></div></div><div className="secure-note">{contractReview ? "Decoded calldata · exact transaction locked · signed locally · your key never leaves this device" : "Signed locally · your key never leaves this device"}</div>{error && <p className="vault-error">{error}</p>}<button className="primary" disabled={busy} onClick={() => void signAndSubmit()}>{busy ? "Signing & broadcasting…" : contractReview ? `Sign & settle ${signRequest.display.amount} ${signRequest.display.token}` : `Sign & send ${signRequest.display.amount} ${signRequest.display.token}`}</button><button className="text-button" disabled={busy} onClick={rejectSign}>Reject</button></section>}
     {step === "signed" && signResult && <section className="vault-panel"><span className="vault-kicker success-text">✓ TRANSACTION SENT</span><h2>Payment broadcast</h2><p>Your signed transaction was submitted to the network. It will settle shortly. You can return to ChatGPT.</p><div className="address-list"><div><span>Transaction</span><strong>{short(signResult.transactionHash)}</strong></div></div>{signResult.explorerUrl && <a className="primary" href={signResult.explorerUrl} target="_blank" rel="noreferrer">View on block explorer</a>}<button className="text-button" onClick={() => setStep("ready")}>Back to wallet</button></section>}
     {step === "unlock" && <section className="vault-panel"><span className="vault-kicker">WELCOME BACK</span><h2>Unlock your wallet</h2><p>This device already holds your encrypted AiFinPay vault. Enter your password to continue{signToken ? " and approve your payment" : oauthRequest || pairToken ? " and reconnect to ChatGPT" : ""}. Your recovery phrase never leaves this device.</p><form onSubmit={(event) => { event.preventDefault(); void unlock(); }}><label className="vault-field">Password<input ref={passwordInputRef} name="current-password" type="password" value={password} onInput={(event) => setPassword(event.currentTarget.value)} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" autoCapitalize="none" spellCheck={false} autoFocus /></label>{error && <p className="vault-error">{error}</p>}<button className="primary" type="submit" disabled={busy}>{busy ? "Unlocking…" : "Unlock"}</button></form><button className="text-button" onClick={() => { setError(""); setPassword(""); setStep("restore"); }}>Forgot password? Restore from recovery phrase</button><button className="danger-link" onClick={remove}>{removeArmed ? "Tap again to permanently remove" : "Remove vault from this device"}</button></section>}
     <footer className="vault-footer">AiFinPay never stores recovery phrases or private keys.</footer>

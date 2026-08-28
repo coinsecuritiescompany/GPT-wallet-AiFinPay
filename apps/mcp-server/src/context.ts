@@ -6,11 +6,12 @@ import { AuditService } from "./audit/audit-service.js";
 import { SessionAuth } from "./auth/session.js";
 import { AiFinPayOAuthProvider } from "./auth/oauth-provider.js";
 import type { AppConfig } from "./config.js";
+import { Aifp1AwareMainnetAdapter } from "./services/aifp1-aware-adapter.js";
+import { Aifp1ContractCallService } from "./services/aifp1-contract-call-service.js";
 import { ConfirmationService } from "./services/confirmation-service.js";
 import { SigningRequestService } from "./services/signing-request-service.js";
 import { PaymentService } from "./services/payment-service.js";
 import { PolicyService } from "./services/policy-service.js";
-import { UniversalMainnetAdapter } from "./services/universal-mainnet-adapter.js";
 import { SwapService } from "./services/swap-service.js";
 import { Store } from "./storage/store.js";
 
@@ -24,6 +25,7 @@ export class AppContext {
   readonly signing: SigningRequestService;
   readonly adapter: WalletAdapter;
   readonly payments: PaymentService;
+  readonly aifp1: Aifp1ContractCallService;
   readonly policies: PolicyService;
   readonly swaps: SwapService;
 
@@ -45,9 +47,10 @@ export class AppContext {
     this.confirmations = new ConfirmationService(config.sessionSecret);
     this.signing = new SigningRequestService(config.sessionSecret);
     this.adapter = config.walletMode === "mainnet"
-      ? new UniversalMainnetAdapter(this.store, config.mainnetRpcUrls, config.mainnetRpcAuth)
+      ? new Aifp1AwareMainnetAdapter(this.store, config.mainnetRpcUrls, config.mainnetRpcAuth)
       : new DemoLedgerAdapter();
     this.payments = new PaymentService(this.store, this.audit, this.confirmations, this.adapter, this.analytics);
+    this.aifp1 = new Aifp1ContractCallService(this.store, this.audit, config.aifp1TrustedRoutes, config.aifp1MaxGrossUsd, this.analytics);
     this.policies = new PolicyService(this.store, this.audit, this.confirmations);
     this.swaps = new SwapService(config.changeNowApiKey, config.sessionSecret);
     if (config.walletMode === "demo" && config.demoMode && this.store.listPolicies(DEMO_USER_ID).length === 0) this.store.savePolicy(DEMO_POLICY);
