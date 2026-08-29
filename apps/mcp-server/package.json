@@ -16,11 +16,11 @@
     "@aifinpay/aifinpay-adapter": "*",
     "@aifinpay/demo-ledger": "*",
     "@aifinpay/shared": "*",
-    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "compression": "^1.8.1",
     "express": "^5.2.1",
-    "viem": "^2.55.2",
+    "viem": "^2.55.19",
     "zod": "^4.4.3"
   },
   "devDependencies": {
